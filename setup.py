@@ -6,7 +6,7 @@ Auxein is a Python framework for evolutionary algorithms.
 '''
 
 setup(name='Auxein',
-      version='0.0.1',
+      version='0.0.3',
       description='Evolutionary algorithms for everyone.',
       long_description=long_description,
       author='Davide Palmisano',
