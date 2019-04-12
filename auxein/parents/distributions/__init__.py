@@ -1,1 +1,1 @@
-from .sigma_scaling import SigmaScaling
+from .core import SigmaScaling

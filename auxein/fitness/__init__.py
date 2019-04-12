@@ -1,1 +1,1 @@
-from .linear import LinearLeastSquares
+from .core import LinearLeastSquares

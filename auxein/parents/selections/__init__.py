@@ -1,1 +1,1 @@
-from .stochastic_universal_sampling import StochasticUniversalSampling
+from .core import StochasticUniversalSampling

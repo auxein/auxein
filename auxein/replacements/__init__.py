@@ -1,1 +1,1 @@
-from .replace_worst import ReplaceWorst
+from .core import ReplaceWorst
