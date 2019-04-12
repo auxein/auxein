@@ -4,6 +4,7 @@ from __future__ import absolute_import
 
 from .population import Genotype
 from .population import Individual
+from .population import Item, Population
 
 from .playgrounds import Static
 from .mutations import Uniform
