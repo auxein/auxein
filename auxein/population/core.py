@@ -15,7 +15,7 @@ class Population(object):
 
     def __init__(self):
         self.__pool = {}
-        self.generation_count = 0
+        self.__generation_count = 0
 
     def size(self):
         return len(self.__pool)
@@ -29,10 +29,10 @@ class Population(object):
     def update(self, fitness_function):
         for item in self.__pool.values():
             individual = item.individual
-            new_fitness = fitness_function.get(individual)
+            new_fitness = fitness_function.fitness(individual)
             self.__pool[str(individual.id)] = Item(
                 deepcopy(individual), new_fitness)
-        self.generation_count += 1
+        self.__generation_count += 1
 
     def kill(self, individual_id: str):
         try:
@@ -49,6 +49,10 @@ class Population(object):
         for item in self.__pool.values():
             total_fitness += item.fitness
         return total_fitness
+    
+    @property
+    def generation_count(self) -> int:
+        return self.__generation_count
 
     def rank_by_fitness(self, k=None, reverse=True):
         sorted_values = sorted(
@@ -77,12 +81,12 @@ class Population(object):
         return value
 
     def min_age(self):
-            pools_ages = self.__get_ages()
-            value: float = np.min(pools_ages)
-            return value
+        pools_ages = self.__get_ages()
+        value: float = np.min(pools_ages)
+        return value
 
     def mean_fitness(self):
-            return self.total_fitness() / self.size()
+        return self.total_fitness() / self.size()
 
     def max_fitness(self):
         pools_fitness_values = self.__get_fitness()
@@ -101,7 +105,7 @@ class Population(object):
     
     def get_stats(self):
         return {
-            'generation_count': self.generation_count,
+            'generation_count': self.__generation_count,
             'size': self.size(),
             'mean_age': self.mean_age(),
             'std_age': self.std_age(),
@@ -120,5 +124,5 @@ def build_population(dimension: int, initial_size: int, fitness_function):
         mask = np.repeat(np.random.normal(0, 1), dimension)
         dna = np.random.uniform(-1.0, 1.0, dimension)
         individual = build_individual(dna, mask)
-        population.add(individual, fitness_function(individual))
+        population.add(individual, fitness_function.fitness(individual))
     return population

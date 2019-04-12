@@ -19,7 +19,7 @@ class Playground:
         self.fitness = fitness
     
 
-    def train(self, x_train, y_train, max_generations, validations):
+    def train(self, max_generations, validation):
         pass
 
     
@@ -42,7 +42,7 @@ class Static(Playground):
         couples = permutations(mating_pool, 2)
         offspring = []
         for (parent1_id, parent2_id) in couples:
-            (child1_genotype_dna, child1_genotype_mask, child2_genotype_dna, child2_genotype_mask) = breed(
+            (child1_genotype_dna, child1_genotype_mask, child2_genotype_dna, child2_genotype_mask) = self.__breed(
                 parent1_id,
                 parent2_id
             )
@@ -67,7 +67,7 @@ class Static(Playground):
         return (child1_genotype_dna, parent_1.genotype.mask, child2_genotype_dna, parent_2.genotype.mask)
     
     
-    def train(self, x_train, y_train, max_generations, validation = None):
+    def train(self, max_generations, validation = None):
         logging.info(f'Starting evolution cycle with a maximum of {max_generations} generations')
         while self.population.generation_count < max_generations:
             mean_fitness = self.population.mean_fitness()
@@ -78,10 +78,11 @@ class Static(Playground):
             individual_ids = list(map(lambda i : i[0], distribution))
             probabilities = list(map(lambda i : i[1], distribution))
 
-            mating_pool = self.selection.select(self, individual_ids, probabilities)
+            mating_pool = self.selection.select(individual_ids, probabilities)
             offspring = self.__mate(mating_pool)
 
-            self.replacement.replace(offspring, self.population)
+            # Replacement step
+            self.replacement.replace(offspring, self.population, self.fitness)
             self.population.update(self.fitness)
         
         logging.info(f'Training ended with average_fitness: {self.population.mean_fitness()}')
@@ -89,7 +90,5 @@ class Static(Playground):
     
     
     def predict(self, x, depth = 0):
-        return 12.4
-
-
-
+        i = self.population.rank_by_fitness(depth)
+        return self.fitness.value(i, x)

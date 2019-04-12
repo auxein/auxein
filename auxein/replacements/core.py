@@ -13,12 +13,12 @@ class Replacement(object):
     def __init__(self, offspring_size):
         self.offspring_size = offspring_size
 
-    def replace(self, quantity, offspring, population, individuals_to_kill):
+    def replace(self, quantity, offspring, population, individuals_to_kill, fitness_function):
         for i in individuals_to_kill:
             population.kill(i)
 
         for child in np.random.choice(offspring, quantity, replace=False):
-            population.add(child)
+            population.add(child, fitness_function.fitness(child))
 
 
 class ReplaceWorst(Replacement):
@@ -26,7 +26,7 @@ class ReplaceWorst(Replacement):
     def __init__(self, offspring_size):
         super(ReplaceWorst, self).__init__(offspring_size = offspring_size)
         
-    def replace(self, offspring, population):
+    def replace(self, offspring, population, fitness_function):
         quantity = population.size() if self.offspring_size >= population.size() else min(self.offspring_size, len(offspring))
         individuals_to_kill = map(lambda item : item[0], population.rank_by_fitness(quantity, reverse=False))
-        super.replace(quantity, population, offspring, individuals_to_kill)
+        super().replace(quantity, offspring, population, individuals_to_kill, fitness_function)
