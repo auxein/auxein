@@ -90,5 +90,7 @@ class Static(Playground):
     
     
     def predict(self, x, depth = 0):
-        i = self.population.rank_by_fitness(depth)
+        id = self.population.rank_by_fitness(depth + 1)[0][0]
+        i = self.population.get(id).individual
+        print(i)
         return self.fitness.value(i, x)
