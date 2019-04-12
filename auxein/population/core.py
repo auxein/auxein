@@ -46,7 +46,7 @@ class Population(object):
 
 def build_population(dimension: int, initial_size: int, fitness_function):
     population = Population()
-    for i in range(0, initial_size):
+    for _ in range(0, initial_size):
         mask = np.repeat(np.random.normal(0, 1), dimension)
         dna = np.random.uniform(-1.0, 1.0, dimension)
         individual = build_individual(dna, mask)
