@@ -2,6 +2,7 @@ import pytest
 
 import numpy as np
 
+from auxein.fitness import Fitness
 from auxein.population.individual import build_individual
 from auxein.population import build_population, Population, Item
 
@@ -52,10 +53,17 @@ def test_add():
 
 
 def test_generation_count():
-    p = build_fully_specified_population()
-    assert p.generation_count == 0
-    p.update(lambda i: 1.0)
-    assert p.generation_count == 1
+    population = build_fully_specified_population()
+    assert population.generation_count == 0
+
+    class TestFitnessFunction(Fitness):
+            def get(self, individual):
+                    return 1.0
+
+    fitness_function = TestFitnessFunction()
+
+    population.update(fitness_function)
+    assert population.generation_count == 1
 
 
 def test_get_stats():
@@ -80,8 +88,14 @@ def test_update():
 
     population.kill('3adee626-de78-4f83-84f9-ebde4e8ee64d')
     population.add(build_individual([0.5, 0.5], [], '4f5db033-896a-4521-ab41-48b2177d7cd7'), 1.0)
+    
+    class TestFitnessFunction(Fitness):
+            def get(self, individual):
+                    return individual.genotype.dna[0] + individual.genotype.dna[1]
 
-    population.update(lambda individual : individual.genotype.dna[0] + individual.genotype.dna[1])
+    fitness_function = TestFitnessFunction()
+
+    population.update(fitness_function)
 
     assert population.get('e2ee1fd8-7bb9-4556-9435-cd012b0f5403')[1] == 0.4
     assert population.get('01f4eadc-e799-42d1-bc18-0fd85159bfb6')[1] == 0.5

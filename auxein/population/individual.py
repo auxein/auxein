@@ -31,8 +31,8 @@ class Individual(object):
     def genotype(self) -> Genotype:
         return self._genotype
 
-    def mutate(self, mutation_function: Callable[[Genotype], Genotype]) -> 'Individual':
-        return Individual(mutation_function(self._genotype))
+    def mutate(self, mutation_function) -> 'Individual':
+        return Individual(mutation_function.mutate(self._genotype))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Individual):

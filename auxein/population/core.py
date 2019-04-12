@@ -29,7 +29,7 @@ class Population(object):
     def update(self, fitness_function):
         for item in self.__pool.values():
             individual = item.individual
-            new_fitness = fitness_function(individual)
+            new_fitness = fitness_function.get(individual)
             self.__pool[str(individual.id)] = Item(
                 deepcopy(individual), new_fitness)
         self.generation_count += 1
