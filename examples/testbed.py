@@ -1,4 +1,5 @@
 from auxein.playgrounds import Static
+from auxein.fitness import LinearLeastSquares
 from auxein.mutations import Uniform
 from auxein.recombinations import SimpleArithmetic
 from auxein.parents.distributions import SigmaScaling
@@ -9,6 +10,7 @@ from auxein.replacements import ReplaceWorst
 population = None
 playground = Static(
     population = population,
+    fitness = LinearLeastSquares([], []),
     mutation = Uniform(lower_bound = -0.5, upper_bound = 0.5),
     distribution = SigmaScaling(),
     selection = StochasticUniversalSampling(offspring_size = 2),

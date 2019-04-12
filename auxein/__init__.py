@@ -10,3 +10,5 @@ from .parents import distributions
 from .parents import selections
 
 from .replacements import ReplaceWorst
+
+from .fitness import LinearLeastSquares

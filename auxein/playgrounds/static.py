@@ -8,8 +8,9 @@ from __future__ import print_function
 
 class Playground:
 
-    def __init__(self, population):
+    def __init__(self, population, fitness):
         self.population = population
+        self.fitness = fitness
     
 
     def train(self, x_train, y_train, max_generations, validations):
@@ -22,8 +23,8 @@ class Playground:
 
 class Static(Playground):
 
-    def __init__(self, population, mutation, distribution, selection, recombination, replacement):
-        super(Static, self).__init__(population=population)
+    def __init__(self, population, fitness, mutation, distribution, selection, recombination, replacement):
+        super(Static, self).__init__(population=population, fitness=fitness)
         self.mutation = mutation
         self.distribution = distribution
         self.selection = selection
