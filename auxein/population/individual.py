@@ -1,0 +1,51 @@
+"""Contains the base Individual class.
+"""
+from __future__ import absolute_import
+from typing import List, Optional, Callable
+from uuid import uuid4, UUID
+import time
+
+import numpy as np
+
+from .genotype import Genotype
+
+
+class Individual(object):
+
+    def __init__(self, genotype: Genotype, id: Optional[str] = None):
+        self._id = uuid4() if id is None else UUID(id)
+        self._born_at = time.time()
+        self._genotype = genotype
+
+    @property
+    def id(self) -> str:
+        return str(self._id)
+
+    def age(self) -> float:
+        return time.time() - self._born_at
+
+    def dimension(self) -> int:
+        return self._genotype.dimension
+
+    @property
+    def genotype(self) -> Genotype:
+        return self._genotype
+
+    def mutate(self, mutation_function: Callable[[Genotype], Genotype]) -> 'Individual':
+        return Individual(mutation_function(self._genotype))
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Individual):
+            return NotImplemented
+        return self._id == other._id
+
+    def __hash__(self) -> int:
+        return hash(self._id)
+
+    def __repr__(self) -> str:
+        return f'[{self._id}],({self._genotype})'
+
+
+def build_individual(dna: List[float], mask: List[float] = [], id: Optional[str] = None) -> Individual:
+    """Utility function to build an Individual."""
+    return Individual(Genotype(np.array(dna), np.array(mask)), id)
