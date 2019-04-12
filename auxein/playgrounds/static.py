@@ -22,12 +22,13 @@ class Playground:
 
 class Static(Playground):
 
-    def __init__(self, population, mutation, distribution, selection, recombination):
+    def __init__(self, population, mutation, distribution, selection, recombination, replacement):
         super(Static, self).__init__(population=population)
         self.mutation = mutation
         self.distribution = distribution
         self.selection = selection
         self.recombination = recombination
+        self.replacement = replacement
     
     
     def train(self, x_train, y_train, max_generations, validation):
