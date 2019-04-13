@@ -1,1 +1,2 @@
+from .core import cumulative_probability_distribution
 from .core import StochasticUniversalSampling

@@ -86,7 +86,6 @@ class Static(Playground):
             self.population.update(self.fitness)
         
         logging.info(f'Training ended with average_fitness: {self.population.mean_fitness()}')
-
     
     
     def predict(self, x, depth = 0):

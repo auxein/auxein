@@ -13,7 +13,9 @@ def cumulative_probability_distribution(index: int, probabilities) -> float:
 class Selection:
 
     def __init__(self, offspring_size):
-        self.parents_to_select = np.roots([1, -1, -offspring_size / 2])[0]
+        print('before resolving')
+        self.parents_to_select = np.around(np.roots([1, -1, -offspring_size / 2])[0])
+        print(f'parents to select cons: {self.parents_to_select}')
 
     def select(self, individual_ids, probabilities):
         return []
@@ -22,9 +24,9 @@ class StochasticUniversalSampling(Selection):
     
     def __init__(self, offspring_size):
         super(StochasticUniversalSampling, self).__init__(offspring_size = offspring_size)
-    
 
     def select(self, individual_ids, probabilities):
+        print(f'parents to select: {self.parents_to_select}')
         index = 0
         mating_pool = []
         r = np.random.uniform(0, 1 / self.parents_to_select)
