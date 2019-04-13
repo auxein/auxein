@@ -74,9 +74,16 @@ class Static(Playground):
     
     def train(self, max_generations, validation = None):
         logging.info(f'Starting evolution cycle with a maximum of {max_generations} generations')
+        stats = {
+            'generation': [],
+            'mean_fitness': []
+        }
         while self.population.generation_count < max_generations:
             mean_fitness = self.population.mean_fitness()
             logging.debug(f'{self.population.generation_count}/{max_generations} -- average_fitness: {mean_fitness}')
+
+            stats['generation'].append(self.population.generation_count)
+            stats['mean_fitness'].append(mean_fitness)
 
             # Mating step
             distribution = self.distribution.get(self.population)
@@ -91,6 +98,7 @@ class Static(Playground):
             self.population.update(self.fitness)
         
         logging.info(f'Training ended with average_fitness: {self.population.mean_fitness()}')
+        return stats
     
     
     def predict(self, x, depth = 0):
