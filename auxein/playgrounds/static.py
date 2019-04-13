@@ -92,3 +92,7 @@ class Static(Playground):
         id = self.population.rank_by_fitness(depth + 1)[0][0]
         i = self.population.get(id).individual
         return self.fitness.value(i, x)
+    
+    def get_most_performant(self, depth=0):
+        id = self.population.rank_by_fitness(depth + 1)[0][0]
+        return self.population.get(id).individual

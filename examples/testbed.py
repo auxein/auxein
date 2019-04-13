@@ -1,4 +1,4 @@
-from auxein.population import build_individual, build_population
+from auxein.population import build_population
 from auxein.playgrounds import Static
 from auxein.fitness import LinearLeastSquares
 from auxein.mutations import SelfAdaptiveSingleStep
