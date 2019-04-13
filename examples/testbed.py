@@ -1,7 +1,7 @@
 from auxein.population import build_individual, build_population
 from auxein.playgrounds import Static
 from auxein.fitness import LinearLeastSquares
-from auxein.mutations import Uniform
+from auxein.mutations import SelfAdaptiveSingleStep
 from auxein.recombinations import SimpleArithmetic
 from auxein.parents.distributions import SigmaScaling
 from auxein.parents.selections import StochasticUniversalSampling
@@ -15,23 +15,19 @@ x = np.arange(size)
 delta = np.random.uniform(-5,5, size=(size,))
 y = .4*x + 3 + delta
 
-print(x)
-print(y)
-
 fitness_function = LinearLeastSquares(x.reshape(size, 1), y)
-population = build_population(2, 10, fitness_function)
+population = build_population(2, 100, fitness_function)
 playground = Static(
     population = population,
     fitness = fitness_function,
-    mutation = Uniform(lower_bound = -0.5, upper_bound = 0.5),
+    mutation = SelfAdaptiveSingleStep(0.05),
     distribution = SigmaScaling(),
     selection = StochasticUniversalSampling(offspring_size = 2),
     recombination = SimpleArithmetic(alpha = 0.5),
     replacement = ReplaceWorst(offspring_size = 2)
 )
-playground.train(2)
+playground.train(10)
 print(playground.predict(0))
-
-# playground.train([], [], max_generations=200, validation=([], []))
-# y_pred = playground.predict([])
-# print(y_pred)
+print(playground.predict(10))
+print(playground.predict(50))
+print(playground.predict(99))
