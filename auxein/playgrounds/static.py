@@ -66,6 +66,11 @@ class Static(Playground):
         )
         return (child1_genotype_dna, parent_1.genotype.mask, child2_genotype_dna, parent_2.genotype.mask)
     
+
+    def __get_nth_top_performant(self, depth = 0):
+        id = self.population.rank_by_fitness(depth + 1)[depth][0]
+        return self.population.get(id).individual
+    
     
     def train(self, max_generations, validation = None):
         logging.info(f'Starting evolution cycle with a maximum of {max_generations} generations')
@@ -89,10 +94,8 @@ class Static(Playground):
     
     
     def predict(self, x, depth = 0):
-        id = self.population.rank_by_fitness(depth + 1)[0][0]
-        i = self.population.get(id).individual
+        i = self.__get_nth_top_performant(depth)
         return self.fitness.value(i, x)
     
     def get_most_performant(self, depth=0):
-        id = self.population.rank_by_fitness(depth + 1)[0][0]
-        return self.population.get(id).individual
+        return self.__get_nth_top_performant(depth)
