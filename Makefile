@@ -3,8 +3,14 @@
 .DEFAULT: help
 
 help:
+	@echo "make setup"
+	@echo "     Setting up all the dependencies."
 	@echo "make clean"
 	@echo "     Clean up result of build."
+	@echo "make codestyle"
+	@echo "     Run code style check."
+	@echo "make test"
+	@echo "     Run unit tests."
 	@echo "make build"
 	@echo "     Build and package auxein."
 	@echo "make release"
@@ -12,13 +18,29 @@ help:
 	@echo "make publish"
 	@echo "     Publish Auxein on PyPi."
 
+setup:
+	@echo "Setting up the environment."
+	pip install -e .[tests]
+
 clean:
 	@echo "Cleaning Auxein."
 	python setup.py clean --all
 	rm -fr *.egg-info
 	rm -fr dist
 
-build: clean
+test:
+	@echo "Running unit tests."
+	python -m pytest --cov=auxein tests/
+
+typecheck:
+	@echo "Running type check."
+	python -m mypy --strict --config-file=mypy.ini auxein/
+
+codestyle:
+	@echo "Running code style check."
+	python -m flake8
+
+build: clean codestyle typecheck test
 	@echo "Build Auxein."
 	python setup.py sdist bdist_wheel
 
