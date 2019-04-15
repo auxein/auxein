@@ -9,6 +9,8 @@ help:
 	@echo "     Clean up result of build."
 	@echo "make codestyle"
 	@echo "     Run code style check."
+	@echo "make typecheck"
+	@echo "     Run type check."
 	@echo "make test"
 	@echo "     Run unit tests."
 	@echo "make build"

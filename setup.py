@@ -15,9 +15,7 @@ setup(name='Auxein',
       download_url='https://github.com/auxein/auxein/releases',
       license='Apache 2',
       install_requires=['numpy>=1.15.4'],
-      extras_require={
-            'tests': ['pytest', 'pytest-cov']
-            },
+      extras_require={'tests': ['pytest', 'pytest-cov']},
       python_requires='>=3.6',
       packages=find_packages()
-)
+      )

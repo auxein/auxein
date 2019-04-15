@@ -4,24 +4,29 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+from abc import ABC, abstractmethod
+
 
 import numpy as np
+
 
 def cumulative_probability_distribution(index: int, probabilities) -> float:
     return sum(probabilities[:index + 1])
 
-class Selection:
+
+class Selection(ABC):
 
     def __init__(self, offspring_size):
         self.parents_to_select = np.around(np.roots([1, -1, -offspring_size / 2])[0])
 
+    @abstractmethod
     def select(self, individual_ids, probabilities):
-        return []
+        pass
 
 class StochasticUniversalSampling(Selection):
-    
+
     def __init__(self, offspring_size):
-        super(StochasticUniversalSampling, self).__init__(offspring_size = offspring_size)
+        super(StochasticUniversalSampling, self).__init__(offspring_size=offspring_size)
 
     def select(self, individual_ids, probabilities):
         index = 0
