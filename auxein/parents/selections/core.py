@@ -5,33 +5,33 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 from abc import ABC, abstractmethod
-
+from typing import List
 
 import numpy as np
 
 
-def cumulative_probability_distribution(index: int, probabilities) -> float:
+def cumulative_probability_distribution(index: int, probabilities: List[float]) -> float:
     return sum(probabilities[:index + 1])
 
 
 class Selection(ABC):
 
-    def __init__(self, offspring_size):
+    def __init__(self, offspring_size: int) -> None:
         self.parents_to_select = np.around(np.roots([1, -1, -offspring_size / 2])[0])
 
     @abstractmethod
-    def select(self, individual_ids, probabilities):
+    def select(self, individual_ids: List[str], probabilities: List[float]) -> List[str]:
         pass
 
 
 class StochasticUniversalSampling(Selection):
 
-    def __init__(self, offspring_size):
+    def __init__(self, offspring_size: int) -> None:
         super().__init__(offspring_size=offspring_size)
 
-    def select(self, individual_ids, probabilities):
+    def select(self, individual_ids: List[str], probabilities: List[float]) -> List[str]:
         index = 0
-        mating_pool = []
+        mating_pool: List[str] = []
         r = np.random.uniform(0, 1 / self.parents_to_select)
         while len(mating_pool) < self.parents_to_select:
             while r <= cumulative_probability_distribution(index, probabilities):

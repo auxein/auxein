@@ -6,35 +6,38 @@ from __future__ import division
 from __future__ import print_function
 from abc import ABC, abstractmethod
 
+import numpy as np
+
 from .utils import linear_fit, least_squares
+from auxein.population import Individual
 
 
 class Fitness(ABC):
 
     @abstractmethod
-    def fitness(self, individual):
+    def fitness(self, individual: Individual) -> float:
         pass
 
     @abstractmethod
-    def value(self, individual, x):
+    def value(self, individual: Individual, x: np.ndarray) -> float:
         pass
 
 
 class LinearLeastSquares(Fitness):
 
-    def __init__(self, xs, y):
+    def __init__(self, xs: np.ndarray, y: np.ndarray) -> None:
         super().__init__()
         assert xs.shape == (y.shape[0], xs.shape[1]), 'length of xs must be equal to length of y'
         self.xs = xs
         self.y = y
 
-    def fitness(self, individual):
+    def fitness(self, individual: Individual) -> float:
         dna = individual.genotype.dna
         coeff = dna[:dna.size - 1]
         e = dna[dna.size - 1]
         return -1 * least_squares(self.xs, self.y, coeff, e)
 
-    def value(self, individual, x):
+    def value(self, individual: Individual, x: np.ndarray) -> float:
         dna = individual.genotype.dna
         coeff = dna[:dna.size - 1]
         e = dna[dna.size - 1]

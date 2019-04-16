@@ -1,18 +1,19 @@
 """Contains the base Individual class.
 """
 from __future__ import absolute_import
-from typing import List, Optional, Callable
+from typing import List, Optional
 from uuid import uuid4, UUID
 import time
 
 import numpy as np
 
-from .genotype import Genotype
+from auxein.mutations import Mutation
+from auxein.population.genotype import Genotype
 
 
-class Individual(object):
+class Individual:
 
-    def __init__(self, genotype: Genotype, id: Optional[str] = None):
+    def __init__(self, genotype: Genotype, id: Optional[str] = None) -> None:
         self._id = uuid4() if id is None else UUID(id)
         self._born_at = time.time()
         self._genotype = genotype
@@ -31,12 +32,12 @@ class Individual(object):
     def genotype(self) -> Genotype:
         return self._genotype
 
-    def mutate(self, mutation_function) -> 'Individual':
+    def mutate(self, mutation_function: Mutation) -> 'Individual':
         return Individual(mutation_function.mutate(self._genotype))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Individual):
-            return NotImplemented
+            return False
         return self._id == other._id
 
     def __hash__(self) -> int:

@@ -5,37 +5,56 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 from abc import ABC, abstractmethod
+from typing import Dict, Any, List, Tuple
 
 import logging
 from itertools import permutations
 
-from auxein.population.individual import build_individual
+import numpy as np
+
+from auxein.fitness import Fitness
+from auxein.population.individual import build_individual, Individual
+from auxein.population import Population
+from auxein.mutations import Mutation
+from auxein.recombinations import Recombination
+from auxein.parents.distributions import Distribution
+from auxein.parents.selections import Selection
+from auxein.replacements import Replacement
 
 logging.basicConfig(level=logging.DEBUG)
 
 
 class Playground(ABC):
 
-    def __init__(self, population, fitness):
+    def __init__(self, population: Population, fitness: Fitness) -> None:
         self.population = population
         self.fitness = fitness
 
     @abstractmethod
-    def train(self, max_generations, validation):
+    def train(self, max_generations: int) -> Dict[str, Any]:
         pass
 
     @abstractmethod
-    def predict(self, x):
+    def predict(self, x: np.ndarray) -> float:
         pass
 
-    def __get_nth_top_performant(self, depth=0):
+    def _get_nth_top_performant(self, depth: int=0) -> Individual:
         id = self.population.rank_by_fitness(depth + 1)[depth][0]
         return self.population.get(id).individual
 
 
 class Static(Playground):
 
-    def __init__(self, population, fitness, mutation, distribution, selection, recombination, replacement):
+    def __init__(
+        self,
+        population: Population,
+        fitness: Fitness,
+        mutation: Mutation,
+        distribution: Distribution,
+        selection: Selection,
+        recombination: Recombination,
+        replacement: Replacement
+    ) -> None:
         super().__init__(population=population, fitness=fitness)
         self.mutation = mutation
         self.distribution = distribution
@@ -43,7 +62,7 @@ class Static(Playground):
         self.recombination = recombination
         self.replacement = replacement
 
-    def __mate(self, mating_pool):
+    def __mate(self, mating_pool: List[str]) -> List[Individual]:
         couples = permutations(mating_pool, 2)
         offspring = []
         for (parent1_id, parent2_id) in couples:
@@ -57,7 +76,7 @@ class Static(Playground):
 
         return offspring
 
-    def __breed(self, parent1_id, parent2_id):
+    def __breed(self, parent1_id: str, parent2_id: str) -> Tuple[List[float], List[float], List[float], List[float]]:
         parent_1 = self.population.get(parent1_id).individual.mutate(self.mutation)
         parent_2 = self.population.get(parent2_id).individual.mutate(self.mutation)
 
@@ -70,9 +89,9 @@ class Static(Playground):
         )
         return (child1_genotype_dna, parent_1.genotype.mask, child2_genotype_dna, parent_2.genotype.mask)
 
-    def train(self, max_generations, validation=None):
+    def train(self, max_generations: int) -> Dict[str, Any]:
         logging.info(f'Starting evolution cycle with a maximum of {max_generations} generations')
-        stats = {
+        stats: Dict[str, Any] = {
             'generation': [],
             'mean_fitness': []
         }
@@ -88,7 +107,7 @@ class Static(Playground):
             individual_ids = list(map(lambda i : i[0], distribution))
             probabilities = list(map(lambda i : i[1], distribution))
 
-            mating_pool = self.selection.select(individual_ids, probabilities)
+            mating_pool: List[str] = self.selection.select(individual_ids, probabilities)
             offspring = self.__mate(mating_pool)
 
             # Replacement step
@@ -98,9 +117,9 @@ class Static(Playground):
         logging.info(f'Training ended with average_fitness: {self.population.mean_fitness()}')
         return stats
 
-    def predict(self, x, depth=0):
-        i = super().__get_nth_top_performant(depth)
+    def predict(self, x: np.ndarray, depth: int=0) -> float:
+        i = super()._get_nth_top_performant(depth)
         return self.fitness.value(i, x)
 
-    def get_most_performant(self, depth=0):
-        return super().__get_nth_top_performant(depth)
+    def get_most_performant(self, depth: int=0) -> Individual:
+        return super()._get_nth_top_performant(depth)

@@ -14,17 +14,17 @@ import numpy as np
 class Mutation(ABC):
 
     @abstractmethod
-    def mutate(self, genotype):
+    def mutate(self, genotype: Genotype) -> Genotype:
         pass
 
 
 class Uniform(Mutation):
 
-    def __init__(self, lower_bound, upper_bound):
+    def __init__(self, lower_bound: float, upper_bound: float) -> None:
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
 
-    def mutate(self, genotype):
+    def mutate(self, genotype: Genotype) -> Genotype:
         gene_index = np.random.randint(
             0,
             genotype.dimension
@@ -36,20 +36,20 @@ class Uniform(Mutation):
 
 class FixedVariance(Mutation):
 
-    def __init__(self, sigma):
+    def __init__(self, sigma: float) -> None:
         self.sigma = sigma
 
-    def mutate(self, genotype):
+    def mutate(self, genotype: Genotype) -> Genotype:
         move = np.vectorize(lambda g: g + np.random.normal(0, self.sigma))
         return Genotype(move(genotype.dna), genotype.mask)
 
 
 class SelfAdaptiveSingleStep(Mutation):
 
-    def __init__(self, tau):
+    def __init__(self, tau: float) -> None:
         self.tau = tau
 
-    def mutate(self, genotype):
+    def mutate(self, genotype: Genotype) -> Genotype:
         multiplier = np.exp(np.random.normal(0, self.tau))
         move_mask = np.vectorize(lambda g: g * multiplier)
         updated_mask = move_mask(genotype.mask)

@@ -11,6 +11,10 @@ def test_build_population_dimension_and_size():
         class TestFitnessFunction(Fitness):
                 def fitness(self, individual):
                         return 1.0
+
+                def value(self, individual, x):
+                        pass
+
         pop = build_population(3, 10, TestFitnessFunction())
         assert pop.size() == 10
         for item in pop.pool:

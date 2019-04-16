@@ -8,7 +8,7 @@ import numpy as np
 
 class Genotype:
 
-    def __init__(self, dna: np.ndarray, mask: np.ndarray):
+    def __init__(self, dna: np.ndarray, mask: np.ndarray) -> None:
         self._dimension = len(dna)
         self._dna = dna.copy()
         self._mask = mask.copy()
@@ -26,4 +26,5 @@ class Genotype:
         return self._mask.copy()
 
     def __repr__(self) -> str:
-        return f'({self._dna}),({self._mask})'
+        repr: str = f'({self._dna}),({self._mask})'
+        return repr
