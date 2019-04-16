@@ -6,7 +6,7 @@ from __future__ import absolute_import
 import numpy as np
 
 
-class Genotype(object):
+class Genotype:
 
     def __init__(self, dna: np.ndarray, mask: np.ndarray):
         self._dimension = len(dna)

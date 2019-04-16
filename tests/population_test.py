@@ -62,6 +62,9 @@ def test_generation_count():
             def fitness(self, individual):
                     return 1.0
 
+            def value(self, individual, x):
+                    pass
+
     fitness_function = TestFitnessFunction()
 
     population.update(fitness_function)
@@ -90,10 +93,13 @@ def test_update():
 
     population.kill('3adee626-de78-4f83-84f9-ebde4e8ee64d')
     population.add(build_individual([0.5, 0.5], [], '4f5db033-896a-4521-ab41-48b2177d7cd7'), 1.0)
-    
+
     class TestFitnessFunction(Fitness):
             def fitness(self, individual):
                     return individual.genotype.dna[0] + individual.genotype.dna[1]
+
+            def value(self, individual, x):
+                    pass
 
     fitness_function = TestFitnessFunction()
 

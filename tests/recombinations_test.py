@@ -1,5 +1,3 @@
-import pytest
-
 import numpy as np
 
 from auxein.recombinations import SimpleArithmetic

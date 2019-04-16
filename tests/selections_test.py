@@ -1,8 +1,7 @@
-import pytest
-
 from auxein.parents.selections import cumulative_probability_distribution as cpd, StochasticUniversalSampling
 
 import numpy as np
+
 
 def test_cumulative_probability_distribution_with_known_values():
     probabilities = [0.15, 0.15, 0.25, 0.1, 0.35]

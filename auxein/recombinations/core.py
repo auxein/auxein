@@ -4,12 +4,14 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+from abc import ABC, abstractmethod
 
 import numpy as np
 
 
-class Recombination:
+class Recombination(ABC):
 
+    @abstractmethod
     def recombine(self, parent1_dna, parent2_dna):
         return ([], [])
 
@@ -17,16 +19,14 @@ class Recombination:
 class SimpleArithmetic(Recombination):
 
     def __init__(self, alpha):
-        super(SimpleArithmetic, self).__init__()
+        super().__init__()
         self.alpha = alpha
-    
 
     def __linear_combination(self, arr1, arr2):
         result = []
         for (i1, i2) in zip(arr1, arr2):
             result.append(self.alpha * i2 + (1 - self.alpha) * i1)
         return result
-    
 
     def recombine(self, parent1_dna, parent2_dna):
         cross_over_point = np.random.randint(0, len(parent1_dna))

@@ -7,6 +7,7 @@ from __future__ import print_function
 
 import numpy as np
 
+
 def linear_fit(coeff: np.array, e: float, x: np.array) -> float:
     return np.dot(x, coeff) + e
 

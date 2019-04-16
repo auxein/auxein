@@ -11,7 +11,7 @@ from .individual import Individual, build_individual
 Item = NamedTuple('Item', [('individual', Individual), ('fitness', float)])
 
 
-class Population(object):
+class Population:
 
     def __init__(self):
         self.__pool = {}
@@ -49,7 +49,7 @@ class Population(object):
         for item in self.__pool.values():
             total_fitness += item.fitness
         return total_fitness
-    
+
     @property
     def generation_count(self) -> int:
         return self.__generation_count
@@ -58,13 +58,13 @@ class Population(object):
         sorted_values = sorted(
             self.pool, key=lambda i: i.fitness, reverse=reverse)
         return list(map(lambda item: (item.individual.id, item.fitness), sorted_values))[:k]
-    
+
     def __get_ages(self):
         return list(map(lambda item : item.individual.age(), list(self.__pool.values())))
 
     def __get_fitness(self):
         return list(map(lambda item : item.fitness, list(self.__pool.values())))
-        
+
     def mean_age(self):
         pools_ages = self.__get_ages()
         value: float = np.mean(pools_ages)
@@ -102,7 +102,7 @@ class Population(object):
         pools_fitness_values = self.__get_fitness()
         value: float = np.std(pools_fitness_values)
         return value
-    
+
     def get_stats(self):
         return {
             'generation_count': self.__generation_count,

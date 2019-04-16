@@ -4,11 +4,12 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+from abc import ABC
 
 import numpy as np
 
 
-class Replacement(object):
+class Replacement(ABC):
 
     def __init__(self, offspring_size):
         self.offspring_size = offspring_size
@@ -22,10 +23,10 @@ class Replacement(object):
 
 
 class ReplaceWorst(Replacement):
-    
+
     def __init__(self, offspring_size):
-        super(ReplaceWorst, self).__init__(offspring_size = offspring_size)
-        
+        super().__init__(offspring_size=offspring_size)
+
     def replace(self, offspring, population, fitness_function):
         quantity = population.size() if self.offspring_size >= population.size() else min(self.offspring_size, len(offspring))
         individuals_to_kill = map(lambda item : item[0], population.rank_by_fitness(quantity, reverse=False))

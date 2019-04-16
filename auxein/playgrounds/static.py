@@ -4,6 +4,7 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+from abc import ABC, abstractmethod
 
 import logging
 from itertools import permutations
@@ -12,32 +13,36 @@ from auxein.population.individual import build_individual
 
 logging.basicConfig(level=logging.DEBUG)
 
-class Playground:
+
+class Playground(ABC):
 
     def __init__(self, population, fitness):
         self.population = population
         self.fitness = fitness
-    
 
+    @abstractmethod
     def train(self, max_generations, validation):
         pass
 
-    
+    @abstractmethod
     def predict(self, x):
-        return x
+        pass
+
+    def __get_nth_top_performant(self, depth=0):
+        id = self.population.rank_by_fitness(depth + 1)[depth][0]
+        return self.population.get(id).individual
 
 
 class Static(Playground):
 
     def __init__(self, population, fitness, mutation, distribution, selection, recombination, replacement):
-        super(Static, self).__init__(population=population, fitness=fitness)
+        super().__init__(population=population, fitness=fitness)
         self.mutation = mutation
         self.distribution = distribution
         self.selection = selection
         self.recombination = recombination
         self.replacement = replacement
-    
-    
+
     def __mate(self, mating_pool):
         couples = permutations(mating_pool, 2)
         offspring = []
@@ -52,11 +57,10 @@ class Static(Playground):
 
         return offspring
 
-
     def __breed(self, parent1_id, parent2_id):
         parent_1 = self.population.get(parent1_id).individual.mutate(self.mutation)
         parent_2 = self.population.get(parent2_id).individual.mutate(self.mutation)
-        
+
         parent1_genotype_dna = parent_1.genotype.dna
         parent2_genotype_dna = parent_2.genotype.dna
 
@@ -65,14 +69,8 @@ class Static(Playground):
             parent2_genotype_dna
         )
         return (child1_genotype_dna, parent_1.genotype.mask, child2_genotype_dna, parent_2.genotype.mask)
-    
 
-    def __get_nth_top_performant(self, depth = 0):
-        id = self.population.rank_by_fitness(depth + 1)[depth][0]
-        return self.population.get(id).individual
-    
-    
-    def train(self, max_generations, validation = None):
+    def train(self, max_generations, validation=None):
         logging.info(f'Starting evolution cycle with a maximum of {max_generations} generations')
         stats = {
             'generation': [],
@@ -96,14 +94,13 @@ class Static(Playground):
             # Replacement step
             self.replacement.replace(offspring, self.population, self.fitness)
             self.population.update(self.fitness)
-        
+
         logging.info(f'Training ended with average_fitness: {self.population.mean_fitness()}')
         return stats
-    
-    
-    def predict(self, x, depth = 0):
-        i = self.__get_nth_top_performant(depth)
+
+    def predict(self, x, depth=0):
+        i = super().__get_nth_top_performant(depth)
         return self.fitness.value(i, x)
-    
+
     def get_most_performant(self, depth=0):
-        return self.__get_nth_top_performant(depth)
+        return super().__get_nth_top_performant(depth)

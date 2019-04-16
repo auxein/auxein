@@ -23,10 +23,11 @@ class Selection(ABC):
     def select(self, individual_ids, probabilities):
         pass
 
+
 class StochasticUniversalSampling(Selection):
 
     def __init__(self, offspring_size):
-        super(StochasticUniversalSampling, self).__init__(offspring_size=offspring_size)
+        super().__init__(offspring_size=offspring_size)
 
     def select(self, individual_ids, probabilities):
         index = 0

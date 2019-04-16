@@ -1,9 +1,8 @@
-import pytest
-
 import numpy as np
 
 from auxein.population import build_individual
 from auxein.fitness import LinearLeastSquares
+
 
 def test_linear_least_squares():
     xs = np.array([[23], [26], [30], [34], [43], [48], [52], [57], [58]])

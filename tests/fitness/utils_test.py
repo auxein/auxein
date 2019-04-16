@@ -1,8 +1,7 @@
-import pytest
-
 import numpy as np
 
 from auxein.fitness.utils import linear_fit, residual, least_squares
+
 
 def test_linear_fit_2d():
     a = np.random.uniform(-10, 10)
