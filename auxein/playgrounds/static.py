@@ -38,7 +38,7 @@ class Playground(ABC):
     def predict(self, x: np.ndarray) -> float:
         pass
 
-    def _get_nth_top_performant(self, depth: int=0) -> Individual:
+    def _get_nth_top_performant(self, depth: int = 0) -> Individual:
         id = self.population.rank_by_fitness(depth + 1)[depth][0]
         return self.population.get(id).individual
 
@@ -117,9 +117,9 @@ class Static(Playground):
         logging.info(f'Training ended with average_fitness: {self.population.mean_fitness()}')
         return stats
 
-    def predict(self, x: np.ndarray, depth: int=0) -> float:
+    def predict(self, x: np.ndarray, depth: int = 0) -> float:
         i = super()._get_nth_top_performant(depth)
         return self.fitness.value(i, x)
 
-    def get_most_performant(self, depth: int=0) -> Individual:
+    def get_most_performant(self, depth: int = 0) -> Individual:
         return super()._get_nth_top_performant(depth)

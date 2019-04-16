@@ -8,25 +8,25 @@ from auxein.population import build_population, Population, Item
 
 
 def test_build_population_dimension_and_size():
-        class TestFitnessFunction(Fitness):
-                def fitness(self, individual):
-                        return 1.0
+    class TestFitnessFunction(Fitness):
+        def fitness(self, individual):
+            return 1.0
 
-                def value(self, individual, x):
-                        pass
+        def value(self, individual, x):
+            pass
 
-        pop = build_population(3, 10, TestFitnessFunction())
-        assert pop.size() == 10
-        for item in pop.pool:
-                assert item[0].dimension() == 3
+    pop = build_population(3, 10, TestFitnessFunction())
+    assert pop.size() == 10
+    for item in pop.pool:
+        assert item[0].dimension() == 3
 
 
 def init_population(dimension, size):
-        population = Population()
-        for _ in range(0, size):
-                dna = np.random.uniform(-1, 1, dimension)
-                population.add(build_individual(dna, []), 1.0)
-        return population
+    population = Population()
+    for _ in range(0, size):
+        dna = np.random.uniform(-1, 1, dimension)
+        population.add(build_individual(dna, []), 1.0)
+    return population
 
 
 def build_fully_specified_population():
@@ -63,11 +63,11 @@ def test_generation_count():
     assert population.generation_count == 0
 
     class TestFitnessFunction(Fitness):
-            def fitness(self, individual):
-                    return 1.0
+        def fitness(self, individual):
+            return 1.0
 
-            def value(self, individual, x):
-                    pass
+        def value(self, individual, x):
+            pass
 
     fitness_function = TestFitnessFunction()
 
@@ -99,11 +99,11 @@ def test_update():
     population.add(build_individual([0.5, 0.5], [], '4f5db033-896a-4521-ab41-48b2177d7cd7'), 1.0)
 
     class TestFitnessFunction(Fitness):
-            def fitness(self, individual):
-                    return individual.genotype.dna[0] + individual.genotype.dna[1]
+        def fitness(self, individual):
+            return individual.genotype.dna[0] + individual.genotype.dna[1]
 
-            def value(self, individual, x):
-                    pass
+        def value(self, individual, x):
+            pass
 
     fitness_function = TestFitnessFunction()
 
