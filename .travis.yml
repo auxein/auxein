@@ -1,6 +1,8 @@
 language: python
 os: linux
 dist: xenial
+python:
+  - "3.7"
 
 branches:
   only:
@@ -8,6 +10,7 @@ branches:
 
 install:
     - pip install flake8
+    - pip install mypy
 
 script:
     - make build
