@@ -29,6 +29,7 @@ clean:
 	python setup.py clean --all
 	rm -fr *.egg-info
 	rm -fr dist
+	find . -name '__pycache__' | xargs rm -fr
 
 test:
 	@echo "Running unit tests."
