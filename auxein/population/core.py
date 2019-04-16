@@ -57,7 +57,7 @@ class Population:
 
     def rank_by_fitness(self, k: Optional[int] = None, reverse: bool = True) -> List[Tuple[str, float]]:
         sorted_values = sorted(self.pool, key=lambda i: i.fitness, reverse=reverse)
-        return list(map(lambda item : (item.individual.id, item.fitness), sorted_values))[:k]  # type: ignore
+        return list(map(lambda item : (item.individual.id, item.fitness), sorted_values))[:k]
 
     def __get_ages(self) -> List[float]:
         return list(map(lambda item : item.individual.age(), list(self.__pool.values())))

@@ -10,7 +10,7 @@ branches:
 
 install:
     - pip install flake8==3.7.7
-    - pip install mypy
+    - pip install mypy==0.700
     - make setup
 
 script:

@@ -13,7 +13,7 @@ import numpy as np
 class Recombination(ABC):
 
     @abstractmethod
-    def recombine(self, parent1_dna: np.ndarray, parent2_dna: np.ndarray) -> Tuple:
+    def recombine(self, parent1_dna: np.ndarray, parent2_dna: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         pass
 
 
@@ -29,7 +29,7 @@ class SimpleArithmetic(Recombination):
             result.append(self.alpha * i2 + (1 - self.alpha) * i1)
         return result
 
-    def recombine(self, parent1_dna: np.ndarray, parent2_dna: np.ndarray) -> Tuple:
+    def recombine(self, parent1_dna: np.ndarray, parent2_dna: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         cross_over_point = np.random.randint(0, len(parent1_dna))
         child1_dna = np.concatenate(
             (
