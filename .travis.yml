@@ -1,0 +1,10 @@
+language: python
+os: linux
+dist: xenial
+
+branches:
+  only:
+  - master
+
+script:
+    - make build
