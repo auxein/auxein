@@ -3,7 +3,7 @@ import pytest
 import numpy as np
 
 from auxein.fitness import Fitness
-from auxein.population.individual import build_individual
+from auxein.population.individual import build_individual, Genotype
 from auxein.population import build_population, Population, Item
 
 
@@ -137,3 +137,20 @@ def test_rank_by_fitness_asc():
     assert rank[0] == Item('3adee626-de78-4f83-84f9-ebde4e8ee64d', 0.2)
     assert rank[1] == Item('e2ee1fd8-7bb9-4556-9435-cd012b0f5403', 0.4)
     assert rank[2] == Item('01f4eadc-e799-42d1-bc18-0fd85159bfb6', 0.5)
+
+
+dna = np.array([0.1, 0.5, 0.95])
+mask = np.array([0.5, 0.5, 0.5])
+
+
+def test_genotypedimension():
+    genotype = Genotype(dna, mask)
+    assert genotype.dimension == 3
+    assert len(genotype.mask) == 3
+
+
+def test_genotype_dna():
+    genotype = Genotype(dna, mask)
+    assert genotype.dna[0] == 0.1
+    assert genotype.dna[1] == 0.5
+    assert genotype.dna[2] == 0.95
