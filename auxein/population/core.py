@@ -118,7 +118,7 @@ class Population:
         }
 
 
-def build_population(dimension: int, initial_size: int, fitness_function: Fitness) -> Population:
+def build_fixed_dimension_population(dimension: int, initial_size: int, fitness_function: Fitness) -> Population:
     population = Population()
     for _ in range(0, initial_size):
         mask = np.repeat(np.random.normal(0, 1), dimension)

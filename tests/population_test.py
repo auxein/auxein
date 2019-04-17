@@ -4,7 +4,7 @@ import numpy as np
 
 from auxein.fitness import Fitness
 from auxein.population.individual import build_individual, Genotype
-from auxein.population import build_population, Population, Item
+from auxein.population import build_fixed_dimension_population, Population, Item
 
 
 def test_build_population_dimension_and_size():
@@ -15,7 +15,7 @@ def test_build_population_dimension_and_size():
         def value(self, individual, x):
             pass
 
-    pop = build_population(3, 10, TestFitnessFunction())
+    pop = build_fixed_dimension_population(3, 10, TestFitnessFunction())
     assert pop.size() == 10
     for item in pop.pool:
         assert item[0].dimension() == 3

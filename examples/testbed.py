@@ -1,4 +1,4 @@
-from auxein.population import build_population
+from auxein.population import build_fixed_dimension_population
 from auxein.playgrounds import Static
 from auxein.fitness import LinearLeastSquares
 from auxein.mutations import SelfAdaptiveSingleStep
@@ -16,7 +16,7 @@ delta = np.random.uniform(-5, 5, size=(size, ))
 y = .4 * x + 3 + delta
 
 fitness_function = LinearLeastSquares(x.reshape(size, 1), y)
-population = build_population(2, 100, fitness_function)
+population = build_fixed_dimension_population(2, 100, fitness_function)
 playground = Static(
     population=population,
     fitness=fitness_function,
