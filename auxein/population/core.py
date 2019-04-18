@@ -117,12 +117,14 @@ class Population:
             'std_fitness': self.std_fitness()
         }
 
+
 def __add_to_population(population: Population, dimension: int, fitness_function: Fitness):
     assert dimension > 0, 'dimension must be strictly positive'
     mask = np.repeat(np.random.normal(0, 1), dimension)
     dna = np.random.uniform(-1.0, 1.0, dimension)
     individual = build_individual(dna, mask)
     population.add(individual, fitness_function.fitness(individual))
+
 
 def build_fixed_dimension_population(dimension: int, initial_size: int, fitness_function: Fitness) -> Population:
     population = Population()

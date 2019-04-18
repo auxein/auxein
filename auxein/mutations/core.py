@@ -16,14 +16,13 @@ class Mutation(ABC):
     def __init__(self, extend_probability: float = 0.0):
         assert 0 <= extend_probability <= 1, 'extend_probability must be within [0, 1]'
         self.extend_probability = extend_probability
-    
+
     def _extend(self, genotype: Genotype, new_gene: float):
         if np.random.uniform(0, 1) <= self.extend_probability:
             dna = genotype.dna
             mask = genotype.mask
             return Genotype(np.append(dna, new_gene), np.append(mask, np.random.normal(0, 1)))
         return genotype
-
 
     @abstractmethod
     def mutate(self, genotype: Genotype) -> Genotype:
@@ -33,7 +32,7 @@ class Mutation(ABC):
 class Uniform(Mutation):
 
     def __init__(self, lower_bound: float, upper_bound: float, extend_probability: float = 0.0) -> None:
-        super().__init__(extend_probability = extend_probability)
+        super().__init__(extend_probability=extend_probability)
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
 
@@ -51,7 +50,7 @@ class Uniform(Mutation):
 class FixedVariance(Mutation):
 
     def __init__(self, sigma: float, extend_probability: float = 0.0) -> None:
-        super().__init__(extend_probability = extend_probability)
+        super().__init__(extend_probability=extend_probability)
         self.sigma = sigma
 
     def mutate(self, genotype: Genotype) -> Genotype:
@@ -63,7 +62,7 @@ class FixedVariance(Mutation):
 class SelfAdaptiveSingleStep(Mutation):
 
     def __init__(self, tau: float, extend_probability: float = 0.0) -> None:
-        super().__init__(extend_probability = extend_probability)
+        super().__init__(extend_probability=extend_probability)
         self.tau = tau
 
     def mutate(self, genotype: Genotype) -> Genotype:

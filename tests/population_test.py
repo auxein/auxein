@@ -20,6 +20,7 @@ def test_build_population_dimension_and_size():
     for item in pop.pool:
         assert item[0].dimension() == 3
 
+
 def test_build_variable_dimension_population_dimension_and_size():
     class TestFitnessFunction(Fitness):
         def fitness(self, individual):
@@ -27,7 +28,7 @@ def test_build_variable_dimension_population_dimension_and_size():
 
         def value(self, individual, x):
             pass
-    
+
     pop = build_variable_dimension_population(10, TestFitnessFunction())
     assert pop.size() == 10
     for item in pop.pool:
