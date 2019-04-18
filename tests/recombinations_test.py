@@ -45,6 +45,5 @@ def test_simple_arithmetic_with_full_blending_with_uneven_dnas_right():
     dna2 = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     recombination = SimpleArithmetic(1, allow_uneven=True)
     (child1_dna, child2_dna) = recombination.recombine(dna1, dna2)
-    print(child1_dna, child2_dna)
 
     assert sum(child1_dna) + sum(child2_dna) == sum(dna2)
