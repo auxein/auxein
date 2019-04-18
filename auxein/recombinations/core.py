@@ -35,7 +35,7 @@ class SimpleArithmetic(Recombination):
     def recombine(self, parent1_dna: np.ndarray, parent2_dna: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         if not self.allow_uneven:
             assert len(parent1_dna) == len(parent2_dna), 'dna of parents must be of the same dimension'
-    
+
         cross_over_point = np.random.randint(0, min(len(parent1_dna), len(parent2_dna)))
         child1_dna = np.concatenate(
             (
