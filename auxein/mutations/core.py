@@ -17,7 +17,7 @@ class Mutation(ABC):
         assert 0 <= extend_probability <= 1, 'extend_probability must be within [0, 1]'
         self.extend_probability = extend_probability
 
-    def _extend(self, genotype: Genotype, new_gene: float):
+    def _extend(self, genotype: Genotype, new_gene: float) -> Genotype:
         if np.random.uniform(0, 1) <= self.extend_probability:
             dna = genotype.dna
             mask = genotype.mask

@@ -118,7 +118,7 @@ class Population:
         }
 
 
-def __add_to_population(population: Population, dimension: int, fitness_function: Fitness):
+def __add_to_population(population: Population, dimension: int, fitness_function: Fitness) -> None:
     assert dimension > 0, 'dimension must be strictly positive'
     mask = np.repeat(np.random.normal(0, 1), dimension)
     dna = np.random.uniform(-1.0, 1.0, dimension)
