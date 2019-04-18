@@ -34,7 +34,6 @@ def test_build_variable_dimension_population_dimension_and_size():
         assert 0 < item[0].dimension() < 10
 
 
-
 def init_population(dimension, size):
     population = Population()
     for _ in range(0, size):
