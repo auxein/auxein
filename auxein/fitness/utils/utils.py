@@ -8,8 +8,8 @@ from __future__ import print_function
 import numpy as np
 
 
-def linear_fit(coeff: np.array, e: float, x: np.array) -> float:
-    value: float = np.dot(x, coeff) + e
+def linear_fit(coeff: np.ndarray, b: float, x: np.array) -> float:
+    value: float = np.dot(x, coeff) + b
     return value
 
 
