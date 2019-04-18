@@ -33,12 +33,8 @@ class LinearLeastSquares(Fitness):
 
     def fitness(self, individual: Individual) -> float:
         dna = individual.genotype.dna
-        coeff = dna[:dna.size - 1]
-        e = dna[dna.size - 1]
-        return -1 * least_squares(self.xs, self.y, coeff, e)
+        return -1 * least_squares(self.xs, self.y, dna)
 
     def value(self, individual: Individual, x: np.ndarray) -> float:
         dna = individual.genotype.dna
-        coeff = dna[:dna.size - 1]
-        e = dna[dna.size - 1]
-        return linear_fit(coeff, e, x)
+        return linear_fit(dna, x)
