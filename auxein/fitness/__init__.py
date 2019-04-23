@@ -2,3 +2,4 @@
 
 from .core import Fitness
 from .core import MultipleLinearRegression
+from .core import SimplePolynomialRegression
