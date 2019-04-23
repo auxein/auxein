@@ -5,6 +5,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from typing import Callable
+
 import numpy as np
 
 
@@ -14,11 +16,19 @@ def linear_fit(coeff: np.ndarray, x: np.ndarray) -> float:
     value: float = np.dot(x, coeff[:coeff.size - 1]) + coeff[coeff.size - 1]
     return value
 
-def residual(coeff: np.array, x: np.array, yi: float) -> float:
-    return (yi - linear_fit(coeff, x))**2
 
-def least_squares(xs: np.ndarray, y: np.ndarray, coeff: np.ndarray) -> float:
+def polynomial_fit(coeff: np.ndarray, x: np.ndarray) -> float:
+    assert type(coeff) and x.size == 1, 'Only simple polynomial fit is supported.'
+    result: float = np.polyval(coeff, x[0])
+    return result
+
+
+def residual(coeff: np.array, x: np.array, yi: float, fit: Callable[[np.ndarray, np.ndarray], float]=linear_fit) -> float:
+    return (yi - fit(coeff, x))**2
+
+
+def least_squares(xs: np.ndarray, y: np.ndarray, coeff: np.ndarray, fit: Callable[[np.ndarray, np.ndarray], float]=linear_fit) -> float:
     lsm: float = 0
     for x, yi in zip(xs, y):
-        lsm = lsm + residual(coeff, x, yi)
+        lsm = lsm + residual(coeff, x, yi, fit)
     return lsm

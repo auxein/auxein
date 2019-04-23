@@ -1,7 +1,7 @@
 import numpy as np
 
 from auxein.population import build_individual
-from auxein.fitness import LinearLeastSquares
+from auxein.fitness import MultipleLinearRegression
 
 
 def test_linear_least_squares():
@@ -9,5 +9,5 @@ def test_linear_least_squares():
     y = np.array([651, 762, 856, 1063, 1190, 1298, 1421, 1440, 1518])
 
     i = build_individual([23.42, 167.68], [])
-    fitness_function = LinearLeastSquares(xs, y)
+    fitness_function = MultipleLinearRegression(xs, y)
     assert np.isclose(fitness_function.fitness(i), -18804)

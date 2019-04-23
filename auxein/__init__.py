@@ -15,4 +15,4 @@ from .parents import selections
 
 from .replacements import ReplaceWorst
 
-from .fitness import LinearLeastSquares
+from .fitness import MultipleLinearRegression

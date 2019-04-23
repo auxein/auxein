@@ -1,6 +1,6 @@
 from auxein.population import build_fixed_dimension_population
 from auxein.playgrounds import Static
-from auxein.fitness import LinearLeastSquares
+from auxein.fitness import MultipleLinearRegression
 from auxein.mutations import SelfAdaptiveSingleStep
 from auxein.recombinations import SimpleArithmetic
 from auxein.parents.distributions import SigmaScaling
@@ -15,7 +15,7 @@ x = np.arange(size)
 delta = np.random.uniform(-5, 5, size=(size, ))
 y = .4 * x + 3 + delta
 
-fitness_function = LinearLeastSquares(x.reshape(size, 1), y)
+fitness_function = MultipleLinearRegression(x.reshape(size, 1), y)
 population = build_fixed_dimension_population(2, 100, fitness_function)
 playground = Static(
     population=population,

@@ -1,6 +1,6 @@
 import numpy as np
 
-from auxein.fitness.utils import linear_fit, residual, least_squares
+from auxein.fitness.utils import linear_fit, polynomial_fit, residual, least_squares
 
 
 def test_linear_fit_2d():
@@ -45,3 +45,16 @@ def test_least_squares_3d():
 
     assert least_squares(xs, y, np.array([0.0, 1.0, 0.0])) == 461.0
     assert least_squares(xs, y, np.array([1.0, 0.0, 0.0])) == 481.0
+
+
+def test_polynomial_fit():
+    # 0.5*x^3 - 2.5*x^2 + x + 2
+    value = polynomial_fit([0.5, -2.5, 1, 2], np.array([1.5]))
+    print('value', value)
+
+
+def test_residual_with_polynomial_fit():
+    # 0.5*x^3 - 2.5*x^2 + x + 2
+    assert residual(np.array([0.5, -2.5, 1, 2]), np.array([1.5]), -1.4375, fit=polynomial_fit) == 1.0
+    assert residual(np.array([0.5, -2.5, 1, 2]), np.array([1.5]), -0.4375, fit=polynomial_fit) == 0.0
+    assert residual(np.array([0.5, -2.5, 1, 2]), np.array([1.5]), 0.5625, fit=polynomial_fit) == 1.0
