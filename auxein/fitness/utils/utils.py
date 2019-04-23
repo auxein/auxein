@@ -23,11 +23,11 @@ def polynomial_fit(coeff: np.ndarray, x: np.ndarray) -> float:
     return result
 
 
-def residual(coeff: np.array, x: np.array, yi: float, fit: Callable[[np.ndarray, np.ndarray], float]=linear_fit) -> float:
+def residual(coeff: np.array, x: np.array, yi: float, fit: Callable[[np.ndarray, np.ndarray], float] = linear_fit) -> float:
     return (yi - fit(coeff, x))**2
 
 
-def least_squares(xs: np.ndarray, y: np.ndarray, coeff: np.ndarray, fit: Callable[[np.ndarray, np.ndarray], float]=linear_fit) -> float:
+def least_squares(xs: np.ndarray, y: np.ndarray, coeff: np.ndarray, fit: Callable[[np.ndarray, np.ndarray], float] = linear_fit) -> float:
     lsm: float = 0
     for x, yi in zip(xs, y):
         lsm = lsm + residual(coeff, x, yi, fit)
