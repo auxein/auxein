@@ -50,7 +50,7 @@ def test_least_squares_3d():
 def test_polynomial_fit():
     # 0.5*x^3 - 2.5*x^2 + x + 2
     value = polynomial_fit([0.5, -2.5, 1, 2], np.array([1.5]))
-    print('value', value)
+    assert np.isclose(value, -0.4375)
 
 
 def test_residual_with_polynomial_fit():
