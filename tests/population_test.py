@@ -129,6 +129,16 @@ def test_update():
     assert population.total_fitness() == 1.9
 
 
+def test_get_full_genome():
+    population = Population()
+    population.add(build_individual([0.1, 0.1], [], '3adee626-de78-4f83-84f9-ebde4e8ee64d'), 0.2)
+    population.add(build_individual([0.1, 0.3], [], 'e2ee1fd8-7bb9-4556-9435-cd012b0f5403'), 0.4)
+    population.add(build_individual([0.3, 0.2], [], '01f4eadc-e799-42d1-bc18-0fd85159bfb6'), 0.5)
+    genome = population.get_full_genome()
+
+    np.array_equal(genome, [[0.1, 0.1], [0.1, 0.3], [0.3, 0.2]])
+
+
 def test_rank_by_fitness_desc():
     population = Population()
     population.add(build_individual([0.1, 0.1], [], '3adee626-de78-4f83-84f9-ebde4e8ee64d'), 0.2)

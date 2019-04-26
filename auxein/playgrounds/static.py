@@ -92,15 +92,15 @@ class Static(Playground):
     def train(self, max_generations: int) -> Dict[str, Any]:
         logging.info(f'Starting evolution cycle with a maximum of {max_generations} generations')
         stats: Dict[str, Any] = {
-            'generation': [],
-            'mean_fitness': []
+            'generations': {}
         }
         while self.population.generation_count < max_generations:
             mean_fitness = self.population.mean_fitness()
             logging.debug(f'{self.population.generation_count}/{max_generations} -- average_fitness: {mean_fitness}')
 
-            stats['generation'].append(self.population.generation_count)
-            stats['mean_fitness'].append(mean_fitness)
+            stats['generations'][self.population.generation_count] = {}
+            stats['generations'][self.population.generation_count]['mean_fitness'] = mean_fitness
+            stats['generations'][self.population.generation_count]['genome'] = self.population.get_full_genome()
 
             # Mating step
             distribution = self.distribution.get(self.population)

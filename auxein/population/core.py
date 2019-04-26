@@ -117,6 +117,12 @@ class Population:
             'std_fitness': self.std_fitness()
         }
 
+    def get_full_genome(self) -> np.ndarray:
+        genome = []
+        for item in self.pool:
+            genome.append(item.individual.genotype.dna)
+        return np.array(genome)
+
 
 def __add_to_population(population: Population, dimension: int, fitness_function: Fitness) -> None:
     assert dimension > 0, 'dimension must be strictly positive'
