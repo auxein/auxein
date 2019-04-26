@@ -1,6 +1,6 @@
 import numpy as np
 
-from auxein.population import build_individual, Individual
+from auxein.population import build_individual
 from auxein.fitness import Fitness, MultipleLinearRegression
 
 
@@ -20,7 +20,7 @@ def test_fitness_landscape():
 
         def value(self, individual, x):
             pass
-    
+
     fitness_function = TestFitnessFunction()
     landscape = fitness_function.get_landscape([[-1, 1], [0, 1]], 3)
     assert len(landscape) == 9

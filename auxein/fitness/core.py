@@ -22,13 +22,13 @@ class Fitness(ABC):
     def value(self, individual: Individual, x: np.ndarray) -> float:
         pass
 
-    def __compute_f(self, A, B):
+    def __compute_f(self, A: np.ndarray, B: np.ndarray) -> np.ndarray:
         F = []
         for v in np.transpose([np.tile(A, len(B)), np.repeat(B, len(A))]):
             F.append([v[0], v[1], self.fitness(build_individual([v[0], v[1]]))])
         return np.array(F)
 
-    def get_landscape(self, specs, size):
+    def get_landscape(self, specs: np.ndarray, size: int) -> np.ndarray:
         assert len(specs) == 2, 'Only 2-dimensional fitness landscapes are supported at the moment.'
         A = np.linspace(specs[0][0], specs[0][1], size)
         B = np.linspace(specs[1][0], specs[1][1], size)
