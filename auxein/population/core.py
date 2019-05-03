@@ -132,14 +132,14 @@ def __add_to_population(population: Population, dimension: int, fitness_function
     population.add(individual, fitness_function.fitness(individual))
 
 
-def build_fixed_dimension_population(dimension: int, initial_size: int, fitness_function: Fitness, dna_interval: Tuple[float, float] = [-1.0, 1.0]) -> Population:
+def build_fixed_dimension_population(dimension: int, initial_size: int, fitness_function: Fitness, dna_interval: Tuple[float, float] = (-1.0, 1.0)) -> Population:
     population = Population()
     for _ in range(0, initial_size):
         __add_to_population(population, dimension, fitness_function, dna_interval)
     return population
 
 
-def build_variable_dimension_population(initial_size: int, fitness_function: Fitness, dna_interval: Tuple[float, float] = [-1.0, 1.0]) -> Population:
+def build_variable_dimension_population(initial_size: int, fitness_function: Fitness, dna_interval: Tuple[float, float] = (-1.0, 1.0)) -> Population:
     population = Population()
     for _ in range(0, initial_size):
         dimension = np.random.randint(1, 10)
