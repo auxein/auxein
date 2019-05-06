@@ -37,9 +37,13 @@ class RandomDnaBuilder(DnaBuilder):
 
 class UniformRandomDnaBuilder(RandomDnaBuilder):
 
-    def __init__(self, dimension, interval: Tuple[float, float] = (-1.0, 1.0))):
+    def __init__(self, dimension, interval: Tuple[float, float] = (-1.0, 1.0)):
         super().__init__(distribution = 'uniform', dimension = dimension)
         self.interval = interval
     
     def get(self) -> np.ndarray:
-        return np.random.uniform(interval[0], interval[1], super().get_dimension())
+        return np.random.uniform(
+            self.interval[0],
+            self.interval[1],
+            super().get_dimension()
+        )
