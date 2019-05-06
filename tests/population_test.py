@@ -2,6 +2,7 @@ import pytest
 
 import numpy as np
 
+from auxein.population.dna_builders import UniformRandomDnaBuilder
 from auxein.fitness import Fitness
 from auxein.population.individual import build_individual, Genotype
 from auxein.population import build_fixed_dimension_population, build_variable_dimension_population, Population, Item
@@ -15,7 +16,7 @@ def test_build_population_dimension_and_size():
         def value(self, individual, x):
             pass
 
-    pop = build_fixed_dimension_population(3, 10, TestFitnessFunction())
+    pop = build_fixed_dimension_population(3, 10, TestFitnessFunction(), UniformRandomDnaBuilder())
     assert pop.size() == 10
     for item in pop.pool:
         assert item[0].dimension() == 3
@@ -29,7 +30,7 @@ def test_build_variable_dimension_population_dimension_and_size():
         def value(self, individual, x):
             pass
 
-    pop = build_variable_dimension_population(10, TestFitnessFunction())
+    pop = build_variable_dimension_population(10, TestFitnessFunction(), UniformRandomDnaBuilder())
     assert pop.size() == 10
     for item in pop.pool:
         assert 0 < item[0].dimension() < 10

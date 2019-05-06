@@ -6,6 +6,7 @@ from typing import Tuple, NamedTuple, Iterable, Dict, Any, Optional, List
 
 import numpy as np
 
+from auxein.population.dna_builders import DnaBuilder, UniformRandomDnaBuilder
 from auxein.population.individual import Individual, build_individual
 from auxein.fitness.core import Fitness
 
@@ -124,24 +125,23 @@ class Population:
         return np.array(genome)
 
 
-def __add_to_population(population: Population, dimension: int, fitness_function: Fitness, dna_interval: Tuple[float, float]) -> None:
-    assert dimension > 0, 'dimension must be strictly positive'
+def __add_to_population(population: Population, dimension: int, fitness_function: Fitness, dna_builder: DnaBuilder) -> None:
     mask = np.repeat(np.random.normal(0, 1), dimension)
-    dna = np.random.uniform(dna_interval[0], dna_interval[1], dimension)
+    dna = dna_builder.get(dimension)
     individual = build_individual(dna, mask)
     population.add(individual, fitness_function.fitness(individual))
 
 
-def build_fixed_dimension_population(dimension: int, initial_size: int, fitness_function: Fitness, dna_interval: Tuple[float, float] = (-1.0, 1.0)) -> Population:
+def build_fixed_dimension_population(dimension: int, initial_size: int, fitness_function: Fitness, dna_builder: DnaBuilder) -> Population:
     population = Population()
     for _ in range(0, initial_size):
-        __add_to_population(population, dimension, fitness_function, dna_interval)
+        __add_to_population(population, dimension, fitness_function, dna_builder)
     return population
 
 
-def build_variable_dimension_population(initial_size: int, fitness_function: Fitness, dna_interval: Tuple[float, float] = (-1.0, 1.0)) -> Population:
+def build_variable_dimension_population(initial_size: int, fitness_function: Fitness, dna_builder: DnaBuilder) -> Population:
     population = Population()
     for _ in range(0, initial_size):
         dimension = np.random.randint(1, 10)
-        __add_to_population(population, dimension, fitness_function, dna_interval)
+        __add_to_population(population, dimension, fitness_function, dna_builder)
     return population
