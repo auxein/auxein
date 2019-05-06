@@ -41,3 +41,20 @@ class UniformRandomDnaBuilder(RandomDnaBuilder):
             self.interval[1],
             dimension
         )
+
+
+class NormalRandomDnaBuilder(RandomDnaBuilder):
+
+    def __init__(self, mean: float = 0.0, std: float = 1.0):
+        super().__init__(distribution = 'normal')
+        self.mean = mean
+        self.std = std
+    
+    def get(self, dimension: int) -> np.ndarray:
+        assert dimension > 0, 'dna dimension must be strictly positive.'
+        return np.random.normal(
+            self.mean,
+            self.std,
+            dimension
+        )
+   
