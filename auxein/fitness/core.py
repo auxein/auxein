@@ -6,6 +6,8 @@ from __future__ import division
 from __future__ import print_function
 from abc import ABC, abstractmethod
 
+from typing import Callable
+
 import numpy as np
 
 from .utils import linear_fit, polynomial_fit, least_squares
@@ -67,3 +69,16 @@ class SimplePolynomialRegression(Fitness):
     def value(self, individual: Individual, x: np.ndarray) -> float:
         dna = individual.genotype.dna
         return polynomial_fit(dna, x)
+
+class GlobalMinumum(Fitness):
+    
+    def __init__(self, kernel: Callable[[np.ndarray], float]) -> None:
+        super().__init__()
+        self.kernel = kernel
+    
+    def fitness(self, individual: Individual) -> float:
+        dna = individual.genotype.dna
+        return -1 * self.kernel(dna)
+    
+    def value(self, individual: Individual, x: np.ndarray) -> float:
+        return self.kernel(x)
