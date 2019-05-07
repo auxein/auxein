@@ -4,6 +4,7 @@ Auxein is a working in progress Python framework for evolutionary algorithms.
 
 <p align="center">
   <img src="https://github.com/auxein/auxein/blob/master/docs/landscape.gif?raw=true" alt="Fitness landscape"/>
+<p align="center">Evolution of a population while finding a <a href="https://en.wikipedia.org/wiki/Rastrigin_function">Rastrigin</a> global minimum.</p>
 </p>
 
 ## Welcome to Auxein!
@@ -18,6 +19,7 @@ The main idea behind Auxein is to provide an efficient tool to *experiment with 
 
 At the moment, the documentation is a bunch of Jupyter notebooks and some Python Docstrings:
 
+- [Finding Rastrigin function global minimum with Auxein](https://github.com/auxein/auxein/blob/master/notebooks/rastrigin.ipynb)
 - [How to use Auxein to solve a simple linear regression problem](https://github.com/auxein/auxein/blob/master/notebooks/linear_regression.ipynb)
 
 ------------------
