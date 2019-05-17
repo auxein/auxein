@@ -19,8 +19,8 @@ The main idea behind Auxein is to provide an efficient tool to *experiment with 
 
 At the moment, the documentation is a bunch of Jupyter notebooks and some Python Docstrings:
 
-- [Finding Rastrigin function global minimum with Auxein](https://github.com/auxein/auxein/blob/master/notebooks/rastrigin.ipynb)
-- [How to use Auxein to solve a simple linear regression problem](https://github.com/auxein/auxein/blob/master/notebooks/linear_regression.ipynb)
+- [Finding Rastrigin function global minimum with Auxein](https://nbviewer.jupyter.org/github/auxein/auxein/blob/master/notebooks/rastrigin.ipynb)
+- [How to use Auxein to solve a simple linear regression problem](https://nbviewer.jupyter.org/github/auxein/auxein/blob/master/notebooks/linear_regression.ipynb)
 
 ------------------
 
