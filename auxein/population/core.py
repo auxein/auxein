@@ -6,7 +6,7 @@ from typing import Tuple, NamedTuple, Iterable, Dict, Any, Optional, List
 
 import numpy as np
 
-from auxein.population.dna_builders import DnaBuilder, UniformRandomDnaBuilder
+from auxein.population.dna_builders import DnaBuilder
 from auxein.population.individual import Individual, build_individual
 from auxein.fitness.core import Fitness
 
