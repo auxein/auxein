@@ -20,7 +20,7 @@ class RandomDnaBuilder(DnaBuilder):
         super().__init__()
         self._distribution = distribution
 
-    def get_distribution(self):
+    def get_distribution(self) -> str:
         return self._distribution
 
     @abstractmethod
