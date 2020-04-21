@@ -30,6 +30,7 @@ def test_fitness_landscape():
     expected = [[-1, 0, -1], [0, 0, 0], [1, 0, 1], [-1, 0.5, -0.5], [0, 0.5, 0.5], [1, 0.5, 1.5], [-1, 1, 0], [0, 1, 1], [1, 1, 2]]
     assert np.array_equal(landscape, expected)
 
+
 # Classic example with students and time spent studying
 # from: https://en.wikipedia.org/wiki/Logistic_regression
 def test_maximum_log_likelihood_value():

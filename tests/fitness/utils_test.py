@@ -66,7 +66,8 @@ def test_logit_2d():
     coeff = np.array([2])
     # ~ 0.668
     value = logit(alpha, coeff, x)
-    assert np.isclose(value, 0.66818, atol = 0.00001)
+    assert np.isclose(value, 0.66818, atol=0.00001)
+
 
 def test_logit_3d():
     x = np.array([0.1, 1.5])
@@ -74,7 +75,4 @@ def test_logit_3d():
     coeff = np.array([2, -0.5])
     # ~ 0.48750
     value = logit(alpha, coeff, x)
-    assert np.isclose(value, 0.48750, atol = 0.00001)
-    
-
-    
+    assert np.isclose(value, 0.48750, atol=0.00001)
