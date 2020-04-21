@@ -10,7 +10,7 @@ from typing import Callable
 
 import numpy as np
 
-from .utils import linear_fit, polynomial_fit, least_squares
+from .utils import linear_fit, polynomial_fit, least_squares, logit
 from auxein.population import build_individual, Individual
 
 
@@ -83,3 +83,32 @@ class GlobalMinumum(Fitness):
 
     def value(self, individual: Individual, x: np.ndarray) -> float:
         return self.kernel(x)
+
+class MaximumLogLikelyhood(Fitness):
+
+    def __init__(self, xs: np.ndarray, y: np.ndarray) -> None:
+        super().__init__()
+        assert xs.shape == (y.shape[0], xs.shape[1]), 'length of xs must be equal to length of y'
+        classes = np.unique(y)
+        assert len(classes) == 2 and np.array_equal(classes, np.array([0, 1])), 'y-values can only belong [0, 1] discrete interval'
+        self.xs = xs
+        self.y = y
+
+    def fitness(self, individual: Individual) -> float:
+        [alpha, coeff] = individual.genotype.dna
+        y_positive = np.where(self.y == 1)
+        l = 0
+        for x in self.xs[y_positive]:
+            l += np.log(logit(x, alpha, coeff))
+        y_negative = np.where(self.y == 0)
+        for x in self.xs[y_negative]:
+            l += np.log(1 - logit(x, alpha, coeff))
+        return l
+    
+    def value(self, individual: Individual, x: np.ndarray) -> float:
+        pass
+
+
+        
+
+        
