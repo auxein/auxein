@@ -99,10 +99,10 @@ class MaximumLogLikelyhood(Fitness):
         y_positive = np.where(self.y == 1)
         l = 0
         for x in self.xs[y_positive]:
-            l += np.log(logit(x, alpha, coeff))
+            l += np.log(logit(alpha, coeff, x))
         y_negative = np.where(self.y == 0)
         for x in self.xs[y_negative]:
-            l += np.log(1 - logit(x, alpha, coeff))
+            l += np.log(1 - logit(alpha, coeff, x))
         return l
     
     def value(self, individual: Individual, x: np.ndarray) -> float:

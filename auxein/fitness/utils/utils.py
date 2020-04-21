@@ -33,7 +33,7 @@ def least_squares(xs: np.ndarray, y: np.ndarray, coeff: np.ndarray, fit: Callabl
         lsm = lsm + residual(coeff, x, yi, fit)
     return lsm
 
-def logit(x: np.ndarray, alpha: float, coeff: np.ndarray) -> float:
+def logit(alpha: float, coeff: np.ndarray, x: np.ndarray) -> float:
     kernel = 0
     for (bi, xi) in zip(coeff, x):
         kernel += bi*xi
