@@ -84,7 +84,7 @@ class GlobalMinumum(Fitness):
     def value(self, individual: Individual, x: np.ndarray) -> float:
         return self.kernel(x)
 
-class MaximumLogLikelyhood(Fitness):
+class MaximumLogLikelihood(Fitness):
 
     def __init__(self, xs: np.ndarray, y: np.ndarray) -> None:
         super().__init__()
@@ -95,7 +95,7 @@ class MaximumLogLikelyhood(Fitness):
         self.y = y
 
     def fitness(self, individual: Individual) -> float:
-        [alpha, coeff] = individual.genotype.dna
+        alpha, *coeff = individual.genotype.dna
         y_positive = np.where(self.y == 1)
         l = 0
         for x in self.xs[y_positive]:
@@ -106,7 +106,8 @@ class MaximumLogLikelyhood(Fitness):
         return l
     
     def value(self, individual: Individual, x: np.ndarray) -> float:
-        pass
+        alpha, *coeff = individual.genotype.dna
+        return logit(alpha, coeff, x)
 
 
         
