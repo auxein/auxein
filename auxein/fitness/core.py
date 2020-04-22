@@ -102,10 +102,10 @@ class MaximumLogLikelihood(Fitness):
         y_positive = np.where(self.y == 1)
         log_likelihood = 0
         for x in self.xs[y_positive]:
-            log_likelihood += np.log(logit(alpha, coeff, x))
+            log_likelihood += logit(alpha, coeff, x)
         y_negative = np.where(self.y == 0)
         for x in self.xs[y_negative]:
-            log_likelihood += np.log(1 - logit(alpha, coeff, x))
+            log_likelihood += 1 - logit(alpha, coeff, x)
         # return log_likelihood if np.isneginf(log_likelihood) is False else -sys.float_info.min
         return log_likelihood
 

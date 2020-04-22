@@ -38,6 +38,5 @@ def logit(alpha: float, coeff: np.ndarray, x: np.ndarray) -> float:
     kernel: float = 0
     for (bi, xi) in zip(coeff, x):
         kernel += bi * xi
-    print('alpha and kernel', alpha, kernel)
     result: float = 1 / (1 + np.exp(-(alpha + kernel)))
     return result
