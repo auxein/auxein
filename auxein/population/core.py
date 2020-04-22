@@ -87,6 +87,8 @@ class Population:
         return value
 
     def mean_fitness(self) -> float:
+        print(self.total_fitness())
+        print(self.size())
         return self.total_fitness() / self.size()
 
     def max_fitness(self) -> float:
