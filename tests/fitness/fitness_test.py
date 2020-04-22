@@ -1,7 +1,7 @@
 import numpy as np
 
 from auxein.population import build_individual
-from auxein.fitness import Fitness, MultipleLinearRegression, MaximumLogLikelihood
+from auxein.fitness import Fitness, MultipleLinearRegression, MaximumLikelihood
 
 
 def test_multiple_linear_regression():
@@ -33,10 +33,10 @@ def test_fitness_landscape():
 
 # Classic example with students and time spent studying
 # from: https://en.wikipedia.org/wiki/Logistic_regression
-def test_maximum_log_likelihood_value():
+def test_maximum_likelihood_value():
     xs = np.array([[0.50], [0.75], [1.00], [1.25], [1.50], [1.75], [1.75], [2.00], [2.25], [2.50], [2.75], [3.00], [3.25], [3.50], [4.00], [4.25], [4.50], [4.75], [5.00], [5.50]])
     y = np.array([0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1])
-    fitness_function = MaximumLogLikelihood(xs, y)
+    fitness_function = MaximumLikelihood(xs, y)
 
     i = build_individual([-4.0777, 1.5046])
 
