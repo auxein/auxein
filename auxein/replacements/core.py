@@ -21,10 +21,24 @@ class Replacement(ABC):
     def _replace(self, quantity: int, offspring: List[Individual], population: Population, individuals_to_kill: List[str], fitness_function: Fitness) -> None:
         for i in individuals_to_kill:
             population.kill(i)
+        
+        children: List[Individual] = []
+        while len(offspring) > 0 or len(children) < quantity:
+            candidate_child = np.random.choice(offspring, 1)
+            fitness = fitness_function.fitness(candidate_child)
+            attempts = 0
+            while np.isneginf(fitness) is True:
+                if attempts >= len(offspring):
+                    raise Exception('There are no more child with a meaningful fitness value.')
+                candidate_child = np.random.choice(offspring, 1)
+                fitness = fitness_function.fitness(candidate_child)
+                attempts += 1
 
-        children: List[Individual] = np.random.choice(offspring, quantity, replace=False)
-        for child in children:
-            population.add(child, fitness_function.fitness(child))
+            children.append(candidate_child)
+            offspring.remove(candidate_child)
+        # children: List[Individual] = np.random.choice(offspring, quantity, replace=False)
+        # for child in children:
+        #     population.add(child, fitness_function.fitness(child))
 
     @abstractmethod
     def replace(self, offspring: List[Individual], population: Population, fitness_function: Fitness) -> None:
