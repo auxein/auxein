@@ -1,6 +1,6 @@
 import numpy as np
 
-from auxein.fitness.utils import linear_fit, polynomial_fit, residual, least_squares
+from auxein.fitness.utils import linear_fit, polynomial_fit, residual, least_squares, logit
 
 
 def test_linear_fit_2d():
@@ -58,3 +58,21 @@ def test_residual_with_polynomial_fit():
     assert residual(np.array([0.5, -2.5, 1, 2]), np.array([1.5]), -1.4375, fit=polynomial_fit) == 1.0
     assert residual(np.array([0.5, -2.5, 1, 2]), np.array([1.5]), -0.4375, fit=polynomial_fit) == 0.0
     assert residual(np.array([0.5, -2.5, 1, 2]), np.array([1.5]), 0.5625, fit=polynomial_fit) == 1.0
+
+
+def test_logit_2d():
+    x = np.array([0.1])
+    alpha = 0.5
+    coeff = np.array([2])
+    # ~ 0.668
+    value = logit(alpha, coeff, x)
+    assert np.isclose(value, 0.66818, atol=0.00001)
+
+
+def test_logit_3d():
+    x = np.array([0.1, 1.5])
+    alpha = 0.5
+    coeff = np.array([2, -0.5])
+    # ~ 0.48750
+    value = logit(alpha, coeff, x)
+    assert np.isclose(value, 0.48750, atol=0.00001)

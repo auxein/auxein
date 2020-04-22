@@ -53,7 +53,8 @@ class Static(Playground):
         distribution: Distribution,
         selection: Selection,
         recombination: Recombination,
-        replacement: Replacement
+        replacement: Replacement,
+        verbose: bool = False
     ) -> None:
         super().__init__(population=population, fitness=fitness)
         self.mutation = mutation
@@ -61,6 +62,7 @@ class Static(Playground):
         self.selection = selection
         self.recombination = recombination
         self.replacement = replacement
+        self.verbose = verbose
 
     def __mate(self, mating_pool: List[str]) -> List[Individual]:
         couples = permutations(mating_pool, 2)
@@ -94,9 +96,12 @@ class Static(Playground):
         stats: Dict[str, Any] = {
             'generations': {}
         }
-        while self.population.generation_count < max_generations:
+        while self.population.generation_count < max_generations and self.population.size() > self.selection.offspring_size:
             mean_fitness = self.population.mean_fitness()
-            logging.debug(f'{self.population.generation_count}/{max_generations} -- average_fitness: {mean_fitness}')
+            if self.verbose is True:
+                logging.debug(f'Running generation: {self.population.generation_count}/{max_generations} -- average_fitness: {mean_fitness} -- population size: {self.population.size()}')
+            else:
+                logging.debug(f'Running generation: {self.population.generation_count}/{max_generations}')
 
             stats['generations'][self.population.generation_count] = {}
             stats['generations'][self.population.generation_count]['mean_fitness'] = mean_fitness
@@ -114,7 +119,7 @@ class Static(Playground):
             self.replacement.replace(offspring, self.population, self.fitness)
             self.population.update(self.fitness)
 
-        logging.info(f'Training ended with average_fitness: {self.population.mean_fitness()}')
+        logging.info(f'Training ended with average_fitness: {self.population.mean_fitness()} and a population size of {self.population.size()}')
         return stats
 
     def predict(self, x: np.ndarray, depth: int = 0) -> float:

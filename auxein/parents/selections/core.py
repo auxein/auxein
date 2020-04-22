@@ -17,7 +17,12 @@ def cumulative_probability_distribution(index: int, probabilities: List[float]) 
 class Selection(ABC):
 
     def __init__(self, offspring_size: int) -> None:
+        self.__offspring_size = offspring_size
         self.parents_to_select = np.around(np.roots([1, -1, -offspring_size / 2])[0])
+
+    @property
+    def offspring_size(self) -> int:
+        return self.__offspring_size
 
     @abstractmethod
     def select(self, individual_ids: List[str], probabilities: List[float]) -> List[str]:

@@ -125,11 +125,16 @@ class Population:
         return np.array(genome)
 
 
-def __add_to_population(population: Population, dimension: int, fitness_function: Fitness, dna_builder: DnaBuilder) -> None:
+def build_random_individual(dimension: int, dna_builder: DnaBuilder) -> Individual:
     mask = np.repeat(np.random.normal(0, 1), dimension)
     dna = dna_builder.get(dimension)
-    individual = build_individual(dna, mask)
-    population.add(individual, fitness_function.fitness(individual))
+    return build_individual(dna, mask)
+
+
+def __add_to_population(population: Population, dimension: int, fitness_function: Fitness, dna_builder: DnaBuilder) -> None:
+    individual = build_random_individual(dimension, dna_builder)
+    fitness = fitness_function.fitness(individual)
+    population.add(individual, fitness)
 
 
 def build_fixed_dimension_population(dimension: int, initial_size: int, fitness_function: Fitness, dna_builder: DnaBuilder) -> Population:

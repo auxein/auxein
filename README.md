@@ -21,6 +21,7 @@ At the moment, the documentation is a bunch of Jupyter notebooks and some Python
 
 - [Finding Rastrigin function global minimum with Auxein](https://nbviewer.jupyter.org/github/auxein/auxein/blob/master/notebooks/rastrigin.ipynb)
 - [How to use Auxein to solve a simple linear regression problem](https://nbviewer.jupyter.org/github/auxein/auxein/blob/master/notebooks/linear_regression.ipynb)
+- [How to use Auxein to solve a simple logistic regression problem](https://nbviewer.jupyter.org/github/auxein/auxein/blob/master/notebooks/logistic_regression.ipynb)
 
 ------------------
 
