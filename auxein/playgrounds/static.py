@@ -94,7 +94,7 @@ class Static(Playground):
         stats: Dict[str, Any] = {
             'generations': {}
         }
-        while self.population.generation_count < max_generations and self.population.size() > 2:
+        while self.population.generation_count < max_generations and self.population.size() > self.selection.offspring_size:
             mean_fitness = self.population.mean_fitness()
             logging.debug(f'{self.population.generation_count}/{max_generations} -- average_fitness: {mean_fitness} -- population size: {self.population.size()}')
 
