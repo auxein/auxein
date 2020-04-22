@@ -4,8 +4,6 @@ from __future__ import absolute_import
 from copy import deepcopy
 from typing import Tuple, NamedTuple, Iterable, Dict, Any, Optional, List
 
-import sys
-
 import numpy as np
 
 from auxein.population.dna_builders import DnaBuilder
@@ -136,7 +134,7 @@ def build_random_individual(dimension: int, dna_builder: DnaBuilder) -> Individu
 def __add_to_population(population: Population, dimension: int, fitness_function: Fitness, dna_builder: DnaBuilder) -> None:
     individual = build_random_individual(dimension, dna_builder)
     fitness = fitness_function.fitness(individual)
-    population.add(individual, fitness if np.isneginf(fitness) is False else sys.float_info.min)
+    population.add(individual, fitness)
 
 
 def build_fixed_dimension_population(dimension: int, initial_size: int, fitness_function: Fitness, dna_builder: DnaBuilder) -> Population:

@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 
 from typing import Callable
 
+import sys
+
 import numpy as np
 
 from .utils import linear_fit, polynomial_fit, least_squares, logit
@@ -104,7 +106,7 @@ class MaximumLogLikelihood(Fitness):
         y_negative = np.where(self.y == 0)
         for x in self.xs[y_negative]:
             log_likelihood += np.log(1 - logit(alpha, coeff, x))
-        return log_likelihood
+        return log_likelihood if np.isneginf(log_likelihood) is False else -sys.float_info.min
 
     def value(self, individual: Individual, x: np.ndarray) -> float:
         alpha, *coeff = individual.genotype.dna
