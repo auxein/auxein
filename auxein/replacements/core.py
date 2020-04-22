@@ -24,18 +24,18 @@ class Replacement(ABC):
         
         children: List[Individual] = []
         while len(offspring) > 0 or len(children) < quantity:
-            candidate_child = np.random.choice(offspring, 1)
-            fitness = fitness_function.fitness(candidate_child)
+            [child] = np.random.choice(offspring, 1)
+            fitness = fitness_function.fitness(child)
             attempts = 0
             while np.isneginf(fitness) is True:
                 if attempts >= len(offspring):
                     raise Exception('There are no more child with a meaningful fitness value.')
-                candidate_child = np.random.choice(offspring, 1)
-                fitness = fitness_function.fitness(candidate_child)
+                child = np.random.choice(offspring, 1)
+                fitness = fitness_function.fitness(child)
                 attempts += 1
 
-            children.append(candidate_child)
-            offspring.remove(candidate_child)
+            children.append(child)
+            offspring.remove(child)
         # children: List[Individual] = np.random.choice(offspring, quantity, replace=False)
         # for child in children:
         #     population.add(child, fitness_function.fitness(child))
