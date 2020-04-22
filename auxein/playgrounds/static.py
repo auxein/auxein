@@ -96,7 +96,7 @@ class Static(Playground):
         }
         while self.population.generation_count < max_generations and self.population.size() > 2:
             mean_fitness = self.population.mean_fitness()
-            logging.debug(f'{self.population.generation_count}/{max_generations} -- average_fitness: {mean_fitness}')
+            logging.debug(f'{self.population.generation_count}/{max_generations} -- average_fitness: {mean_fitness} -- population size: {self.population.size()}')
 
             stats['generations'][self.population.generation_count] = {}
             stats['generations'][self.population.generation_count]['mean_fitness'] = mean_fitness
