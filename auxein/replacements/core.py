@@ -19,8 +19,11 @@ class Replacement(ABC):
         self.offspring_size = offspring_size
 
     def _replace(self, quantity: int, offspring: List[Individual], population: Population, individuals_to_kill: List[str], fitness_function: Fitness) -> None:
+        print('pop size', population.size())
         for i in individuals_to_kill:
             population.kill(i)
+    
+        print('ind killed', len(individuals_to_kill))
         
         children: List[Individual] = []
         while len(offspring) > 0 or len(children) < quantity:
@@ -36,9 +39,11 @@ class Replacement(ABC):
 
             children.append(child)
             offspring.remove(child)
+        print('children to add', len(children))
         # children: List[Individual] = np.random.choice(offspring, quantity, replace=False)
-        # for child in children:
-        #     population.add(child, fitness_function.fitness(child))
+        for child in children:
+            population.add(child, fitness_function.fitness(child))
+        print('pop size after', population.size())
 
     @abstractmethod
     def replace(self, offspring: List[Individual], population: Population, fitness_function: Fitness) -> None:
