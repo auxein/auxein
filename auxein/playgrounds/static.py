@@ -94,7 +94,7 @@ class Static(Playground):
         stats: Dict[str, Any] = {
             'generations': {}
         }
-        while self.population.generation_count < max_generations:
+        while self.population.generation_count < max_generations and self.population.size() > 2:
             mean_fitness = self.population.mean_fitness()
             logging.debug(f'{self.population.generation_count}/{max_generations} -- average_fitness: {mean_fitness}')
 
@@ -114,7 +114,7 @@ class Static(Playground):
             self.replacement.replace(offspring, self.population, self.fitness)
             self.population.update(self.fitness)
 
-        logging.info(f'Training ended with average_fitness: {self.population.mean_fitness()}')
+        logging.info(f'Training ended with average_fitness: {self.population.mean_fitness()} and a population size of {self.population.size()}')
         return stats
 
     def predict(self, x: np.ndarray, depth: int = 0) -> float:
