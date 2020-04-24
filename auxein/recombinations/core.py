@@ -71,7 +71,7 @@ class MatrixRecombination(Recombination):
         self.recombination = recombination
 
     def __vectorise(self, matrix: np.ndarray):
-        (r, c) = matrix.shape()
+        (r, c) = matrix.shape
         return matrix.reshape((1, r * c))
 
     def __to_matrix(self, vector: np.ndarray):
