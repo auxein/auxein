@@ -1,12 +1,9 @@
 # -*- coding: utf-8 -*-
 
-from typing import Tuple, List
-
-import numpy as np
-
 from auxein.fitness import Fitness
-from auxein.population import build_individual, Population, Individual
+from auxein.population import build_individual, Population
 from auxein.replacements import ReplaceWorst
+
 
 def build_fully_specified_population():
     population = Population()
@@ -15,12 +12,14 @@ def build_fully_specified_population():
     population.add(build_individual([0.1, 0.1], [], '01f4eadc-e799-42d1-bc18-0fd85159bfb6'), 0.2)  # fitness = 0.2
     return population
 
+
 def test_replace_worst():
     population = build_fully_specified_population()
     offspring = [
         build_individual([0.1, 0.4], [], '7fdbb922-6435-4ab1-87ec-3acccbf71da6'),
         build_individual([0.1, 0.3], [], '45ae2513-4a81-4385-ad45-4c6d2e172c92')
     ]
+
     class TestFitnessFunction(Fitness):
         def fitness(self, individual):
             return individual.genotype.dna[0] + individual.genotype.dna[1]

@@ -66,15 +66,15 @@ class SimpleArithmetic(Recombination):
 
 class MatrixRecombination(Recombination):
 
-    def __init__(self, shape: Tuple[int, int], recombination: Recombination):
+    def __init__(self, shape: Tuple[int, int], recombination: Recombination) -> None:
         self._shape = shape
         self.recombination = recombination
 
-    def __vectorise(self, matrix: np.ndarray):
+    def __vectorise(self, matrix: np.ndarray) -> np.ndarray:
         (r, c) = matrix.shape
         return matrix.reshape((1, r * c))
 
-    def __to_matrix(self, vector: np.ndarray):
+    def __to_matrix(self, vector: np.ndarray) -> np.ndarray:
         return vector.reshape(self._shape)
 
     def recombine(self, parent1_dna: np.ndarray, parent2_dna: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
