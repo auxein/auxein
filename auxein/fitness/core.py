@@ -71,7 +71,7 @@ class SimplePolynomialRegression(Fitness):
         return polynomial_fit(dna, x)
 
 
-class GlobalMinumum(Fitness):
+class GlobalMinimum(Fitness):
 
     def __init__(self, kernel: Callable[[np.ndarray], float]) -> None:
         super().__init__()

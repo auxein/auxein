@@ -1,7 +1,7 @@
 import numpy as np
 
 from auxein.population import build_individual
-from auxein.fitness import Fitness, MultipleLinearRegression, GlobalMinumum, MaximumLikelihood
+from auxein.fitness import Fitness, MultipleLinearRegression, GlobalMinimum, MaximumLikelihood
 
 
 def test_multiple_linear_regression():
@@ -38,7 +38,7 @@ def test_global_minimum_fitness_value_and_fitness():
         return (x - 10)**2
 
     individual = build_individual([10])
-    fitness = GlobalMinumum(kernel)
+    fitness = GlobalMinimum(kernel)
     assert fitness.value(0, 10) == fitness.fitness(individual)
 
 
