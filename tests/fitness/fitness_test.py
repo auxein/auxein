@@ -1,7 +1,7 @@
 import numpy as np
 
 from auxein.population import build_individual
-from auxein.fitness import Fitness, MultipleLinearRegression, MaximumLikelihood
+from auxein.fitness import Fitness, MultipleLinearRegression, GlobalMinimum, MaximumLikelihood
 
 
 def test_multiple_linear_regression():
@@ -29,6 +29,17 @@ def test_fitness_landscape():
 
     expected = [[-1, 0, -1], [0, 0, 0], [1, 0, 1], [-1, 0.5, -0.5], [0, 0.5, 0.5], [1, 0.5, 1.5], [-1, 1, 0], [0, 1, 1], [1, 1, 2]]
     assert np.array_equal(landscape, expected)
+
+
+def test_global_minimum_fitness_value_and_fitness():
+    # for this fitness function the value and the fitness
+    # are always the same but with opposite sign
+    def kernel(x):
+        return (x - 10)**2
+
+    individual = build_individual([10])
+    fitness = GlobalMinimum(kernel)
+    assert fitness.value(0, 10) == fitness.fitness(individual)
 
 
 # Classic example with students and time spent studying
