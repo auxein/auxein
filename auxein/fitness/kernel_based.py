@@ -4,19 +4,24 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-from abc import ABC, abstractmethod
+
+from typing import Callable
 
 import numpy as np
 
+from .core import Fitness
 from auxein.population import Individual
 
 
-class Fitness(ABC):
+class GlobalMinimum(Fitness):
 
-    @abstractmethod
+    def __init__(self, kernel: Callable[[np.ndarray], float]) -> None:
+        super().__init__()
+        self.kernel = kernel
+
     def fitness(self, individual: Individual) -> float:
-        pass
+        dna = individual.genotype.dna
+        return -1 * self.kernel(dna)
 
-    @abstractmethod
     def value(self, individual: Individual, x: np.ndarray) -> float:
-        pass
+        return self.kernel(x)
