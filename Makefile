@@ -49,7 +49,7 @@ build: clean codestyle typecheck test
 
 AUXEIN_VERSION=$(shell python setup.py --version)
 
-publish: build release
+publish: release build
 	@echo "Publishing Auxein to PyPi."
 	python -m twine upload dist/*
 
