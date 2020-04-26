@@ -55,7 +55,7 @@ AUXEIN_VERSION=$(shell python setup.py --version)
 
 release: build
 	@echo "Releasing Auxein $(AUXEIN_VERSION)"
-	bumpversion --current-version $(AUXEIN_VERSION) minor setup.py
+	bumpversion --current-version $(AUXEIN_VERSION) patch setup.py
 	git add setup.py
 	@echo "Current branch is now at $(shell python setup.py --version)"
 
