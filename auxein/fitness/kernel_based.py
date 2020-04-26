@@ -10,15 +10,19 @@ from typing import Callable
 
 import numpy as np
 
+from .core import Fitness
 from .utils import linear_fit, polynomial_fit, least_squares, logit
 from auxein.population import build_individual, Individual
 
-class Fitness(ABC):
+class GlobalMinimum(Fitness):
 
-    @abstractmethod
+    def __init__(self, kernel: Callable[[np.ndarray], float]) -> None:
+        super().__init__()
+        self.kernel = kernel
+
     def fitness(self, individual: Individual) -> float:
-        pass
+        dna = individual.genotype.dna
+        return -1 * self.kernel(dna)
 
-    @abstractmethod
     def value(self, individual: Individual, x: np.ndarray) -> float:
-        pass
+        return self.kernel(x)

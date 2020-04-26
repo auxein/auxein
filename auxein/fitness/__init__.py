@@ -1,7 +1,5 @@
 # flake8: noqa
 
 from .core import Fitness
-from .core import MultipleLinearRegression
-from .core import SimplePolynomialRegression
-from .core import GlobalMinimum
-from .core import MaximumLikelihood
+from .kernel_based import GlobalMinimum
+from .observation_based import ObservationBasedFitness, MultipleLinearRegression, SimplePolynomialRegression, MultipleLinearRegression
