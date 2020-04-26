@@ -47,11 +47,11 @@ build: clean codestyle typecheck test
 	@echo "Build Auxein."
 	python setup.py sdist bdist_wheel
 
+AUXEIN_VERSION=$(shell python setup.py --version)
+
 publish: release
 	@echo "Publishing Auxein to PyPi."
 	python -m twine upload dist/*
-
-AUXEIN_VERSION=$(shell python setup.py --version)
 
 release: build
 	@echo "Releasing Auxein $(AUXEIN_VERSION)"
