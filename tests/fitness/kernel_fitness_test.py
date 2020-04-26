@@ -1,7 +1,5 @@
-import numpy as np
 
 from auxein.population import build_individual
-from auxein.fitness.core import Fitness
 from auxein.fitness.kernel_based import GlobalMinimum
 
 

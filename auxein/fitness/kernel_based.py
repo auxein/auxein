@@ -4,15 +4,14 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-from abc import ABC, abstractmethod
 
 from typing import Callable
 
 import numpy as np
 
 from .core import Fitness
-from .utils import linear_fit, polynomial_fit, least_squares, logit
-from auxein.population import build_individual, Individual
+from auxein.population import Individual
+
 
 class GlobalMinimum(Fitness):
 

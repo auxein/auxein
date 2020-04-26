@@ -4,9 +4,7 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-from abc import ABC, abstractmethod
-
-from typing import Callable
+from abc import abstractmethod
 
 import numpy as np
 
