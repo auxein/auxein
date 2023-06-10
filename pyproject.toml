@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "auxein"
+version = "0.1.0"
+description = "Auxein is a Python framework for evolutionary algorithms."
+authors = ["Davide Palmisano <dpalmisano@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+numpy = "==1.24.3"
+
+[tool.poetry.group.dev.dependencies]
+flake8 = "==6.0.0"
+flake8-bugbear = "==23.6.5"
+pytest = "==7.3.2"
+pytest-cov = "==4.1.0"
+pyright = "^1.1.313"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
