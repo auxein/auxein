@@ -18,10 +18,11 @@ The main idea behind Auxein is to provide an efficient tool to *experiment with 
 Auxin is managed with Poetry.
 Here how to do a bunch of things:
 
-1. To install the project `poetry install`
-2. To run unit tests `poetry run pytest --cov=auxein tests`
-3. To run typecheck (PyRight) `poetry run pyright`
-4. To run Flake8 `poetry run flake8`
+1. To install the project: `poetry install`
+2. To run unit tests: `poetry run pytest --cov=auxein tests`
+3. To run typecheck (PyRight): `poetry run pyright`
+4. To run Flake8: `poetry run flake8`
+5. To publish on PyPi: `poetry publish --build --username=__token_ --password=pypi-...`
 
 ------------------
 
