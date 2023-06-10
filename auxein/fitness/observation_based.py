@@ -14,6 +14,8 @@ from auxein.population import build_individual, Individual
 
 
 class ObservationBasedFitness(Fitness):
+    """Abstract class for observation-based fitness function.
+    """
 
     @abstractmethod
     def fitness(self, individual: Individual) -> float:
@@ -37,6 +39,10 @@ class ObservationBasedFitness(Fitness):
 
 
 class MultipleLinearRegression(ObservationBasedFitness):
+    """Multiple linear regression fitness function.
+    Given a set of observations (xi, yi), the fitness function will be computed as the
+    sum of the squared residuals of the linear regression model.
+    """
 
     def __init__(self, xs: np.ndarray, y: np.ndarray) -> None:
         super().__init__()
@@ -49,6 +55,9 @@ class MultipleLinearRegression(ObservationBasedFitness):
         return -1 * least_squares(self.xs, self.y, dna)
 
     def value(self, individual: Individual, x: np.ndarray) -> float:
+        """Compute the value of the linear regression model for a given x given an individual
+        representing the a and b coefficients of the linear model ax + b.
+        """
         dna = individual.genotype.dna
         return linear_fit(dna, x)
 
