@@ -13,6 +13,16 @@ Auxein is an evolutionary algorithm framework, written in Python. It's currently
 
 The main idea behind Auxein is to provide an efficient tool to *experiment with a variety of evolutionary algorithms implementing reusable fitness functions, genotypes mutations and recombinations.*
 
+## Development with Poetry
+
+Auxin is managed with Poetry.
+Here how to do a bunch of things:
+
+1. To install the project `poetry install`
+2. To run unit tests `poetry run pytest --cov=auxein tests`
+3. To run typecheck (PyRight) `poetry run pyright`
+4. To run Flake8 `poetry run flake8`
+
 ------------------
 
 ## Auxein docs:
