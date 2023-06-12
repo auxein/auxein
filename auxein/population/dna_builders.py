@@ -2,7 +2,7 @@
 """
 from __future__ import absolute_import
 from abc import ABC, abstractmethod
-from typing import Tuple
+from typing import Tuple, List
 
 import numpy as np
 
@@ -57,3 +57,22 @@ class NormalRandomDnaBuilder(RandomDnaBuilder):
             self.std,
             dimension
         )
+
+class CompositeDnaBuilder(RandomDnaBuilder):
+    """Composite dna builder. It builds various dna sequences with 
+    differnt underlyng distributons and concatenate them.
+    """
+
+    def __init__(self, builders: List[Tuple[DnaBuilder, int]]):
+        super().__init__(distribution='composite')
+        self.builders = builders
+
+    def get(self, dimension: int) -> np.ndarray:
+        assert dimension > 0, 'dna dimension must be strictly positive.'
+        assert dimension == sum(map(lambda item: item[1], self.builders)), 'dna dimension must be equal to the sum of the dimensions of the builders.'
+        
+        dna = []
+        for (builder, dimension) in self.builders:
+            dna.append(builder.get(dimension))
+
+        return np.concatenate(dna)

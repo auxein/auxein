@@ -1,7 +1,7 @@
 from unittest.mock import patch
 import numpy as np
 
-from auxein.population.dna_builders import UniformRandomDnaBuilder, NormalRandomDnaBuilder
+from auxein.population.dna_builders import UniformRandomDnaBuilder, NormalRandomDnaBuilder, CompositeDnaBuilder
 
 
 def test_uniform_random_dna_builder_instantiation():
@@ -27,3 +27,17 @@ def test_normal_random_dna_builder_instantiation(mock_np_normal):
     assert builder.get_distribution() == 'normal'
     assert len(builder.get(2)) == 2
     mock_np_normal.assert_called_once_with(0.0, 1.0, 2)
+
+def test_composite_random_dna_builder_values():
+    builder = CompositeDnaBuilder([
+        (UniformRandomDnaBuilder(interval=(-1, 0)), 2),
+        (UniformRandomDnaBuilder(interval=(-1, 0)), 3),
+    ])
+    for _ in range(0, 100):
+        dna: np.ndarray = builder.get(5)
+
+        assert len(dna) == 5
+        assert -1 < dna[0] < 0
+        assert -1 < dna[1] < 0
+        assert -1 < dna[2] < 1
+        assert -1 < dna[3] < 1
