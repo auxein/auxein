@@ -42,5 +42,7 @@ class StochasticUniversalSampling(Selection):
             while r <= cumulative_probability_distribution(index, probabilities):
                 mating_pool.append(individual_ids[index])
                 r += 1 / self.parents_to_select
+
             index += 1
+
         return mating_pool
