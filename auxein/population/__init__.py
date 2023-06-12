@@ -1,7 +1,7 @@
 # flake8: noqa
 from .genotype import Genotype
 
-from .dna_builders import UniformRandomDnaBuilder, NormalRandomDnaBuilder
+from .dna_builders import UniformRandomDnaBuilder, NormalRandomDnaBuilder, CompositeDnaBuilder
 
 from .individual import Individual
 from .individual import build_individual
