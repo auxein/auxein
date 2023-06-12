@@ -47,6 +47,12 @@ class Individual:
         return f'[{self._id}],({self._genotype})'
 
 
-def build_individual(dna: List[float], mask: List[float] = [], id: Optional[str] = None) -> Individual:
+def build_individual(dna: List[float], mask: List[float] = None, id: Optional[str] = None) -> Individual:
     """Utility function to build an Individual."""
-    return Individual(Genotype(np.array(dna), np.array(mask)), id)
+    return Individual(
+        Genotype(
+            np.array(dna),
+            np.array(mask) if mask is not None else np.array([]),
+        ),
+        id
+    )

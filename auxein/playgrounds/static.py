@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 class Playground(ABC):
     """Abstract class for playgrounds.
-    A playground is a class that implements the training and prediction methods and it 
+    A playground is a class that implements the training and prediction methods and it
     represents the entire evolutionary cycle.
     """
 

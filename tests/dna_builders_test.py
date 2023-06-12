@@ -28,6 +28,7 @@ def test_normal_random_dna_builder_instantiation(mock_np_normal):
     assert len(builder.get(2)) == 2
     mock_np_normal.assert_called_once_with(0.0, 1.0, 2)
 
+
 def test_composite_random_dna_builder_values():
     builder = CompositeDnaBuilder([
         (UniformRandomDnaBuilder(interval=(-1, 0)), 2),

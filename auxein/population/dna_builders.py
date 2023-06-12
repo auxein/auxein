@@ -58,9 +58,10 @@ class NormalRandomDnaBuilder(RandomDnaBuilder):
             dimension
         )
 
+
 class CompositeDnaBuilder(RandomDnaBuilder):
-    """Composite dna builder. It builds various dna sequences with 
-    differnt underlyng distributons and concatenates them.
+    """Composite dna builder. It builds various dna sequences with
+    different underlyng distributions and concatenates them.
     """
 
     def __init__(self, builders: List[Tuple[DnaBuilder, int]]):
@@ -70,7 +71,7 @@ class CompositeDnaBuilder(RandomDnaBuilder):
     def get(self, dimension: int) -> np.ndarray:
         assert dimension > 0, 'dna dimension must be strictly positive.'
         assert dimension == sum(map(lambda item: item[1], self.builders)), 'dna dimension must be equal to the sum of the dimensions of the builders.'
-        
+
         dna = []
         for (builder, dimension) in self.builders:
             dna.append(builder.get(dimension))
