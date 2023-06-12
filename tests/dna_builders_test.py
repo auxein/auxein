@@ -31,7 +31,7 @@ def test_normal_random_dna_builder_instantiation(mock_np_normal):
 def test_composite_random_dna_builder_values():
     builder = CompositeDnaBuilder([
         (UniformRandomDnaBuilder(interval=(-1, 0)), 2),
-        (UniformRandomDnaBuilder(interval=(-1, 0)), 3),
+        (UniformRandomDnaBuilder(interval=(10, 20)), 3),
     ])
     for _ in range(0, 100):
         dna: np.ndarray = builder.get(5)
@@ -39,5 +39,6 @@ def test_composite_random_dna_builder_values():
         assert len(dna) == 5
         assert -1 < dna[0] < 0
         assert -1 < dna[1] < 0
-        assert -1 < dna[2] < 1
-        assert -1 < dna[3] < 1
+        assert 10 < dna[2] < 20
+        assert 10 < dna[3] < 20
+        assert 10 < dna[4] < 20

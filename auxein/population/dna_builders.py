@@ -60,7 +60,7 @@ class NormalRandomDnaBuilder(RandomDnaBuilder):
 
 class CompositeDnaBuilder(RandomDnaBuilder):
     """Composite dna builder. It builds various dna sequences with 
-    differnt underlyng distributons and concatenate them.
+    differnt underlyng distributons and concatenates them.
     """
 
     def __init__(self, builders: List[Tuple[DnaBuilder, int]]):
