@@ -137,7 +137,19 @@ def __add_to_population(population: Population, dimension: int, fitness_function
     population.add(individual, fitness)
 
 
-def build_fixed_dimension_population(dimension: int, initial_size: int, fitness_function: Fitness, dna_builder: DnaBuilder) -> Population:
+def build_fixed_dimension_population(
+        dimension: int,
+        initial_size: int,
+        fitness_function: Fitness,
+        dna_builder: DnaBuilder
+) -> Population:
+    """Function to create a population of individuals with a fixed dimension.
+
+    :param int dimension: dimension of the individuals in the population.
+    :param int initial_size: Initial size of the population in terms of number of individuals.
+    :param Fitness fitness_function: Fitness function to evaluate the individuals.
+    :param DnaBuilder dna_builder: DnaBuilder to create the individuals.
+    """
     population = Population()
     for _ in range(0, initial_size):
         __add_to_population(population, dimension, fitness_function, dna_builder)

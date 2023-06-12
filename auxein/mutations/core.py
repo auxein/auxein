@@ -12,6 +12,10 @@ import numpy as np
 
 
 class Mutation(ABC):
+    """Abstract class for mutations.
+    
+    Given an Individual, a Mutation is responsible for generating a new Individual with a mutated genotype.
+    """
 
     def __init__(self, extend_probability: float = 0.0):
         assert 0 <= extend_probability <= 1, 'extend_probability must be within [0, 1]'
@@ -60,6 +64,11 @@ class FixedVariance(Mutation):
 
 
 class SelfAdaptiveSingleStep(Mutation):
+    """Self-adaptive single step mutation as described in [back01].
+    
+    [back01]  T. Back, D.B. Fogel, and Z. Michalewicz, editors. 
+    "Evolutionary Computation 2:dvanced Algorithms and Operators. Institute of Physics Publishing", Bristol, 2000.
+    """
 
     def __init__(self, tau: float, extend_probability: float = 0.0) -> None:
         super().__init__(extend_probability=extend_probability)
