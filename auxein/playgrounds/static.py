@@ -5,7 +5,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Callable
 
 import logging
 from itertools import permutations
@@ -58,7 +58,8 @@ class Static(Playground):
         selection: Selection,
         recombination: Recombination,
         replacement: Replacement,
-        verbose: bool = False
+        verbose: bool = False,
+        pruning_function: Callable[[Individual], bool] = lambda i: False
     ) -> None:
         super().__init__(population=population, fitness=fitness)
         self.mutation = mutation
@@ -67,6 +68,7 @@ class Static(Playground):
         self.recombination = recombination
         self.replacement = replacement
         self.verbose = verbose
+        self.pruning_function = pruning_function
 
     def __mate(self, mating_pool: List[str]) -> List[Individual]:
         couples = permutations(mating_pool, 2)
@@ -118,6 +120,9 @@ class Static(Playground):
 
             mating_pool: List[str] = self.selection.select(individual_ids, probabilities)
             offspring = self.__mate(mating_pool)
+
+            # Pruning step
+            offspring = list(filter(lambda i: not self.pruning_function(i), offspring))
 
             # Replacement step
             self.replacement.replace(offspring, self.population, self.fitness)
