@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "auxein"
-version = "0.1.1"
+version = "0.1.2"
 description = "Auxein is a Python framework for evolutionary algorithms."
 authors = ["Davide Palmisano <dpalmisano@gmail.com>"]
 
