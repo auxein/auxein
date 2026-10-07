@@ -7,10 +7,14 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Davide Palmisano", email = "dpalmisano@gmail.com" }]
 requires-python = ">=3.11"
-dependencies = ["numpy>=1.26"]
+dependencies = ["numpy>=1.26", "array-api-compat>=1.9"]
+
+[project.optional-dependencies]
+torch = ["torch>=2.4"]
 
 [dependency-groups]
 dev = [
+    "torch>=2.4",
     "pytest>=8",
     "pytest-cov>=5",
     "pytest-timeout>=2.3",
@@ -34,6 +38,16 @@ examples = [
 # the benchmark harness tests run with the main test suite, so its dependencies are installed by default
 default-groups = ["dev", "bench"]
 
+# On Linux (CI) torch comes from PyTorch's CPU-only index: the default PyPI wheels pull in about 3 GB of CUDA
+# libraries that the tests never use. Other platforms keep the PyPI wheels (macOS wheels include Metal/MPS support).
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -55,6 +69,8 @@ ignore = ["E501", "B905"]
 include = ["auxein", "benchmarks"]
 exclude = ["benchmarks/results"]
 pythonVersion = "3.11"
+# the new core is checked in strict mode; the 0.x modules are removed in a later step
+strict = ["auxein/backend", "auxein/random", "auxein/core", "auxein/spaces"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "benchmarks/tests"]
