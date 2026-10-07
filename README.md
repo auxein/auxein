@@ -1,6 +1,6 @@
 # auxein [![license](https://img.shields.io/hexpm/l/plug.svg?maxAge=2592000)](https://github.com/auxein/auxein/blob/master/LICENSE) [![CI](https://github.com/auxein/auxein/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/auxein/auxein/actions/workflows/ci.yml)
 
-Auxein is a working in progress Python framework for evolutionary algorithms.
+Auxein is a Python framework for evolutionary algorithms, currently a work in progress.
 
 <p align="center">
   <img src="https://github.com/auxein/auxein/blob/master/docs/landscape.gif?raw=true" alt="Fitness landscape"/>
@@ -15,7 +15,7 @@ The main idea behind Auxein is to provide an efficient tool to *experiment with 
 
 ## Development with uv
 
-Auxin is managed with [uv](https://docs.astral.sh/uv/).
+Auxein is managed with [uv](https://docs.astral.sh/uv/).
 Here how to do a bunch of things:
 
 1. To install the project: `uv sync`

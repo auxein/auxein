@@ -1,7 +1,7 @@
-import pytest
 import numpy as np
+import pytest
 
-from auxein.fitness.utils import linear_fit, polynomial_fit, residual, least_squares, logit
+from auxein.fitness.utils import least_squares, linear_fit, logit, polynomial_fit, residual
 
 
 def test_linear_fit_2d():

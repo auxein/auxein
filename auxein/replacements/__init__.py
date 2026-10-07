@@ -1,3 +1,2 @@
 # ruff: noqa: F401
-from .core import Replacement
-from .core import ReplaceWorst
+from .core import Replacement, ReplaceWorst

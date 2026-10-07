@@ -1,10 +1,6 @@
-# -*- coding: utf-8 -*-
-
-from typing import Tuple
-
 import numpy as np
 
-from auxein.recombinations import Recombination, SimpleArithmetic, MatrixRecombination
+from auxein.recombinations import MatrixRecombination, Recombination, SimpleArithmetic
 
 
 def test_simple_arithmetic_with_full_blending():
@@ -58,7 +54,7 @@ def test_matrix_recombination():
     dna2 = np.array([[10, 20], [30, 40], [50, 60]])
 
     class Identity(Recombination):
-        def recombine(self, parent1_dna: np.ndarray, parent2_dna: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        def recombine(self, parent1_dna: np.ndarray, parent2_dna: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
             return (parent1_dna, parent2_dna)
 
     recombination = MatrixRecombination((3, 2), Identity())

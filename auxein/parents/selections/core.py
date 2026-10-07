@@ -1,16 +1,11 @@
-# -*- coding: utf-8 -*-
-"""Core Auxein mutations."""
+"""Parent selection algorithms that sample a mating pool from a probability distribution."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 from abc import ABC, abstractmethod
-from typing import List
 
 import numpy as np
 
 
-def cumulative_probability_distribution(index: int, probabilities: List[float]) -> float:
+def cumulative_probability_distribution(index: int, probabilities: list[float]) -> float:
     return sum(probabilities[: index + 1])
 
 
@@ -24,7 +19,7 @@ class Selection(ABC):
         return self.__offspring_size
 
     @abstractmethod
-    def select(self, individual_ids: List[str], probabilities: List[float]) -> List[str]:
+    def select(self, individual_ids: list[str], probabilities: list[float]) -> list[str]:
         pass
 
 
@@ -32,7 +27,7 @@ class StochasticUniversalSampling(Selection):
     def __init__(self, offspring_size: int) -> None:
         super().__init__(offspring_size=offspring_size)
 
-    def select(self, individual_ids: List[str], probabilities: List[float]) -> List[str]:
+    def select(self, individual_ids: list[str], probabilities: list[float]) -> list[str]:
         if len(individual_ids) != len(probabilities):
             raise ValueError("individual_ids and probabilities must have the same length")
         weights = np.asarray(probabilities, dtype=float)
@@ -49,7 +44,7 @@ class StochasticUniversalSampling(Selection):
         step = 1 / n
         pointer = np.random.uniform(0, step)
         index = 0
-        mating_pool: List[str] = []
+        mating_pool: list[str] = []
         while len(mating_pool) < n:
             while pointer > cumulative[index] and index < len(cumulative) - 1:
                 index += 1

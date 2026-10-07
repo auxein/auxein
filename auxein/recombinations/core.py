@@ -1,11 +1,6 @@
-# -*- coding: utf-8 -*-
-"""SimpleArithmetic."""
+"""Recombinations: how the dna of two parents is combined into two children."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 from abc import ABC, abstractmethod
-from typing import Tuple, List
 
 import numpy as np
 
@@ -15,7 +10,7 @@ class Recombination(ABC):
         self.allow_uneven = allow_uneven
 
     @abstractmethod
-    def recombine(self, parent1_dna: np.ndarray, parent2_dna: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def recombine(self, parent1_dna: np.ndarray, parent2_dna: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         pass
 
 
@@ -24,13 +19,13 @@ class SimpleArithmetic(Recombination):
         super().__init__(allow_uneven=allow_uneven)
         self.alpha = alpha
 
-    def __linear_combination(self, arr1: np.ndarray, arr2: np.ndarray) -> List[float]:
-        result: List[float] = []
+    def __linear_combination(self, arr1: np.ndarray, arr2: np.ndarray) -> list[float]:
+        result: list[float] = []
         for i1, i2 in zip(arr1, arr2):
             result.append(self.alpha * i2 + (1 - self.alpha) * i1)
         return result
 
-    def recombine(self, parent1_dna: np.ndarray, parent2_dna: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def recombine(self, parent1_dna: np.ndarray, parent2_dna: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         if not self.allow_uneven:
             assert len(parent1_dna) == len(parent2_dna), "dna of parents must be of the same dimension"
 
@@ -51,7 +46,7 @@ class SimpleArithmetic(Recombination):
 
 
 class MatrixRecombination(Recombination):
-    def __init__(self, shape: Tuple[int, int], recombination: Recombination) -> None:
+    def __init__(self, shape: tuple[int, int], recombination: Recombination) -> None:
         super().__init__()
         self._shape = shape
         self.recombination = recombination
@@ -62,7 +57,7 @@ class MatrixRecombination(Recombination):
     def __to_matrix(self, vector: np.ndarray) -> np.ndarray:
         return vector.reshape(self._shape)
 
-    def recombine(self, parent1_dna: np.ndarray, parent2_dna: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def recombine(self, parent1_dna: np.ndarray, parent2_dna: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         vectorised_parent1_dna = self.__vectorise(parent1_dna)
         vectorised_parent2_dna = self.__vectorise(parent2_dna)
         (vectorised_child_1, vectorised_child_2) = self.recombination.recombine(vectorised_parent1_dna, vectorised_parent2_dna)

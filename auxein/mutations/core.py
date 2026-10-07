@@ -1,14 +1,10 @@
-# -*- coding: utf-8 -*-
 """Core Auxein mutations."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 from abc import ABC, abstractmethod
 
-from auxein.population.genotype import Genotype
-
 import numpy as np
+
+from auxein.population.genotype import Genotype
 
 
 class Mutation(ABC):
@@ -63,7 +59,7 @@ class SelfAdaptiveSingleStep(Mutation):
     """Self-adaptive single step mutation as described in [back01].
 
     [back01]  T. Back, D.B. Fogel, and Z. Michalewicz, editors.
-    "Evolutionary Computation 2:dvanced Algorithms and Operators. Institute of Physics Publishing", Bristol, 2000.
+    "Evolutionary Computation 2: Advanced Algorithms and Operators. Institute of Physics Publishing", Bristol, 2000.
     """
 
     def __init__(self, tau: float, extend_probability: float = 0.0) -> None:

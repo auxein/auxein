@@ -31,7 +31,7 @@ line-length = 140
 extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "B"]
+select = ["E", "F", "W", "B", "UP", "I"]
 # E501: the previous lint config ignored it too. B905: adding zip(strict=) would change behaviour; revisit in the redesign.
 ignore = ["E501", "B905"]
 

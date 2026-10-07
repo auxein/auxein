@@ -1,18 +1,17 @@
 """Contains the base Individual class."""
 
-from __future__ import absolute_import
-from typing import List, Optional
-from uuid import uuid4, UUID
 import time
+from uuid import UUID, uuid4
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 from auxein.mutations import Mutation
 from auxein.population.genotype import Genotype
 
 
 class Individual:
-    def __init__(self, genotype: Genotype, id: Optional[str] = None) -> None:
+    def __init__(self, genotype: Genotype, id: str | None = None) -> None:
         self._id = uuid4() if id is None else UUID(id)
         self._born_at = time.time()
         self._genotype = genotype
@@ -46,8 +45,10 @@ class Individual:
         return f"[{self._id}],({self._genotype})"
 
 
-def build_individual(dna: List[float], mask: Optional[List[float]] = None, id: Optional[str] = None) -> Individual:
+def build_individual(dna: ArrayLike, mask: ArrayLike | None = None, id: str | None = None) -> Individual:
     """Utility function to build an Individual. The mask defaults to ones when it is None or empty."""
     dna_array = np.array(dna)
-    mask_array = np.ones(len(dna_array)) if mask is None or len(mask) == 0 else np.array(mask)
+    mask_array = np.array(mask) if mask is not None else np.array([])
+    if mask_array.size == 0:
+        mask_array = np.ones(len(dna_array))
     return Individual(Genotype(dna_array, mask_array), id)

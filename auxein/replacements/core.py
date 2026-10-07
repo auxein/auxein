@@ -1,16 +1,11 @@
-# -*- coding: utf-8 -*-
-"""Static playground."""
+"""Replacement strategies that merge offspring into a population."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 from abc import ABC, abstractmethod
-from typing import List
 
 import numpy as np
 
 from auxein.fitness import Fitness
-from auxein.population import Population, Individual
+from auxein.population import Individual, Population
 
 
 class Replacement(ABC):
@@ -18,7 +13,7 @@ class Replacement(ABC):
         self.offspring_size = offspring_size
 
     def _replace(
-        self, quantity: int, offspring: List[Individual], population: Population, individuals_to_kill: List[str], fitness_function: Fitness
+        self, quantity: int, offspring: list[Individual], population: Population, individuals_to_kill: list[str], fitness_function: Fitness
     ) -> None:
         quantity = min(quantity, len(offspring))
         if quantity == 0:
@@ -33,7 +28,7 @@ class Replacement(ABC):
             population.add(child, fitness_function.fitness(child))
 
     @abstractmethod
-    def replace(self, offspring: List[Individual], population: Population, fitness_function: Fitness) -> None:
+    def replace(self, offspring: list[Individual], population: Population, fitness_function: Fitness) -> None:
         pass
 
 
@@ -41,8 +36,8 @@ class ReplaceWorst(Replacement):
     def __init__(self, offspring_size: int) -> None:
         super().__init__(offspring_size=offspring_size)
 
-    def replace(self, offspring: List[Individual], population: Population, fitness_function: Fitness) -> None:
+    def replace(self, offspring: list[Individual], population: Population, fitness_function: Fitness) -> None:
         target = population.size() if self.offspring_size >= population.size() else self.offspring_size
         quantity = min(target, len(offspring))
-        individuals_to_kill: List[str] = list(map(lambda item: item[0], population.rank_by_fitness(quantity, reverse=False)))
+        individuals_to_kill: list[str] = list(map(lambda item: item[0], population.rank_by_fitness(quantity, reverse=False)))
         super()._replace(quantity, offspring, population, individuals_to_kill, fitness_function)

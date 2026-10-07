@@ -1,18 +1,13 @@
-# -*- coding: utf-8 -*-
-"""Core Auxein mutations."""
+"""Parent selection probability distributions over a population."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 from abc import ABC, abstractmethod
-from typing import Tuple, List
 
 from auxein.population import Item, Population
 
 
 class Distribution(ABC):
     @abstractmethod
-    def get(self, population: Population) -> List[Tuple[str, float]]:
+    def get(self, population: Population) -> list[tuple[str, float]]:
         pass
 
 
@@ -20,7 +15,7 @@ class Fps(Distribution):
     def __init__(self) -> None:
         super().__init__()
 
-    def get(self, population: Population) -> List[Tuple[str, float]]:
+    def get(self, population: Population) -> list[tuple[str, float]]:
         if any(item.fitness < 0 for item in population.pool):
             raise ValueError("Fps requires non-negative fitness values: use FpsWithWindowing or SigmaScaling for negative fitness.")
         total_fitness = population.total_fitness()
@@ -29,7 +24,7 @@ class Fps(Distribution):
         return list(map(lambda item: (item.individual.id, item.fitness / total_fitness), population.pool))
 
 
-def _uniform(population: Population) -> List[Tuple[str, float]]:
+def _uniform(population: Population) -> list[tuple[str, float]]:
     probability = 1 / population.size()
     return [(item.individual.id, probability) for item in population.pool]
 
@@ -41,7 +36,7 @@ class FpsWithWindowing(Distribution):
     def __scale_fitness_function(self, item: Item, minimum_fitness: float) -> float:
         return item.fitness - minimum_fitness
 
-    def get(self, population: Population) -> List[Tuple[str, float]]:
+    def get(self, population: Population) -> list[tuple[str, float]]:
         minimum_fitness = population.min_fitness()
         total_fitness = sum(self.__scale_fitness_function(item, minimum_fitness) for item in population.pool)
         if total_fitness == 0:
@@ -55,7 +50,7 @@ class SigmaScaling(Distribution):
     def __init__(self) -> None:
         super().__init__()
 
-    def get(self, population: Population) -> List[Tuple[str, float]]:
+    def get(self, population: Population) -> list[tuple[str, float]]:
         if population.min_fitness() == population.max_fitness():
             return _uniform(population)
         lower_bound = population.mean_fitness() - 2 * population.std_fitness()

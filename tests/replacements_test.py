@@ -1,9 +1,7 @@
-# -*- coding: utf-8 -*-
-
 import pytest
 
 from auxein.fitness import Fitness
-from auxein.population import build_individual, Population
+from auxein.population import Population, build_individual
 from auxein.replacements import ReplaceWorst
 
 

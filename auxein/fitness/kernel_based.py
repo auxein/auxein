@@ -1,16 +1,12 @@
-# -*- coding: utf-8 -*-
-"""Core Auxein mutations."""
+"""Fitness functions defined by a kernel function."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 
-from .core import Fitness
 from auxein.population import Individual
+
+from .core import Fitness
 
 
 class GlobalMinimum(Fitness):
