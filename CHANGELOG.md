@@ -1,0 +1,33 @@
+# Changelog
+
+## 0.2.0
+
+### Behaviour changes
+
+- `Fps` now raises `ValueError` when any fitness is negative or when the total fitness is zero. Previously it silently favoured the *worst* individual for negative fitness. Use `FpsWithWindowing` or `SigmaScaling` for negative fitness (e.g. with `GlobalMinimum` or the regression fitness functions).
+- `MaximumLikelihood` now returns the log-likelihood `Σ y·log(p) + (1−y)·log(1−p)`, with `p` clipped to `[1e-12, 1 − 1e-12]`, instead of a sum of probabilities. Fitness values are now `<= 0`.
+- `build_individual(dna)` now defaults the mask to ones (it used to be empty), also when an empty mask is passed. `Genotype` raises `ValueError` if the mask and dna lengths differ.
+- `Mutation` extension now appends the existing step size (`mask[-1]`) to the mask, instead of a fresh random value, so `SelfAdaptiveSingleStep` keeps a single shared step size.
+- `MatrixRecombination` now really crosses over: the matrices are flattened to 1-D before they are handed to the inner recombination. It also calls `Recombination.__init__`, so it has an `allow_uneven` attribute.
+- `StochasticUniversalSampling.select` validates its input (same lengths, finite, non-negative, positive sum) and normalises the probabilities, raising `ValueError` otherwise.
+- `polynomial_fit` requires `x` to be a `np.ndarray` of size 1; the coefficients may be a list.
+- Importing `auxein` no longer configures global logging (`logging.basicConfig` was removed). `Static` logs through `logging.getLogger("auxein.playgrounds.static")`.
+- `FixedVariance` mutation draws its noise with a single vectorised call, so results for a given seed differ from previous versions.
+
+### Fixes
+
+- `StochasticUniversalSampling` no longer loops forever on NaN probabilities or when rounding leaves the cumulative sum just below the last pointer.
+- `FpsWithWindowing` and `SigmaScaling` return a uniform distribution on a converged population instead of NaN.
+- `ReplaceWorst` no longer crashes when fewer offspring than `offspring_size` are available (e.g. after pruning), no longer shrinks the population on failure, and is a no-op with no offspring.
+- `SelfAdaptiveSingleStep` no longer crashes on individuals built without a mask.
+- `Population.get_full_genome` supports populations of individuals with different dimensions, which fixes `Static.train` for variable-dimension populations.
+- `auxein.fitness` exports `MaximumLikelihood` (and `MultipleLinearRegression` only once).
+- `SigmaScaling` computes the population mean and standard deviation once per call instead of once per individual.
+
+### Tooling and packaging
+
+- Python 3.11+ is required; tested on 3.11, 3.12, 3.13 and 3.14. numpy is `>=1.26` (it was pinned to `1.24.3`).
+- Poetry replaced by uv and hatchling; flake8 replaced by ruff (`E, F, W, B, UP, I`); pyright is clean and enforced in CI.
+- The package ships a `py.typed` marker.
+- GitHub Actions replaces Travis. CI runs the tests on every supported Python version, a lowest-direct-dependencies job, linting, type checking and the example notebooks.
+- The example notebooks were fixed, re-executed and are now run in CI.
