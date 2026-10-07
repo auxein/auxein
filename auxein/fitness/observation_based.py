@@ -78,6 +78,8 @@ class SimplePolynomialRegression(ObservationBasedFitness):
 
 
 class MaximumLikelihood(ObservationBasedFitness):
+    """Logistic regression fitness function: the log-likelihood of binary observations (y in {0, 1})."""
+
     def __init__(self, xs: np.ndarray, y: np.ndarray) -> None:
         super().__init__()
         assert xs.shape == (y.shape[0], xs.shape[1]), "length of xs must be equal to length of y"
@@ -87,15 +89,14 @@ class MaximumLikelihood(ObservationBasedFitness):
         self.y = y
 
     def fitness(self, individual: Individual) -> float:
+        """Log-likelihood of the observations: sum(y * log(p) + (1 - y) * log(1 - p)), with p clipped to [eps, 1 - eps]."""
         alpha, *coeff = individual.genotype.dna
-        y_positive = np.where(self.y == 1)
-        likelihood: float = 0
-        for x in self.xs[y_positive]:
-            likelihood += logit(alpha, coeff, x)
-        y_negative = np.where(self.y == 0)
-        for x in self.xs[y_negative]:
-            likelihood += 1 - logit(alpha, coeff, x)
-        return likelihood
+        eps = 1e-12
+        log_likelihood: float = 0
+        for x, y in zip(self.xs, self.y):
+            p = min(max(logit(alpha, coeff, x), eps), 1 - eps)
+            log_likelihood += y * np.log(p) + (1 - y) * np.log(1 - p)
+        return log_likelihood
 
     def value(self, individual: Individual, x: np.ndarray) -> float:
         alpha, *coeff = individual.genotype.dna

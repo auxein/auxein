@@ -1,4 +1,3 @@
-import pytest
 import numpy as np
 
 from auxein.population import build_individual
@@ -84,7 +83,6 @@ STUDY_HOURS = np.array(
 PASSED = np.array([0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1])
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: MaximumLikelihood sums probabilities instead of log-probabilities")
 def test_maximum_likelihood_is_the_log_likelihood():
     fitness_function = MaximumLikelihood(STUDY_HOURS.reshape(-1, 1), PASSED)
 
@@ -98,7 +96,6 @@ def test_maximum_likelihood_is_the_log_likelihood():
     assert fitness_function.fitness(optimum) > fitness_function.fitness(poor)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: MaximumLikelihood does not clip probabilities")
 def test_maximum_likelihood_is_finite_for_saturated_probabilities():
     fitness_function = MaximumLikelihood(STUDY_HOURS.reshape(-1, 1), PASSED)
     saturated = build_individual([-1000.0, 1000.0])  # p is exactly 0 or 1 for every observation
