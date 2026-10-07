@@ -62,6 +62,7 @@ class MyProblem(Problem):
     def evaluate(self, x):  # what the algorithm sees; only override it for noisy problems
         ...
 
+
 register(MyProblem)  # the factory is called as factory(dim, instance)
 ```
 
