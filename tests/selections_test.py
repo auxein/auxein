@@ -34,16 +34,35 @@ def test_stochastic_universal_sampling():
 IDS = ["a", "b", "c", "d", "e"]
 
 
+@pytest.fixture
+def bounded_sampling(monkeypatch):
+    """Turns an endless sampling loop into a fast failure, without relying on a signal.
+
+    pytest-timeout's signal method can deadlock pytest-cov when it interrupts a busy loop, so the timeout marks
+    below are only a backstop.
+    """
+    calls = 0
+
+    def bounded(index, probabilities):
+        nonlocal calls
+        calls += 1
+        if calls > 10_000:
+            pytest.fail("StochasticUniversalSampling.select did not terminate")
+        return sum(probabilities[: index + 1])
+
+    monkeypatch.setattr("auxein.parents.selections.core.cumulative_probability_distribution", bounded, raising=False)
+
+
 @pytest.mark.xfail(strict=True, reason="phase 3: SUS loops forever on NaN probabilities")
 @pytest.mark.timeout(2)
-def test_sus_nan_probabilities_do_not_hang():
+def test_sus_nan_probabilities_do_not_hang(bounded_sampling):
     with pytest.raises(ValueError):
         StochasticUniversalSampling(4096).select(IDS, [np.nan] * 5)
 
 
 @pytest.mark.xfail(strict=True, reason="phase 3: SUS loops forever when the cumulative sum ends just below the last pointer")
 @pytest.mark.timeout(2)
-def test_sus_terminates_when_cumulative_sum_rounds_below_one(monkeypatch):
+def test_sus_terminates_when_cumulative_sum_rounds_below_one(bounded_sampling, monkeypatch):
     selection = StochasticUniversalSampling(180)
     n = int(selection.parents_to_select)
     assert n == 10
@@ -67,14 +86,14 @@ def test_sus_terminates_when_cumulative_sum_rounds_below_one(monkeypatch):
     ],
     ids=["length_mismatch", "negative", "not_finite", "zero_sum"],
 )
-def test_sus_rejects_invalid_probabilities(probabilities):
+def test_sus_rejects_invalid_probabilities(bounded_sampling, probabilities):
     with pytest.raises(ValueError):
         StochasticUniversalSampling(4096).select(IDS, probabilities)
 
 
 @pytest.mark.xfail(strict=True, reason="phase 3: SUS does not normalise its probabilities")
 @pytest.mark.timeout(2)
-def test_sus_normalises_probabilities():
+def test_sus_normalises_probabilities(bounded_sampling):
     selection = StochasticUniversalSampling(4096)
     n = int(selection.parents_to_select)
     ids = selection.select(IDS, [1, 1, 2, 1, 5])  # weights summing to 10
