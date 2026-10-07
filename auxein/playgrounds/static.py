@@ -21,7 +21,7 @@ from auxein.parents.distributions import Distribution
 from auxein.parents.selections import Selection
 from auxein.replacements import Replacement
 
-logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 class Playground(ABC):
@@ -91,16 +91,16 @@ class Static(Playground):
         return (child1_genotype_dna, parent_1.genotype.mask, child2_genotype_dna, parent_2.genotype.mask)
 
     def train(self, max_generations: int) -> Dict[str, Any]:
-        logging.info(f"Starting evolution cycle with a maximum of {max_generations} generations")
+        logger.info(f"Starting evolution cycle with a maximum of {max_generations} generations")
         stats: Dict[str, Any] = {"generations": {}}
         while self.population.generation_count < max_generations and self.population.size() > self.selection.offspring_size:
             mean_fitness = self.population.mean_fitness()
             if self.verbose is True:
-                logging.debug(
+                logger.debug(
                     f"Running generation: {self.population.generation_count}/{max_generations} -- average_fitness: {mean_fitness} -- population size: {self.population.size()}"
                 )
             else:
-                logging.debug(f"Running generation: {self.population.generation_count}/{max_generations}")
+                logger.debug(f"Running generation: {self.population.generation_count}/{max_generations}")
 
             stats["generations"][self.population.generation_count] = {}
             stats["generations"][self.population.generation_count]["mean_fitness"] = mean_fitness
@@ -121,7 +121,7 @@ class Static(Playground):
             self.replacement.replace(offspring, self.population, self.fitness)
             self.population.update(self.fitness)
 
-        logging.info(
+        logger.info(
             f"Training ended with average_fitness: {self.population.mean_fitness()} and a population size of {self.population.size()}"
         )
         return stats
