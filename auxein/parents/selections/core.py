@@ -1,4 +1,4 @@
-"""Core Auxein mutations."""
+"""Parent selection algorithms that sample a mating pool from a probability distribution."""
 
 from abc import ABC, abstractmethod
 

@@ -1,4 +1,4 @@
-"""Static playground."""
+"""Playgrounds: the evolutionary loop. The Static playground runs a fixed evolutionary cycle."""
 
 import logging
 from abc import ABC, abstractmethod

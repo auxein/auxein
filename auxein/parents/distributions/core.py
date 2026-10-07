@@ -1,4 +1,4 @@
-"""Core Auxein mutations."""
+"""Parent selection probability distributions over a population."""
 
 from abc import ABC, abstractmethod
 

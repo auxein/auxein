@@ -1,4 +1,4 @@
-"""Core Auxein mutations."""
+"""Base class for fitness functions."""
 
 from abc import ABC, abstractmethod
 

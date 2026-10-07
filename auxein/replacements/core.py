@@ -1,4 +1,4 @@
-"""Static playground."""
+"""Replacement strategies that merge offspring into a population."""
 
 from abc import ABC, abstractmethod
 

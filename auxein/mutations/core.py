@@ -59,7 +59,7 @@ class SelfAdaptiveSingleStep(Mutation):
     """Self-adaptive single step mutation as described in [back01].
 
     [back01]  T. Back, D.B. Fogel, and Z. Michalewicz, editors.
-    "Evolutionary Computation 2:dvanced Algorithms and Operators. Institute of Physics Publishing", Bristol, 2000.
+    "Evolutionary Computation 2: Advanced Algorithms and Operators. Institute of Physics Publishing", Bristol, 2000.
     """
 
     def __init__(self, tau: float, extend_probability: float = 0.0) -> None:

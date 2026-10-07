@@ -1,4 +1,4 @@
-"""Core Auxein mutations."""
+"""Fitness functions computed from a set of observations (regressions and likelihoods)."""
 
 from abc import abstractmethod
 

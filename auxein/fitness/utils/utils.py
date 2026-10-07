@@ -1,4 +1,4 @@
-"""Core Auxein mutations."""
+"""Fit, residual and likelihood helpers shared by the observation-based fitness functions."""
 
 from collections.abc import Callable, Sequence
 

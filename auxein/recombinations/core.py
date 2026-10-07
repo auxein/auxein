@@ -1,4 +1,4 @@
-"""SimpleArithmetic."""
+"""Recombinations: how the dna of two parents is combined into two children."""
 
 from abc import ABC, abstractmethod
 

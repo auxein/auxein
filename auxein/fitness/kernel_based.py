@@ -1,4 +1,4 @@
-"""Core Auxein mutations."""
+"""Fitness functions defined by a kernel function."""
 
 from collections.abc import Callable
 
