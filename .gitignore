@@ -106,3 +106,6 @@ venv.bak/
 config.toml
 # Notebook outputs
 notebooks/landscape_frames/
+
+# Benchmark runs (committed baselines live in benchmarks/reports/)
+benchmarks/results/
