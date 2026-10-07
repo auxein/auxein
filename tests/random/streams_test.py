@@ -245,8 +245,8 @@ print(json.dumps(out))
     [
         ("numpy", "float64"),
         ("numpy", "float32"),
-        pytest.param("torch", "float64", marks=pytest.mark.slow),
-        pytest.param("torch", "float32", marks=pytest.mark.slow),
+        ("torch", "float64"),
+        ("torch", "float32"),
     ],
 )
 def test_identical_draws_in_separate_processes_whatever_the_hash_seed(name: str, precision: str):
