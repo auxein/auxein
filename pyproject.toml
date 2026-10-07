@@ -58,7 +58,7 @@ packages = ["auxein"]
 [tool.ruff]
 target-version = "py311"
 line-length = 140
-extend-exclude = ["notebooks"]
+extend-exclude = ["notebooks", "docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "UP", "I"]
