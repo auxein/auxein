@@ -52,12 +52,12 @@ class SimpleArithmetic(Recombination):
 
 class MatrixRecombination(Recombination):
     def __init__(self, shape: Tuple[int, int], recombination: Recombination) -> None:
+        super().__init__()
         self._shape = shape
         self.recombination = recombination
 
     def __vectorise(self, matrix: np.ndarray) -> np.ndarray:
-        (r, c) = matrix.shape
-        return matrix.reshape((1, r * c))
+        return matrix.reshape(-1)
 
     def __to_matrix(self, vector: np.ndarray) -> np.ndarray:
         return vector.reshape(self._shape)
