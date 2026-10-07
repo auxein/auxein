@@ -315,7 +315,9 @@ def sanity_checks(results: Results) -> list[str]:
 def methodology(results: Results) -> str:
     meta, config = results.metadata, results.metadata["config"]
     versions, cpu = meta["versions"], meta["cpu"]
-    algorithms = "\n".join(f"- `{a['name']}` (adapter `{a['adapter']}`): `{json.dumps(a.get('params', {}))}`" for a in config["algorithms"])
+    algorithms = "\n".join(
+        f"  - `{a['name']}` (adapter `{a['adapter']}`): `{json.dumps(a.get('params', {}))}`" for a in config["algorithms"]
+    )
     overhead = config.get("overhead")
     overhead_text = (
         f"Plain sphere, {overhead['budget']} evaluations, {overhead['repeats']} repeats (median reported), dimensions {overhead['dims']}, "
