@@ -5,7 +5,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from typing import Callable
+from typing import Callable, Sequence
 
 import numpy as np
 
@@ -23,7 +23,7 @@ def polynomial_fit(coeff: np.ndarray, x: np.ndarray) -> float:
     return result
 
 
-def residual(coeff: np.array, x: np.array, yi: float, fit: Callable[[np.ndarray, np.ndarray], float] = linear_fit) -> float:
+def residual(coeff: np.ndarray, x: np.ndarray, yi: float, fit: Callable[[np.ndarray, np.ndarray], float] = linear_fit) -> float:
     return (yi - fit(coeff, x)) ** 2
 
 
@@ -34,7 +34,7 @@ def least_squares(xs: np.ndarray, y: np.ndarray, coeff: np.ndarray, fit: Callabl
     return lsm
 
 
-def logit(alpha: float, coeff: np.ndarray, x: np.ndarray) -> float:
+def logit(alpha: float, coeff: Sequence[float] | np.ndarray, x: Sequence[float] | np.ndarray) -> float:
     kernel: float = 0
     for bi, xi in zip(coeff, x):
         kernel += bi * xi

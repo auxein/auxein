@@ -80,7 +80,7 @@ class Static(Playground):
 
         return offspring
 
-    def __breed(self, parent1_id: str, parent2_id: str) -> Tuple[List[float], List[float], List[float], List[float]]:
+    def __breed(self, parent1_id: str, parent2_id: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         parent_1 = self.population.get(parent1_id).individual.mutate(self.mutation)
         parent_2 = self.population.get(parent2_id).individual.mutate(self.mutation)
 
