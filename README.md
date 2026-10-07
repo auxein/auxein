@@ -22,6 +22,7 @@ Here how to do a bunch of things:
 2. To run unit tests: `uv run pytest`
 3. To run the linter: `uv run ruff check`
 4. To run typecheck (Pyright): `uv run pyright`
+5. To run the example notebooks: `uv run --group examples pytest --nbmake notebooks/`
 
 ------------------
 
@@ -32,6 +33,7 @@ At the moment, the documentation is a bunch of Jupyter notebooks and some Python
 - [Finding Rastrigin function global minimum with Auxein](https://nbviewer.jupyter.org/github/auxein/auxein/blob/master/notebooks/rastrigin.ipynb)
 - [How to use Auxein to solve a simple linear regression problem](https://nbviewer.jupyter.org/github/auxein/auxein/blob/master/notebooks/linear_regression.ipynb)
 - [How to use Auxein to solve a simple logistic regression problem](https://nbviewer.jupyter.org/github/auxein/auxein/blob/master/notebooks/logistic_regression.ipynb)
+- [How to use Auxein to fit a polynomial regression model](https://nbviewer.jupyter.org/github/auxein/auxein/blob/master/notebooks/polynomial_regression.ipynb)
 
 ------------------
 
