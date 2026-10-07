@@ -21,7 +21,12 @@ class Fps(Distribution):
         super().__init__()
 
     def get(self, population: Population) -> List[Tuple[str, float]]:
-        return list(map(lambda item: (item.individual.id, item.fitness / population.total_fitness()), population.pool))
+        if any(item.fitness < 0 for item in population.pool):
+            raise ValueError("Fps requires non-negative fitness values: use FpsWithWindowing or SigmaScaling for negative fitness.")
+        total_fitness = population.total_fitness()
+        if total_fitness == 0:
+            raise ValueError("Fps requires a strictly positive total fitness: use FpsWithWindowing or SigmaScaling.")
+        return list(map(lambda item: (item.individual.id, item.fitness / total_fitness), population.pool))
 
 
 class FpsWithWindowing(Distribution):

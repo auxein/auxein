@@ -42,7 +42,8 @@ def test_fps_constant_fitness_function():
 def test_fps_non_constant_fitness_function():
     class TestFitnessFunction(Fitness):
         def fitness(self, individual):
-            return individual.genotype.dna[0] + individual.genotype.dna[1]
+            # dna genes are in [-1, 1], so shift to keep the fitness non-negative
+            return individual.genotype.dna[0] + individual.genotype.dna[1] + 2
 
         def value(self, individual, x):
             pass
@@ -154,14 +155,12 @@ def build_population_with_fitnesses(fitnesses):
     return population
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: Fps favours the worst individual when fitness is negative")
 def test_fps_rejects_negative_fitness():
     population = build_population_with_fitnesses([-1.0, -2.0, -3.0])
     with pytest.raises(ValueError, match="FpsWithWindowing"):
         Fps().get(population)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: Fps divides by zero when the total fitness is zero")
 def test_fps_rejects_zero_total_fitness():
     population = build_population_with_fitnesses([0.0, 0.0, 0.0])
     with pytest.raises(ValueError):
