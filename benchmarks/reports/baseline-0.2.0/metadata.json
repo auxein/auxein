@@ -1,0 +1,113 @@
+{
+  "timestamp": "2026-10-07T13:13:21+00:00",
+  "git_sha": "934182ac4da0ba15cd0bda5a6540fa995b507181",
+  "git_dirty": false,
+  "versions": {
+    "python": "3.12.13",
+    "auxein": "0.2.0",
+    "numpy": "2.5.3",
+    "cma": "4.5.0",
+    "scipy": "1.18.1",
+    "matplotlib": "3.11.2"
+  },
+  "cpu": {
+    "model": "Apple M4 Pro",
+    "machine": "arm64",
+    "system": "macOS-15.6.1-arm64-arm-64bit",
+    "logical_cpus": 12
+  },
+  "workers": 11,
+  "config": {
+    "name": "full",
+    "base_seed": 0,
+    "runs": 25,
+    "budget_per_dim": 2000,
+    "dims": [
+      2,
+      10,
+      30
+    ],
+    "problems": [
+      "sphere",
+      "ellipsoid",
+      "rosenbrock",
+      "rastrigin",
+      "noisy_sphere"
+    ],
+    "targets": [
+      0.1,
+      0.001,
+      1e-06
+    ],
+    "algorithms": [
+      {
+        "name": "auxein-default",
+        "adapter": "auxein_static",
+        "params": {
+          "population_size": 100,
+          "mutation": {
+            "type": "self_adaptive",
+            "tau": 0.1
+          },
+          "distribution": "sigma_scaling",
+          "offspring_size": 4,
+          "alpha": 0.5
+        }
+      },
+      {
+        "name": "auxein-fixedvar",
+        "adapter": "auxein_static",
+        "params": {
+          "population_size": 100,
+          "mutation": {
+            "type": "fixed_variance",
+            "sigma": 0.1
+          },
+          "distribution": "sigma_scaling",
+          "offspring_size": 4,
+          "alpha": 0.5
+        }
+      },
+      {
+        "name": "auxein-windowing",
+        "adapter": "auxein_static",
+        "params": {
+          "population_size": 100,
+          "mutation": {
+            "type": "self_adaptive",
+            "tau": 0.1
+          },
+          "distribution": "fps_windowing",
+          "offspring_size": 4,
+          "alpha": 0.5
+        }
+      },
+      {
+        "name": "random-search",
+        "adapter": "random_search"
+      },
+      {
+        "name": "cma-es",
+        "adapter": "cmaes",
+        "params": {
+          "sigma0": 2.0,
+          "x0_range": 4.0
+        }
+      }
+    ],
+    "overhead": {
+      "budget": 20000,
+      "repeats": 5,
+      "dims": [
+        2,
+        10,
+        100
+      ],
+      "population_sizes": [
+        50,
+        200,
+        800
+      ]
+    }
+  }
+}

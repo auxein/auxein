@@ -17,6 +17,11 @@ dev = [
     "ruff>=0.6",
     "pyright>=1.1.380",
 ]
+bench = [
+    "cma>=3.3",
+    "matplotlib>=3.9",
+    "scipy>=1.11",
+]
 examples = [
     "ipykernel>=6.29",
     "matplotlib>=3.9",
@@ -24,6 +29,10 @@ examples = [
     "nbmake>=1.5",
     "pytest>=8",
 ]
+
+[tool.uv]
+# the benchmark harness tests run with the main test suite, so its dependencies are installed by default
+default-groups = ["dev", "bench"]
 
 [build-system]
 requires = ["hatchling"]
@@ -43,5 +52,10 @@ select = ["E", "F", "W", "B", "UP", "I"]
 ignore = ["E501", "B905"]
 
 [tool.pyright]
-include = ["auxein"]
+include = ["auxein", "benchmarks"]
+exclude = ["benchmarks/results"]
 pythonVersion = "3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "benchmarks/tests"]
+pythonpath = ["."]

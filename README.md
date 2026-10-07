@@ -35,6 +35,10 @@ At the moment, the documentation is a bunch of Jupyter notebooks and some Python
 - [How to use Auxein to solve a simple logistic regression problem](https://nbviewer.jupyter.org/github/auxein/auxein/blob/master/notebooks/logistic_regression.ipynb)
 - [How to use Auxein to fit a polynomial regression model](https://nbviewer.jupyter.org/github/auxein/auxein/blob/master/notebooks/polynomial_regression.ipynb)
 
+## Benchmarks
+
+A [benchmark harness](benchmarks/README.md) measures solution quality and engine overhead against random search and CMA-ES; the [Auxein 0.2.0 baseline report](benchmarks/reports/baseline-0.2.0/report.md) is committed.
+
 ------------------
 
 ## Why this name, Auxein?

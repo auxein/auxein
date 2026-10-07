@@ -53,3 +53,22 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --group examples
       - run: uv run --group examples pytest --nbmake notebooks/
+
+  benchmarks:
+    # Runs the quick benchmark and the report as a smoke test. It fails on crashes, exceptions or a timeout, never on quality results.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - id: run
+        run: |
+          results=$(uv run python -m benchmarks run --config benchmarks/configs/quick.toml)
+          echo "results=$results" >> "$GITHUB_OUTPUT"
+      - run: uv run python -m benchmarks report "${{ steps.run.outputs.results }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-quick-results
+          path: benchmarks/results/
