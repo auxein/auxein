@@ -11,7 +11,7 @@ import numpy as np
 
 
 def linear_fit(coeff: np.ndarray, x: np.ndarray) -> float:
-    assert type(coeff) == type(x) == np.ndarray, 'coefficients and variable must be np.ndarray'
+    assert isinstance(coeff, np.ndarray) and isinstance(x, np.ndarray), 'coefficients and variable must be np.ndarray'
     assert coeff.size - 1 == x.size, 'coefficients must be of the size of x+1'
     value: float = np.dot(x, coeff[:coeff.size - 1]) + coeff[coeff.size - 1]
     return value
