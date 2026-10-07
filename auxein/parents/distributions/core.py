@@ -55,14 +55,12 @@ class SigmaScaling(Distribution):
     def __init__(self) -> None:
         super().__init__()
 
-    def __scale_fitness_function(self, item: Item, population: Population) -> float:
-        max_value: float = max(item.fitness - (population.mean_fitness() - 2 * population.std_fitness()), 0)
-        return max_value
-
     def get(self, population: Population) -> List[Tuple[str, float]]:
         if population.min_fitness() == population.max_fitness():
             return _uniform(population)
-        total_fitness = sum(self.__scale_fitness_function(item, population) for item in population.pool)
+        lower_bound = population.mean_fitness() - 2 * population.std_fitness()
+        scaled = [(item.individual.id, max(item.fitness - lower_bound, 0)) for item in population.pool]
+        total_fitness = sum(value for _, value in scaled)
         if total_fitness == 0:
             return _uniform(population)
-        return list(map(lambda item: (item[0].id, self.__scale_fitness_function(item, population) / total_fitness), population.pool))
+        return [(individual_id, value / total_fitness) for individual_id, value in scaled]

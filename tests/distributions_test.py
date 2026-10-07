@@ -174,7 +174,6 @@ def test_distribution_on_converged_population_is_uniform(distribution):
     assert np.allclose(probabilities, [0.25] * 4)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: SigmaScaling recomputes population mean and std for every individual")
 def test_sigma_scaling_computes_population_statistics_once(monkeypatch):
     population = build_population_with_fitnesses([1.0, 2.0, 3.0, 4.0, 5.0])
     calls = {"mean": 0, "std": 0}
