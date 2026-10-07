@@ -37,6 +37,9 @@ examples = [
 [tool.uv]
 # the benchmark harness tests run with the main test suite, so its dependencies are installed by default
 default-groups = ["dev", "bench"]
+# Every resolution must contain wheels for x86_64 Linux (CI). Without this, `--resolution lowest-direct` picks the bare
+# `torch 2.4.0` of the CPU index, which only has aarch64 wheels (the x86_64 ones are `2.4.0+cpu`).
+required-environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
 
 # On Linux (CI) torch comes from PyTorch's CPU-only index: the default PyPI wheels pull in about 3 GB of CUDA
 # libraries that the tests never use. Other platforms keep the PyPI wheels (macOS wheels include Metal/MPS support).
