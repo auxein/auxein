@@ -111,6 +111,16 @@ class Box:
         """Which dimensions are log-scale, read-only."""
         return self._log
 
+    def describe(self) -> dict[str, object]:
+        """A JSON-serialisable description of the box, for run metadata."""
+        return {
+            "type": "Box",
+            "dim": self.dim,
+            "lower": self._lower.tolist(),
+            "upper": self._upper.tolist(),
+            "log_scale": self._log.tolist(),
+        }
+
     def __repr__(self) -> str:
         return f"Box(lower={self._lower.tolist()}, upper={self._upper.tolist()}, log_scale={self._log.tolist()})"
 

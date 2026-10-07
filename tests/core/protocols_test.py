@@ -42,7 +42,15 @@ def test_contexts_carry_what_the_driver_provides(backend: Backend):
     assert strategy_ctx.new_id() == 0 and strategy_ctx.new_id() == 1
     assert strategy_ctx.rng.backend == backend
 
-    eval_ctx = EvalContext(backend, lambda cid: seed.stream("evaluation", cid, backend=backend), timeout=5.0)
+    problem = ProblemSpec(Box(0.0, 1.0, dim=2), (Objective("value"),))
+    eval_ctx = EvalContext(
+        problem,
+        backend,
+        lambda cid: seed.stream("evaluation", cid, backend=backend),
+        lambda cid: seed.stream("evaluation-batch", cid, backend=backend),
+        timeout=5.0,
+    )
+    assert eval_ctx.problem is problem
     assert eval_ctx.deadline is None and eval_ctx.timeout == 5.0
     a, b, a_again = eval_ctx.rng_for(3), eval_ctx.rng_for(4), eval_ctx.rng_for(3)
     assert backend.to_numpy(a.uniform(3)).tolist() == backend.to_numpy(a_again.uniform(3)).tolist()  # follows the candidate
@@ -84,7 +92,7 @@ class RandomSearchStub:
 
 
 class SphereEvaluator:
-    async def evaluate(self, batch: Batch[Array], ctx: EvalContext) -> EvaluationBatch[Array]:
+    async def evaluate(self, batch: Batch[Array], ctx: EvalContext[Array]) -> EvaluationBatch[Array]:
         array = batch.as_array()
         assert array is not None
         values = ctx.backend.to_numpy((array * array).sum(axis=1))
@@ -97,7 +105,12 @@ def test_the_core_types_compose_into_an_ask_evaluate_tell_loop(backend: Backend)
     problem = ProblemSpec(Box(-5.0, 5.0, dim=4), (Objective("value"),))
     strategy = RandomSearchStub()
     strategy.bind(problem, StrategyContext(seed.stream("strategy", backend=backend), backend, issuer.next))
-    ctx = EvalContext(backend, lambda cid: seed.stream("evaluation", cid, backend=backend))
+    ctx = EvalContext(
+        problem,
+        backend,
+        lambda cid: seed.stream("evaluation", cid, backend=backend),
+        lambda cid: seed.stream("evaluation-batch", cid, backend=backend),
+    )
 
     for _ in range(3):
         batch = strategy.ask(8)

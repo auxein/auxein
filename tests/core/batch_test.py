@@ -158,3 +158,44 @@ def test_construction_validates_the_array(backend: Backend):
         ArrayBatch(backend.asarray(np.zeros((2, 2, 2))), ids(2), 0, "init")
     with pytest.raises(TypeError, match="cannot infer a backend"):
         ArrayBatch([[1.0, 2.0]], ids(1), 0, "init")  # type: ignore[arg-type]
+
+
+def test_array_batch_take_returns_the_first_candidates_as_a_slice_of_the_same_array(backend: Backend):
+    batch, _ = make(backend, parents=[(CandidateId(9),), (), (CandidateId(1),), ()])
+    first = batch.take(2)
+    assert isinstance(first, ArrayBatch) and len(first) == 2
+    assert first.ids == (0, 1) and first.parents == ((9,), ()) and first.origins == ("init", "init") and first.step == 2
+    np.testing.assert_array_equal(backend.to_numpy(first.as_array()), backend.to_numpy(batch.as_array())[:2])
+    if backend.name == "numpy":
+        assert np.shares_memory(first.as_array(), batch.as_array())
+        with pytest.raises(ValueError, match="read-only"):
+            first.as_array()[0, 0] = 1.0
+    assert len(batch.take(0)) == 0 and len(batch.take(4)) == 4
+    with pytest.raises(ValueError, match="cannot take 5 candidates out of 4"):
+        batch.take(5)
+    with pytest.raises(ValueError, match="cannot take -1"):
+        batch.take(-1)
+
+
+def test_take_keeps_array_batches_array_backed_and_truncates_other_batches(backend: Backend):
+    from auxein.core import take
+
+    batch, _ = make(backend)
+    assert take(batch, 3).as_array() is not None and len(take(batch, 3).candidates) == 3
+    candidates = [Candidate(CandidateId(i), f"g{i}", (), "init", 0) for i in range(5)]
+    truncated = take(ListBatch(candidates), 2)
+    assert [c.genome for c in truncated.candidates] == ["g0", "g1"] and truncated.as_array() is None
+    with pytest.raises(ValueError, match="cannot take 6 candidates out of 5"):
+        take(ListBatch(candidates), 6)
+
+
+def test_take_works_on_any_batch_implementation():
+    from auxein.core import take
+
+    class Custom:
+        candidates = tuple(Candidate(CandidateId(i), i, (), "x", 0) for i in range(4))
+
+        def as_array(self):
+            return None
+
+    assert [c.id for c in take(Custom(), 3).candidates] == [0, 1, 2]

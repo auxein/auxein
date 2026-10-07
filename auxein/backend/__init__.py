@@ -1,6 +1,6 @@
 """The numeric backend (design doc §7): array namespace, device and precision."""
 
-from auxein.backend.backend import Backend, BackendError, BackendName, Precision, backend_of, default_precision
+from auxein.backend.backend import Backend, BackendError, BackendName, Precision, backend_of, default_precision, is_array
 from auxein.backend.types import Array, ArrayNamespace
 
 __all__ = [
@@ -12,4 +12,5 @@ __all__ = [
     "Precision",
     "backend_of",
     "default_precision",
+    "is_array",
 ]

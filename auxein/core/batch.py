@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Generic, Protocol, overload
+from typing import Generic, Protocol, cast, overload
 
 from auxein.backend import Array, Backend, backend_of
 from auxein.core._typing import G
@@ -147,3 +147,21 @@ class ArrayBatch:
 
     def candidate(self, index: int) -> Candidate[Array]:
         return Candidate(self._ids[index], self._genomes[index], self._parents[index], self._origins[index], self._step)
+
+    def take(self, n: int) -> "ArrayBatch":
+        """The first `n` candidates, as a batch sharing this batch's array (a slice, not a copy)."""
+        if not 0 <= n <= len(self):
+            raise ValueError(f"cannot take {n} candidates out of {len(self)}")
+        return ArrayBatch(self._genomes[:n], self._ids[:n], self._step, self._origins[:n], self._parents[:n])
+
+
+def take(batch: Batch[G], n: int) -> Batch[G]:
+    """The first `n` candidates of any batch, in order. Array-backed batches stay array-backed.
+
+    The driver uses it to truncate an oversized final batch to the remaining evaluation budget.
+    """
+    if not 0 <= n <= len(batch.candidates):
+        raise ValueError(f"cannot take {n} candidates out of {len(batch.candidates)}")
+    if isinstance(batch, ArrayBatch):
+        return cast("Batch[G]", batch.take(n))
+    return ListBatch(tuple(batch.candidates[:n]))

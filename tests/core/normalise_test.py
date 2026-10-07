@@ -1,0 +1,216 @@
+import math
+
+import numpy as np
+import pytest
+
+from auxein.backend import Backend
+from auxein.core import (
+    BatchResult,
+    Candidate,
+    CandidateId,
+    Objective,
+    ProblemSpec,
+    Result,
+    Status,
+    evaluation_from_return,
+    evaluations_from_batch_return,
+)
+from auxein.spaces import Box
+
+SPACE = Box(-1.0, 1.0, dim=2)
+ONE = ProblemSpec(SPACE, (Objective("loss"),))
+TWO = ProblemSpec(SPACE, (Objective("loss"), Objective("score", "maximise")))
+FULL = ProblemSpec(SPACE, (Objective("loss"),), ("cpa",), ("speed",))
+
+
+def cand(i: int = 7) -> Candidate[None]:
+    return Candidate(CandidateId(i), None, (), "init", 0)
+
+
+def one(raw: object, problem: ProblemSpec = ONE, wall: float = 0.25):
+    return evaluation_from_return(raw, cand(), problem, wall)  # type: ignore[arg-type]
+
+
+# --- per-candidate returns ---
+
+
+@pytest.mark.parametrize("raw", [3, 3.0, np.float32(3.0), np.float64(3.0), np.int64(3), np.array(3.0), np.array(3), np.float16(3.0)])
+def test_a_bare_number_is_the_single_objective(raw: object):
+    e = one(raw)
+    assert e.status is Status.OK and dict(e.objectives) == {"loss": 3.0}
+    assert dict(e.constraints) == {} and dict(e.descriptors) == {}
+    assert e.cost.wall_time == 0.25 and dict(e.cost.units) == {}
+
+
+def test_a_bare_number_may_be_a_zero_dimensional_array_of_any_backend(backend: Backend):
+    assert dict(one(backend.asarray(2.5)).objectives) == {"loss": 2.5}
+
+
+def test_a_bare_number_uses_the_name_of_the_declared_objective():
+    problem = ProblemSpec(SPACE, (Objective("score", "maximise"),))
+    assert dict(one(1.5, problem).objectives) == {"score": 1.5}
+
+
+def test_a_bare_number_with_several_objectives_is_an_error_naming_them():
+    with pytest.raises(TypeError, match=r"bare number.*2 objectives \('loss', 'score'\).*Result"):
+        one(1.0, TWO)
+
+
+def test_a_bare_number_with_declared_constraints_or_descriptors_is_an_error():
+    with pytest.raises(TypeError, match=r"constraints 'cpa' and descriptors 'speed'.*Result"):
+        one(1.0, FULL)
+    with pytest.raises(TypeError, match="constraints 'cpa'"):
+        one(1.0, ProblemSpec(SPACE, (Objective("a"),), ("cpa",)))
+
+
+def test_a_complete_result():
+    e = one(Result({"loss": 2.0}, {"cpa": 0.5}, {"speed": 3.0}, {"tokens": 10.0}), FULL)
+    assert dict(e.objectives) == {"loss": 2.0} and dict(e.constraints) == {"cpa": 0.5}
+    assert dict(e.descriptors) == {"speed": 3.0}
+    assert dict(e.cost.units) == {"tokens": 10.0} and e.cost.wall_time == 0.25
+    assert e.status is Status.OK and e.candidate.id == 7
+
+
+def test_a_result_with_several_objectives_in_any_order():
+    e = one(Result({"score": 1.0, "loss": 2.0}), TWO)
+    assert dict(e.objectives) == {"loss": 2.0, "score": 1.0}
+
+
+@pytest.mark.parametrize(
+    ("result", "problem", "message"),
+    [
+        (Result({"los": 1.0}), ONE, r"missing objectives 'loss'; unknown objectives 'los' \(declared: 'loss'\)"),
+        (Result({"loss": 1.0, "extra": 2.0}), ONE, r"unknown objectives 'extra'"),
+        (Result({"loss": 1.0}), TWO, r"missing objectives 'score'"),
+        (Result({"loss": 1.0}), FULL, r"missing constraints 'cpa'; missing descriptors 'speed'"),
+        (Result({"loss": 1.0}, {"cpa": 0.0}, {"speed": 1.0, "typo": 2.0}), FULL, r"unknown descriptors 'typo'"),
+        (Result({"loss": 1.0}, {"cpa": 0.0, "cpa2": 1.0}, {"speed": 1.0}), FULL, r"unknown constraints 'cpa2'"),
+        (Result({"loss": 1.0}, {"cpa": 0.0}), ONE, r"unknown constraints 'cpa' \(declared: none\)"),
+    ],
+)
+def test_a_result_must_match_the_problem_exactly(result: Result, problem: ProblemSpec, message: str):
+    with pytest.raises(ValueError, match=message):
+        one(result, problem)
+
+
+def test_a_plain_dict_is_rejected_with_a_pointer_to_result():
+    with pytest.raises(TypeError, match=r"returned a dict.*Plain dicts are not accepted.*Result\(objectives="):
+        one({"loss": 1.0})
+    with pytest.raises(TypeError, match="Result"):
+        one({})
+
+
+@pytest.mark.parametrize(
+    "raw", [None, "1.0", [1.0], (1.0,), True, np.bool_(True), np.array([1.0]), np.array([1.0, 2.0]), object(), 1 + 2j, np.array("x")]
+)
+def test_other_returns_are_rejected(raw: object):
+    with pytest.raises(TypeError, match="must return a number or a Result"):
+        one(raw)
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
+@pytest.mark.parametrize("wrap", [lambda v: v, lambda v: Result({"loss": v})])
+def test_a_non_finite_objective_is_an_error_naming_the_candidate(value: float, wrap):
+    with pytest.raises(ValueError, match=r"candidate 7: objective 'loss' is .*finite"):
+        one(wrap(value))
+
+
+# --- vectorised returns ---
+
+CANDIDATES = [cand(i) for i in (10, 11, 12)]
+
+
+def many(raw: object, problem: ProblemSpec = ONE, wall: float = 0.3):
+    return evaluations_from_batch_return(raw, CANDIDATES, problem, wall)  # type: ignore[arg-type]
+
+
+def test_a_vector_is_the_single_objective(backend: Backend):
+    evaluations = many(backend.asarray([3.0, 1.0, 2.0]))
+    assert [e.candidate.id for e in evaluations] == [10, 11, 12]
+    assert [e.objectives["loss"] for e in evaluations] == pytest.approx([3.0, 1.0, 2.0], rel=1e-6)
+    assert all(e.status is Status.OK for e in evaluations)
+
+
+def test_the_batch_wall_time_is_split_equally(backend: Backend):
+    evaluations = many(backend.asarray([1.0, 2.0, 3.0]), wall=0.3)
+    assert [e.cost.wall_time for e in evaluations] == pytest.approx([0.1, 0.1, 0.1])
+
+
+def test_a_matrix_has_one_column_per_declared_objective_in_declared_order(backend: Backend):
+    evaluations = many(backend.asarray([[1.0, 10.0], [2.0, 20.0], [3.0, 30.0]]), TWO)
+    assert [(e.objectives["loss"], e.objectives["score"]) for e in evaluations] == [(1.0, 10.0), (2.0, 20.0), (3.0, 30.0)]
+
+
+def test_a_single_column_matrix_is_fine_for_one_objective(backend: Backend):
+    assert [e.objectives["loss"] for e in many(backend.asarray([[1.0], [2.0], [3.0]]))] == [1.0, 2.0, 3.0]
+
+
+def test_a_batch_result_returns_everything(backend: Backend):
+    raw = BatchResult(
+        {"loss": backend.asarray([1.0, 2.0, 3.0])},
+        {"cpa": backend.asarray([0.0, 0.5, 0.0])},
+        {"speed": backend.asarray([4.0, 5.0, 6.0])},
+        {"tokens": backend.asarray([10.0, 20.0, 30.0])},
+    )
+    evaluations = many(raw, FULL)
+    assert [e.constraints["cpa"] for e in evaluations] == [0.0, 0.5, 0.0]
+    assert [e.descriptors["speed"] for e in evaluations] == [4.0, 5.0, 6.0]
+    assert [e.cost.units["tokens"] for e in evaluations] == [10.0, 20.0, 30.0]
+    assert [e.cost.wall_time for e in evaluations] == pytest.approx([0.1] * 3)
+
+
+def test_a_batch_result_must_match_the_problem_exactly():
+    with pytest.raises(ValueError, match=r"BatchResult.*missing objectives 'score'"):
+        many(BatchResult({"loss": [1.0, 2.0, 3.0]}), TWO)
+    with pytest.raises(ValueError, match=r"unknown descriptors 'x'"):
+        many(BatchResult({"loss": [1.0, 2.0, 3.0]}, descriptors={"x": [1.0, 2.0, 3.0]}), ONE)
+    with pytest.raises(ValueError, match="covers 2 candidates but the batch has 3"):
+        many(BatchResult({"loss": [1.0, 2.0]}))
+
+
+def test_shape_errors(backend: Backend):
+    with pytest.raises(ValueError, match="returned 2 values for a batch of 3"):
+        many(backend.asarray([1.0, 2.0]))
+    with pytest.raises(ValueError, match="returned 4 values for a batch of 3"):
+        many(backend.asarray([[1.0, 2.0]] * 4), TWO)
+    with pytest.raises(ValueError, match=r"returned 3 columns but the problem has 2 objectives \('loss', 'score'\)"):
+        many(backend.asarray(np.zeros((3, 3))), TWO)
+    with pytest.raises(ValueError, match=r"shape \(n,\) or \(n, k\)"):
+        many(backend.asarray(np.zeros((3, 1, 1))))
+    with pytest.raises(ValueError, match="returned 2 columns but the problem has 1 objectives"):
+        many(backend.asarray(np.zeros((3, 2))))
+
+
+def test_a_vector_with_several_objectives_or_declared_constraints_is_an_error(backend: Backend):
+    with pytest.raises(TypeError, match=r"2 objectives \('loss', 'score'\).*BatchResult"):
+        many(backend.asarray([1.0, 2.0, 3.0]), TWO)
+    with pytest.raises(TypeError, match="constraints 'cpa'"):
+        many(backend.asarray([1.0, 2.0, 3.0]), FULL)
+    with pytest.raises(TypeError, match="constraints 'cpa'"):
+        many(backend.asarray([[1.0], [2.0], [3.0]]), FULL)
+
+
+def test_a_dict_is_rejected_here_too():
+    with pytest.raises(TypeError, match=r"returned a dict.*BatchResult"):
+        many({"loss": [1.0, 2.0, 3.0]})
+
+
+def test_non_array_returns_are_rejected():
+    with pytest.raises(TypeError, match="must return an array or a BatchResult"):
+        many("text")
+    with pytest.raises(TypeError):
+        many(None)
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf])
+def test_a_non_finite_value_names_the_candidate(backend: Backend, value: float):
+    with pytest.raises(ValueError, match=r"candidate 11: objective 'loss' is"):
+        many(backend.asarray([1.0, value, 3.0]))
+    with pytest.raises(ValueError, match=r"candidate 12: objective 'score' is"):
+        many(backend.asarray([[1.0, 1.0], [2.0, 2.0], [3.0, value]]), TWO)
+    with pytest.raises(ValueError, match=r"candidate 10: objective 'loss' is"):
+        many(BatchResult({"loss": [value, 1.0, 2.0]}))
+
+
+def test_an_empty_batch():
+    assert evaluations_from_batch_return(np.zeros(0), [], ONE, 0.0) == []
