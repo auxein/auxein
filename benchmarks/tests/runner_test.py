@@ -90,13 +90,20 @@ def test_the_shipped_configs_are_valid():
     full, quick = load_config(CONFIGS / "full.toml"), load_config(CONFIGS / "quick.toml")
 
     assert full.runs == 25 and full.dims == (2, 10, 30) and len(full.problems) == 5
-    assert [a.name for a in full.algorithms] == ["auxein-default", "auxein-fixedvar", "auxein-windowing", "random-search", "cma-es"]
+    assert [a.name for a in full.algorithms] == [
+        "auxein-default",
+        "auxein-fixedvar",
+        "auxein-windowing",
+        "random-search",
+        "cma-es",
+        "auxein-core-random",
+    ]
     assert full.budget(10) == 20000
     assert full.targets == (1e-1, 1e-3, 1e-6)
     assert full.overhead is not None and full.overhead.dims == (2, 10, 100) and full.overhead.population_sizes == (50, 200, 800)
 
     assert quick.runs == 3 and quick.dims == (2, 10) and len(quick.problems) == 5
-    assert [a.name for a in quick.algorithms] == ["auxein-default", "random-search", "cma-es"]
+    assert [a.name for a in quick.algorithms] == ["auxein-default", "random-search", "cma-es", "auxein-core-random"]
     assert quick.budget(10) == 5000
 
 
