@@ -7,6 +7,9 @@ dims = [2, 10, 30]
 problems = ["sphere", "ellipsoid", "rosenbrock", "rastrigin", "noisy_sphere"]
 targets = [1e-1, 1e-3, 1e-6]
 
+[report]
+references = ["auxein-default", "auxein-core-ga"]   # the algorithms the statistical comparison is made from
+
 [[algorithms]]
 name = "auxein-default"
 adapter = "auxein_static"
