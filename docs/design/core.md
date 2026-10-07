@@ -17,7 +17,7 @@ This document defines the core architecture of the next version of Auxein. It re
 3. **Any genome, any environment.** The core never inspects genomes and never assumes how an environment runs.
 4. **Fast where it matters, simple everywhere else.** Numeric strategies work on arrays and can run on a GPU. Everything else stays plain Python.
 5. **Reproducible by default.** Same seed, same backend and precision: same run.
-6. **Everything is recorded.** Every candidate's origin and every evaluation's outcome can be inspected after the fact.
+6. **Everything can be recorded.** A run is designed to be fully reconstructable: every candidate's origin and every evaluation's outcome can be inspected after the fact. Recording is opt-in (a run only writes to disk when it is given a `run_dir`), and a run without one says so with a warning, because it can't be reconstructed.
 
 ---
 
@@ -240,16 +240,26 @@ Validation: objective values must be finite when the status is `OK`, and may be 
 
 ```python
 class Evaluator(Protocol[G]):
-    async def evaluate(self, batch: Batch[G], ctx: EvalContext) -> EvaluationBatch[G]: ...
+    async def evaluate(self, batch: Batch[G], ctx: EvalContext[G]) -> EvaluationBatch[G]: ...
 ```
 
 The evaluator interface is asynchronous, but users rarely implement it directly. Built-in evaluators wrap ordinary code:
 
-- `FunctionEvaluator(f)`: `f(genome) -> number | dict`, called per candidate. Synchronous functions are offloaded to a thread or process pool automatically; `async def` functions run natively.
-- `VectorisedEvaluator(f)`: `f(X) -> (n,)` or `(n, k)` values on the batch's array. This is the fast path for numeric problems, and runs on GPU when the arrays are on GPU.
+- `FunctionEvaluator(f, uses_rng=False)`: `f(genome)`, or `f(genome, rng)` with `uses_rng=True`, called per candidate, where `rng` is the candidate's own evaluation stream (§8). `f` may be a plain function or an `async def`. In the first implementation candidates are evaluated sequentially and synchronous functions are called directly; thread and process pools and concurrency come with the asynchronous driver. Each candidate's wall time is recorded in its `Cost`.
+- `VectorisedEvaluator(f, uses_rng=False)`: `f(X)`, or `f(X, rng)`, once per batch with `X = batch.as_array()`; it needs an array-backed batch. This is the fast path for numeric problems, and runs on GPU when the arrays are on GPU. The batch's wall time is split equally across its candidates. With `uses_rng=True` it receives one stream per batch (§8).
 - `EpisodeEvaluator(decoder, environment, scenarios, aggregator)`: the agent evaluator (§6).
 
-`EvalContext` carries the backend, deadlines and timeouts, and a factory that derives each candidate's evaluation random stream from its id (§8). It is a factory rather than a list of streams so that a batch of thousands of candidates doesn't create thousands of generators up front.
+**What a fitness function returns.** The rules are the same for every evaluator, and are implemented in one normalisation function:
+
+- A **bare number** (a Python int or float, a numpy scalar, or a 0-d array of any supported backend) is the single objective of a problem with **exactly one objective**, minimised or maximised as declared. A bare number for a problem with several objectives, or with declared constraints or descriptors, is an error that says so.
+- Anything richer **must** use an explicit result object: `Result(objectives, constraints, descriptors, cost)` per candidate, or `BatchResult` for a vectorised function (the same fields, each a mapping of name to an array of shape `(n,)`). A result must match the problem exactly: every declared objective, constraint and descriptor present, and no unknown name, which catches typos. `cost` holds user-defined units (tokens, money, simulated seconds).
+- **Plain dicts are rejected** with a `TypeError` that points to `Result`: a dict can't say which keys are objectives, constraints or descriptors, so there is no flat-dict format.
+- A vectorised function may return an array of shape `(n,)` (a single objective) or `(n, k)` (`k` declared objectives, columns in declared order) on any supported backend, or a `BatchResult`.
+- A non-finite objective value in what would be an `OK` evaluation is an error naming the candidate id.
+
+An exception raised by user code fails the run in the first implementation (failure policies come with the asynchronous driver, §6.6); it is wrapped in an `EvaluationError` that names the candidate id(s) and chains the original exception.
+
+`EvalContext` carries the problem specification (so that what user code returns can be checked against it), the backend, deadlines and timeouts, and two factories that derive evaluation random streams from candidate ids: `rng_for(id)` for a candidate, and `batch_rng_for(first_id)` for a vectorised batch (§8). They are factories rather than lists of streams so that a batch of thousands of candidates doesn't create thousands of generators up front.
 
 ### 5.4 Scalarisation
 
@@ -325,6 +335,7 @@ aggregator = Aggregator(
 ### 6.6 Failures
 
 - A failed or timed-out episode or evaluation is **a result, not a crash**. It's recorded with its status and error, and the run continues.
+  - *Until the asynchronous driver exists (step 4), an exception in user code is not turned into a result: it fails the run, wrapped in an `EvaluationError` that names the candidate, and the recording is finalised with status `failed`.*
 - **Default policy: infeasible.** A failed candidate ranks below every feasible candidate, is kept in the lineage for inspection, and is never silently retried.
 - **`fail_fast`** stops the run at the first failure (useful when developing an environment). Custom policies are possible.
 - Auxein provides **timeouts** and **process isolation** for evaluations. Sandboxing what an agent is allowed to *do* is the environment's responsibility.
@@ -377,6 +388,7 @@ class Backend:
   - one per candidate evaluation, derived from the candidate's (deterministic) id (`"evaluation", candidate_id`)
 - **Stable names.** A stream name is mapped to an integer with CRC-32 of its UTF-8 bytes, never with Python's `hash()` (randomised per process), so the same seed, name and keys give the same stream in any process on any machine. Keys are integers in `[0, 2**32)`. Two names could in principle collide in CRC-32 (about one chance in four billion); a test pins the names Auxein uses.
 - **Evaluation randomness follows the candidate**, not the worker or the time of evaluation. Evaluations are reproducible in any parallel or distributed setup.
+- **Exception for vectorised evaluators.** A vectorised function draws its randomness for the whole batch at once, so per-candidate streams would be unusable. It receives **one stream per batch**, derived from the id of the batch's first candidate (`SeedSequence` key `("evaluation-batch", first_id)`). That is deterministic because the composition of a batch is. Per-candidate streams remain the rule for per-candidate evaluators.
 - **Backend-native generation.** The random layer (`RandomStream`) wraps numpy's `Generator(PCG64)` on CPU and `torch.Generator` on the target device, seeded from the derived streams. Random numbers are produced where the arrays live. Streams offer `uniform`, `normal`, `integers`, `permutation` and `choice`, returning arrays in the backend's namespace, device and dtype (integers as int64).
 - **Torch seed width.** A `torch.Generator` on the CPU is an MT19937 that accepts only 32 bits of seed, so two derived seed sequences can give the same torch stream; the chance is negligible for the few streams a run needs but becomes likely around 65,000 torch streams, e.g. one per candidate evaluation. numpy streams use the full 128 bits, and generators on CUDA and Metal use the full 64-bit seed. **Decision (step 1): the limit is accepted for now** and revisited if a use case needs more than about 65,000 torch-CPU evaluation streams in one run (§15). Evaluators that need many independent streams can draw from numpy streams, which have no such limit.
 - **Scope of reproducibility:** identical results for the same seed, backend and precision. Different backends or precisions give different (equally valid) runs.
@@ -398,25 +410,29 @@ In steady-state asynchronous runs, results arrive in an order that depends on ti
 
 - The **driver is asynchronous internally** (asyncio). It manages in-flight evaluations, concurrency limits, timeouts, budgets, delivery order and recording.
 - **Strategies are synchronous** (§3.2). **Evaluators** may be synchronous (offloaded to thread or process pools) or asynchronous (run natively). CPU-heavy synchronous evaluations go to process pools; asyncio alone doesn't parallelise CPU work.
-- **Users get a synchronous entry point** that works in scripts and in notebooks (where an event loop is already running), plus an async variant for embedding Auxein in async applications.
+- **Users get a synchronous entry point** that works in scripts and in notebooks (where an event loop is already running: the driver then runs on a fresh loop in a dedicated thread, and `run()` waits for it), plus an async variant for embedding Auxein in async applications.
 
 ```python
-result = auxein.run(
-    strategy=GeneticAlgorithm(...),
+result = auxein.driver.run(
+    strategy=RandomSearch(),
     evaluator=VectorisedEvaluator(rastrigin),
     space=Box(lower=-5.0, upper=5.0, dim=10),
-    objectives=[Objective("value")],          # default: one minimised objective
-    budget=Budget(evaluations=20_000),
+    objectives=[Objective("value")],          # default: one minimised objective called "value"
+    constraints=(), descriptors=(),
+    budget=Budget(evaluations=20_000),        # also wall_time (seconds) and cost (limits per cost unit)
     seed=42,
     backend=Backend("numpy", "cpu", "float64"),
-    concurrency=8,
-    deterministic=True,
-    failure_policy="infeasible",
-    run_dir="runs/rastrigin-ga",
+    batch_size=64,
+    run_dir="runs/rastrigin-random",          # opt-in recording; without it nothing is written and a warning is emitted
+    name="rastrigin-random",                  # defaults to the directory name
 )
 
-result = await auxein.arun(...)  # same arguments
+result = await auxein.driver.arun(...)  # same arguments
 ```
+
+- **Recording is opt-in.** Without `run_dir` nothing is written to disk, and the run emits a `RecordingDisabledWarning` (a `UserWarning`) once per run, with a stack level that points at the user's call. `warnings.filterwarnings("ignore", category=RecordingDisabledWarning)` silences it. A `run_dir` that already exists and isn't empty is refused, so runs never mix.
+- The first implementation delivers results **by generation only**, one batch at a time, with candidates evaluated sequentially; `concurrency`, `deterministic` and `failure_policy` come with the asynchronous driver (step 4). The loop is built so that they extend it. A strategy whose `tell_mode` is `steady_state` only is rejected for now.
+- `run()` also accepts a `clock` (the time source of the wall-time budget, injectable for tests).
 
 ### 9.2 Delivery modes
 
@@ -427,8 +443,12 @@ The driver respects each strategy's `tell_mode`:
 
 ### 9.3 Budgets and termination
 
-- **Budgets** are measured in **evaluations** (the primary unit), and optionally wall time and cost units (e.g. tokens, money). The run stops when any budget is exhausted, the strategy's `should_stop()` returns true, or the user interrupts.
+- **Budgets** (`Budget(evaluations, wall_time, cost)`) are measured in **evaluations** (the primary unit), and optionally wall time (seconds) and cost units (limits on the summed user-defined units, e.g. tokens, money). At least one limit is required. The run stops when any budget is exhausted, the strategy's `should_stop()` returns true, or the user interrupts.
 - Every evaluation is counted, including initialisation and re-evaluations.
+- **The evaluation budget is a hard limit.** The driver asks for `min(batch_size, remaining)` candidates; if a strategy returns more than remain, only the remaining candidates are evaluated (in ask order) and recorded, and the run ends **without telling the strategy** about the incomplete batch. Every evaluated candidate counts towards the result.
+- **Wall-time and cost budgets are checked between batches**: the batch in progress completes, so they can be exceeded by up to one batch.
+- **Stop reasons:** `budget:evaluations`, `budget:wall_time`, `budget:cost:<unit>` and `strategy`, checked in that order before each ask. On `KeyboardInterrupt` or any exception the recording is finalised with status `interrupted` or `failed`, and the exception is re-raised.
+- **The driver validates what it is handed.** An asked batch must be non-empty, with ids that this run issued and has not seen before (ids are never reused, not even for re-evaluations) and a single step that never goes back. The results of an evaluator must be one evaluation per candidate, in ask order. Violations raise `StrategyError` and `EvaluatorError`.
 
 ### 9.4 Caching and re-evaluation
 
@@ -437,7 +457,13 @@ The driver respects each strategy's `tell_mode`:
 
 ### 9.5 Result
 
-`RunResult` gives access to the best candidates (per objective, or the non-dominated set for multi-objective), budget usage, the run directory, and a handle to the recorded run for analysis.
+`RunResult` holds the stop reason, the evaluations used, the wall time and the run directory, plus:
+
+- **`best`** (single objective only): the best `OK` evaluation. Feasible beats infeasible, then a lower total violation, then a lower objective in minimisation form (the declared direction is respected), with ties going to the earliest id. `None` for several objectives, or if no `OK` evaluation exists.
+- **`pareto_front`**: the non-dominated feasible `OK` evaluations in minimisation form, maintained incrementally as an archive, sorted by candidate id. For one objective it is the best feasible evaluation.
+- **`trace`** (single objective only): `(evaluations_used, best_value)` at each change of `best`, in natural units, for quick plots.
+
+Results are tracked incrementally, so memory doesn't grow with the length of a single-objective run. A handle to the recorded run for analysis is `auxein.recording.open_run(result.run_dir)`.
 
 ---
 
@@ -447,7 +473,8 @@ The driver respects each strategy's `tell_mode`:
 
 ```
 runs/<name>/
-  metadata.json          # config, seed, versions, git SHA, backend, precision, problem spec
+  metadata.json          # name, seed, versions, git SHA and dirty flag, backend, precision, problem spec, budget, batch size,
+                         # strategy and evaluator, start and end times, final status, stop reason and summary (written atomically)
   events.sqlite          # event log: candidates, lineage, evaluations, checkpoints
   genomes/               # content-addressed genome store (large genomes)
   artifacts/             # optional heavy outputs: trajectories, transcripts, logs
@@ -456,17 +483,21 @@ runs/<name>/
 
 ### 10.2 Event log (SQLite)
 
-- **Append-only.** Written by the driver, which is the single writer, in transactions, so it's safe against crashes.
-- Tables (indicative):
-  - `candidates`: id, step, origin, genome (inline if small, else a hash reference), created_at
-  - `lineage`: parent → child edges
-  - `evaluations`: candidate id, status, objectives, constraints, descriptors, cost, raw reference, error, started/finished timestamps
-  - `checkpoints`
-- **Lineage queries** ("all descendants of X", "the ancestry of the best agent") are single recursive SQL queries.
-- **Export** to JSONL or Parquet with one command.
+- **Append-only.** Written by the driver, which is the single writer, one transaction per batch, so it's safe against crashes. The database is in WAL mode and is checkpointed when the run ends.
+- **Schema (version 1)**, as implemented; a `schema_version` table holds the version number:
+  - `candidates`: `id` (primary key), `step`, `origin`, `genome_kind` (`array` or `json`), `genome` (raw bytes or JSON text), `genome_dtype` and `genome_shape` (arrays only), `created_at`
+  - `lineage`: `parent_id`, `child_id`, both indexed
+  - `evaluations`: `candidate_id` (primary key), `status`, `objectives`, `constraints`, `descriptors` and `cost_units` (JSON objects of name to value), `wall_time`, `error`, `finished_at`
+  - `events`: `seq`, `kind` (`ask`, `tell` or `stop`), `step`, a JSON `payload`
+  - `checkpoints` is added with checkpoints (step 5), together with the raw-measurement references of §6.4.
+- **Candidates are recorded once they are evaluated**, together with their evaluation. A candidate dropped by the budget truncation (§9.3) is never evaluated and has no row.
+- **Determinism:** the contents of `events.sqlite` are identical for the same seed, backend and precision, apart from `created_at`, `finished_at` and `wall_time`, which are timestamps and measured times.
+- **Lineage queries** ("all descendants of X", "the ancestry of the best agent") are single recursive SQL queries; `auxein.recording.open_run(path)` offers `ancestry(id)` and `descendants(id)`, and iterates over the evaluations with their genomes decoded.
+- **Export** to JSONL or Parquet with one command comes later.
 
 ### 10.3 Genomes and artifacts
 
+- In the first implementation genomes are stored inline in `candidates`, without pickle: array genomes (numpy arrays, or torch tensors copied to the host) as raw C-order bytes plus dtype and shape, other genomes as JSON when they are JSON-serialisable. A genome that is neither is a clear error; structured genomes get proper storage in a later step.
 - Small genomes are stored inline. Large genomes (network weights, long prompts) go into the **content-addressed store**: each distinct genome is saved once under its hash.
 - **Heavy artifacts** (trajectories, transcripts) are optional and stored by reference. **Default: kept for failed evaluations only.** Options keep them for the best candidates or a sample.
 
@@ -558,8 +589,8 @@ docs/design/core.md
 Each step ends with passing tests and is a candidate for its own Claude Code prompt and PR.
 
 1. **Foundations:** core types, `Space`/`Box`, backend, random streams, deterministic ids. The backend and random layers are tested on numpy and PyTorch (CPU) from the start, so the abstraction is proven on two backends early.
-2. **Minimal driver:** synchronous generation mode, `FunctionEvaluator`, `VectorisedEvaluator`, budgets, SQLite recorder (metadata + event log).
-3. **Strategies:** `RandomSearch`, `GeneticAlgorithm` with array-based operators, plus a benchmark-harness adapter. First comparison with the `v0.2.0` baseline.
+2. **Minimal driver:** synchronous generation mode, `FunctionEvaluator`, `VectorisedEvaluator`, budgets, SQLite recorder (metadata + event log), and `RandomSearch`, cross-checked against the benchmark harness's own random search.
+3. **Strategies:** `GeneticAlgorithm` with array-based operators, plus a benchmark-harness adapter. First comparison with the `v0.2.0` baseline.
 4. **Asynchrony:** async driver internals, steady-state delivery, deterministic mode, timeouts, failure policies, process isolation.
 5. **Checkpoints and resume:** `state_dict` for strategies, driver and RNG state, the genome store.
 6. **Agents:** `EpisodeEvaluator`, `Environment` protocol, scenario sets, aggregators. Toy domain A.
