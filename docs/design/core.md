@@ -114,6 +114,7 @@ class StrategyContext:
     new_id: Callable[[], CandidateId]   # deterministic id issuer (§4.2)
 ```
 
+- **`StateDict`** is the type of everything saved by `state_dict()`: a dict with string keys whose values are JSON scalars (`None`, `bool`, `int`, `float`, `str`), lists, dicts with string keys, or arrays of a supported backend (numpy arrays that aren't of dtype `object`, torch tensors). Tuples, sets, numpy scalars and any other object are rejected by `validate_state_dict()`, so a state survives a JSON round trip unchanged. There is no pickle (§10.4).
 - **`tell_mode`** tells the driver how to deliver results:
   - `generation`: all results of a batch together (e.g. CMA-ES, generational GA)
   - `steady_state`: results one at a time as they arrive
@@ -161,20 +162,22 @@ class Candidate(Generic[G]):
     step: int                       # the ask round it was proposed in
 ```
 
-Candidate ids are **deterministic** (a run-scoped counter, not random UUIDs), because evaluation randomness is derived from them (§8).
+Candidate ids are **deterministic** (a run-scoped counter, `IdIssuer`, not random UUIDs), because evaluation randomness is derived from them (§8). Ids are limited to 32 bits (they are stream keys), so a run can issue about four billion candidates.
 
 ### 4.3 Batches and the array fast path
 
 ```python
 class Batch(Protocol[G]):
-    candidates: Sequence[Candidate[G]]
+    @property
+    def candidates(self) -> Sequence[Candidate[G]]: ...
+
     def as_array(self) -> Array | None:
         """An (n, d) array view of the genomes if the batch is array-backed; otherwise None."""
 ```
 
-- **Numeric strategies** return array-backed batches. The genomes *are* rows of an `(n, d)` array on the backend's device, with no per-candidate copies.
+- **Numeric strategies** return array-backed batches (`ArrayBatch`). The genomes *are* rows of an `(n, d)` array on the backend's device, with no per-candidate copies: `candidates` builds `Candidate` objects lazily, and each genome is a row view of the array. The array is exposed read-only where the backend allows. The batch holds a *view* of the array it is given, so the caller's own array keeps its flags. Ids, parents and origins are per-candidate metadata parallel to the rows; `step` is the ask round of the whole batch. `ListBatch` is the general path for structured genomes.
 - **Evaluators choose their view.** A vectorised function takes `as_array()` in one call. An agent evaluator iterates over `candidates`.
-- `EvaluationBatch` mirrors this. It can be read as a sequence of `Evaluation` records, or as columnar arrays (an `(n, k)` objectives array, etc.) for strategies that work on arrays.
+- `EvaluationBatch` mirrors this. It can be read as a sequence of `Evaluation` records, or as columnar arrays on a backend for strategies that work on arrays: an `(n, k)` objectives matrix (in natural units, or in **minimisation form**, where maximised columns are negated by their declared direction, so strategies never handle signs), constraint violations, total violation, a feasibility mask and status masks. Failed and timed-out evaluations have no usable values: they appear as NaN in the objective and descriptor columns and as infinite violation in the constraint columns, so they are infeasible and rank last (§6.6). A missing value in an `OK` evaluation is an error.
 
 ### 4.4 Variable-length structure
 
@@ -191,7 +194,7 @@ class Space(Protocol[G]):
 
 Spaces return **genomes**, not batches. Building a batch requires candidate ids, which are issued through the strategy context, so strategies wrap sampled genomes into batches themselves. Array spaces such as `Box` return an `(n, d)` array.
 
-- **First implementation:** `Box`, a bounded real vector with lower and upper bounds per dimension and an optional log scale per dimension.
+- **First implementation:** `Box`, a bounded real vector with lower and upper bounds per dimension and an optional log scale per dimension (log-scale dimensions are sampled log-uniformly and need a positive lower bound). Samples are guaranteed to lie within `[lower, upper]` in float32 as well as float64: float32 bounds are rounded *inward* (a bound that isn't a float32 number moves to the next float32 inside the box) and samples are clipped to them. A box too narrow or too wide for float32 to represent is an error when sampling in float32. `Box.contains` and `Box.clip` are the membership test and a vectorised repair helper for operators.
 - **Later:** integer, categorical, mixed and conditional spaces (e.g. hyperparameter spaces), plus structured spaces for text and trees, added when a use case needs them. The concept lives in the core from the start, so operators and strategies can rely on it.
 
 ---
@@ -225,6 +228,8 @@ class Evaluation(Generic[G]):
     error: str | None                   # message for FAILED / TIMEOUT
 ```
 
+Validation: objective values must be finite when the status is `OK`, and may be non-finite for `FAILED` or `TIMEOUT` evaluations, which strategies never read. Constraint violations are always finite and at least 0. The mappings are copied and made read-only. A `ProblemSpec` needs at least one objective, and names must be non-empty and unique within objectives, constraints and descriptors.
+
 ### 5.2 Conventions
 
 - **Directions are explicit per objective.** A **bare number** returned by a fitness function is a single objective that is **minimised**. Users never negate values; strategies convert internally to whatever convention they use.
@@ -244,7 +249,7 @@ The evaluator interface is asynchronous, but users rarely implement it directly.
 - `VectorisedEvaluator(f)`: `f(X) -> (n,)` or `(n, k)` values on the batch's array. This is the fast path for numeric problems, and runs on GPU when the arrays are on GPU.
 - `EpisodeEvaluator(decoder, environment, scenarios, aggregator)`: the agent evaluator (§6).
 
-`EvalContext` carries each candidate's evaluation random stream (§8), deadlines and timeouts, and the backend.
+`EvalContext` carries the backend, deadlines and timeouts, and a factory that derives each candidate's evaluation random stream from its id (§8). It is a factory rather than a list of streams so that a batch of thousands of candidates doesn't create thousands of generators up front.
 
 ### 5.4 Scalarisation
 
@@ -353,27 +358,30 @@ class Backend:
     precision: Literal["float64", "float32"]
 ```
 
-- Default: `numpy`, `cpu`, `float64`.
-- GPU devices default to `float32`. Requesting `float64` on `mps` is an error at configuration time.
+- Default: `numpy`, `cpu`, `float64`. `Backend.for_device(name, device)` picks the default precision of a device (float32 on GPU devices, float64 on the CPU) unless one is given.
+- The configuration is validated when the `Backend` is constructed, with clear messages: torch requested but not installed, numpy with a device other than `cpu`, unknown device strings (`cpu`, `mps`, `cuda`, `cuda:<index>` are accepted), `cuda` or `mps` requested but not available (or a CUDA index out of range), and `float64` on `mps`. The availability probes are replaceable, so the validation is tested without a GPU.
+- `Backend` offers the array namespace (`xp`, through `array-api-compat`), `dtype`, `int_dtype`, `asarray` (to the backend's namespace, device and dtype), `to_numpy` (a host copy) and `readonly`. `readonly` sets the numpy read-only flag and is a documented no-op for torch, which has no such flag: there immutability is by convention and by tests. `backend_of(array)` infers a `Backend` from an existing array.
 
 ### 7.4 Testing
 
-- CI runs numeric tests on **numpy and PyTorch (CPU)**, in **float64 and float32**.
+- CI runs numeric tests on **numpy and PyTorch (CPU)**, in **float64 and float32**. On Linux, torch comes from PyTorch's CPU-only wheel index (configured in `pyproject.toml`), which avoids gigabytes of CUDA libraries that the tests never use.
 - Real GPU runs (CUDA and Metal) are verified by a small **GPU smoke suite**, run manually or on a self-hosted runner before releases. Standard hosted CI runners don't provide them.
 
 ---
 
 ## 8. Randomness and reproducibility
 
-- **One seed per run.** The user supplies one seed. Independent streams are derived from it with `numpy.random.SeedSequence`:
-  - one for the strategy
-  - one for scenario generation
-  - one per candidate evaluation, derived from the candidate's (deterministic) id
+- **One seed per run.** The user supplies one seed (`RunSeed`). Independent streams are derived from it with `numpy.random.SeedSequence(entropy=seed, spawn_key=(name_id, *keys))`:
+  - one for the strategy (`"strategy"`)
+  - one for scenario generation (`"scenarios"`)
+  - one per candidate evaluation, derived from the candidate's (deterministic) id (`"evaluation", candidate_id`)
+- **Stable names.** A stream name is mapped to an integer with CRC-32 of its UTF-8 bytes, never with Python's `hash()` (randomised per process), so the same seed, name and keys give the same stream in any process on any machine. Keys are integers in `[0, 2**32)`. Two names could in principle collide in CRC-32 (about one chance in four billion); a test pins the names Auxein uses.
 - **Evaluation randomness follows the candidate**, not the worker or the time of evaluation. Evaluations are reproducible in any parallel or distributed setup.
-- **Backend-native generation.** The random layer wraps numpy's `Generator` on CPU and `torch.Generator` on the target device, seeded from the derived streams. Random numbers are produced where the arrays live.
+- **Backend-native generation.** The random layer (`RandomStream`) wraps numpy's `Generator(PCG64)` on CPU and `torch.Generator` on the target device, seeded from the derived streams. Random numbers are produced where the arrays live. Streams offer `uniform`, `normal`, `integers`, `permutation` and `choice`, returning arrays in the backend's namespace, device and dtype (integers as int64).
+- **Torch seed width.** A `torch.Generator` on the CPU is an MT19937 that accepts only 32 bits of seed, so two derived seed sequences can give the same torch stream; the chance is negligible for the few streams a run needs but becomes likely around 65,000 torch streams, e.g. one per candidate evaluation. numpy streams use the full 128 bits, and generators on CUDA and Metal use the full 64-bit seed. Until this is resolved (see §15), evaluators that need many independent streams should draw from the numpy stream of the candidate.
 - **Scope of reproducibility:** identical results for the same seed, backend and precision. Different backends or precisions give different (equally valid) runs.
 - **No global random state** anywhere in the package, enforced by a test that forbids numpy's legacy global functions.
-- **Checkpoints include all generator states.**
+- **Checkpoints include all generator states.** `RandomStream.state_dict()` is JSON-serialisable: numpy's bit-generator state dict, or the bytes of `torch.Generator.get_state()` in base64.
 
 ### 8.1 Deterministic mode (default)
 
@@ -571,3 +579,4 @@ Each step ends with passing tests and is a candidate for its own Claude Code pro
 - **Co-evolution:** how matchmaking between populations is configured.
 - **Noise handling:** built-in support for repeated evaluation and averaging, and how it interacts with caching.
 - **GPU CI:** whether to set up a self-hosted runner for CUDA and Metal.
+- **Torch CPU stream independence:** how to give torch CPU evaluation streams more than 32 bits of seed entropy (§8): keep evaluation streams on numpy, generate on the host and transfer, or accept the limit for runs below roughly 65,000 evaluations.
