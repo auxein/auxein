@@ -1,5 +1,5 @@
-"""Contains the population class.
-"""
+"""Contains the population class."""
+
 from __future__ import absolute_import
 from copy import deepcopy
 from typing import Tuple, NamedTuple, Iterable, Dict, Any, Optional, List
@@ -10,11 +10,10 @@ from auxein.population.dna_builders import DnaBuilder
 from auxein.population.individual import Individual, build_individual
 from auxein.fitness.core import Fitness
 
-Item = NamedTuple('Item', [('individual', Individual), ('fitness', float)])
+Item = NamedTuple("Item", [("individual", Individual), ("fitness", float)])
 
 
 class Population:
-
     def __init__(self) -> None:
         self.__pool: Dict[str, Item] = {}
         self.__generation_count = 0
@@ -32,8 +31,7 @@ class Population:
         for item in self.__pool.values():
             individual = item.individual
             new_fitness = fitness_function.fitness(individual)
-            self.__pool[str(individual.id)] = Item(
-                deepcopy(individual), new_fitness)
+            self.__pool[str(individual.id)] = Item(deepcopy(individual), new_fitness)
         self.__generation_count += 1
 
     def kill(self, individual_id: str) -> None:
@@ -58,13 +56,13 @@ class Population:
 
     def rank_by_fitness(self, k: Optional[int] = None, reverse: bool = True) -> List[Tuple[str, float]]:
         sorted_values = sorted(self.pool, key=lambda i: i.fitness, reverse=reverse)
-        return list(map(lambda item : (item.individual.id, item.fitness), sorted_values))[:k]
+        return list(map(lambda item: (item.individual.id, item.fitness), sorted_values))[:k]
 
     def __get_ages(self) -> List[float]:
-        return list(map(lambda item : item.individual.age(), list(self.__pool.values())))
+        return list(map(lambda item: item.individual.age(), list(self.__pool.values())))
 
     def __get_fitness(self) -> List[float]:
-        return list(map(lambda item : item.fitness, list(self.__pool.values())))
+        return list(map(lambda item: item.fitness, list(self.__pool.values())))
 
     def mean_age(self) -> float:
         pools_ages = self.__get_ages()
@@ -106,16 +104,16 @@ class Population:
 
     def get_stats(self) -> Dict[str, Any]:
         return {
-            'generation_count': self.__generation_count,
-            'size': self.size(),
-            'mean_age': self.mean_age(),
-            'std_age': self.std_age(),
-            'max_age': self.max_age(),
-            'min_age': self.min_age(),
-            'mean_fitness': self.mean_fitness(),
-            'min_fitness': self.min_fitness(),
-            'max_fitness': self.max_fitness(),
-            'std_fitness': self.std_fitness()
+            "generation_count": self.__generation_count,
+            "size": self.size(),
+            "mean_age": self.mean_age(),
+            "std_age": self.std_age(),
+            "max_age": self.max_age(),
+            "min_age": self.min_age(),
+            "mean_fitness": self.mean_fitness(),
+            "min_fitness": self.min_fitness(),
+            "max_fitness": self.max_fitness(),
+            "std_fitness": self.std_fitness(),
         }
 
     def get_full_genome(self) -> np.ndarray:
@@ -137,12 +135,7 @@ def __add_to_population(population: Population, dimension: int, fitness_function
     population.add(individual, fitness)
 
 
-def build_fixed_dimension_population(
-        dimension: int,
-        initial_size: int,
-        fitness_function: Fitness,
-        dna_builder: DnaBuilder
-) -> Population:
+def build_fixed_dimension_population(dimension: int, initial_size: int, fitness_function: Fitness, dna_builder: DnaBuilder) -> Population:
     """Function to create a population of individuals with a fixed dimension.
 
     :param int dimension: dimension of the individuals in the population.

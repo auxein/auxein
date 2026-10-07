@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Core Auxein mutations.
-"""
+"""Core Auxein mutations."""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -14,7 +14,6 @@ from auxein.population import Individual
 
 
 class GlobalMinimum(Fitness):
-
     def __init__(self, kernel: Callable[[np.ndarray], float]) -> None:
         super().__init__()
         self.kernel = kernel

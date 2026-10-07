@@ -1,4 +1,4 @@
-# flake8: noqa
+# ruff: noqa: F401
 
 from .utils import linear_fit
 from .utils import polynomial_fit

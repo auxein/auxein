@@ -1,4 +1,4 @@
-# auxein [![license](https://img.shields.io/hexpm/l/plug.svg?maxAge=2592000)](https://github.com/auxein/auxein/blob/master/LICENSE) [![Build Status](https://travis-ci.org/auxein/auxein.svg?branch=master)](https://travis-ci.org/auxein/auxein)
+# auxein [![license](https://img.shields.io/hexpm/l/plug.svg?maxAge=2592000)](https://github.com/auxein/auxein/blob/master/LICENSE) [![CI](https://github.com/auxein/auxein/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/auxein/auxein/actions/workflows/ci.yml)
 
 Auxein is a working in progress Python framework for evolutionary algorithms.
 
@@ -13,16 +13,15 @@ Auxein is an evolutionary algorithm framework, written in Python. It's currently
 
 The main idea behind Auxein is to provide an efficient tool to *experiment with a variety of evolutionary algorithms implementing reusable fitness functions, genotypes mutations and recombinations.*
 
-## Development with Poetry
+## Development with uv
 
-Auxin is managed with Poetry.
+Auxin is managed with [uv](https://docs.astral.sh/uv/).
 Here how to do a bunch of things:
 
-1. To install the project: `poetry install`
-2. To run unit tests: `poetry run pytest --cov=auxein tests`
-3. To run typecheck (PyRight): `poetry run pyright`
-4. To run Flake8: `poetry run flake8`
-5. To publish on PyPi: `poetry publish --build --username=__token__ --password=pypi-...`
+1. To install the project: `uv sync`
+2. To run unit tests: `uv run pytest`
+3. To run the linter: `uv run ruff check`
+4. To run typecheck (Pyright): `uv run pyright`
 
 ------------------
 

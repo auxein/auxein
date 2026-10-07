@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Core Auxein mutations.
-"""
+"""Core Auxein mutations."""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -18,7 +18,7 @@ class Mutation(ABC):
     """
 
     def __init__(self, extend_probability: float = 0.0):
-        assert 0 <= extend_probability <= 1, 'extend_probability must be within [0, 1]'
+        assert 0 <= extend_probability <= 1, "extend_probability must be within [0, 1]"
         self.extend_probability = extend_probability
 
     def _extend(self, genotype: Genotype, new_gene: float) -> Genotype:
@@ -34,17 +34,13 @@ class Mutation(ABC):
 
 
 class Uniform(Mutation):
-
     def __init__(self, lower_bound: float, upper_bound: float, extend_probability: float = 0.0) -> None:
         super().__init__(extend_probability=extend_probability)
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
 
     def mutate(self, genotype: Genotype) -> Genotype:
-        gene_index = np.random.randint(
-            0,
-            genotype.dimension
-        )
+        gene_index = np.random.randint(0, genotype.dimension)
         dna = genotype.dna
         dna[gene_index] = np.random.uniform(self.lower_bound, self.upper_bound)
         new_gene = np.random.uniform(self.lower_bound, self.upper_bound)
@@ -52,7 +48,6 @@ class Uniform(Mutation):
 
 
 class FixedVariance(Mutation):
-
     def __init__(self, sigma: float, extend_probability: float = 0.0) -> None:
         super().__init__(extend_probability=extend_probability)
         self.sigma = sigma

@@ -13,15 +13,16 @@ def test_cumulative_probability_distribution_with_known_values():
 
 
 def test_stochastic_universal_sampling():
-    individuals_ids = ['a', 'b', 'c', 'd', 'e']
+    individuals_ids = ["a", "b", "c", "d", "e"]
     probabilities = [0.15, 0.15, 0.25, 0.1, 0.35]
     ids = StochasticUniversalSampling(4096).select(individuals_ids, probabilities)
 
     from collections import Counter
+
     counts = Counter(ids)
 
-    np.testing.assert_almost_equal(counts['a'] / 46, 0.15, 2)
-    np.testing.assert_almost_equal(counts['b'] / 46, 0.15, 2)
-    np.testing.assert_almost_equal(counts['c'] / 46, 0.25, 2)
-    np.testing.assert_almost_equal(counts['d'] / 46, 0.10, 2)
-    np.testing.assert_almost_equal(counts['e'] / 46, 0.35, 2)
+    np.testing.assert_almost_equal(counts["a"] / 46, 0.15, 2)
+    np.testing.assert_almost_equal(counts["b"] / 46, 0.15, 2)
+    np.testing.assert_almost_equal(counts["c"] / 46, 0.25, 2)
+    np.testing.assert_almost_equal(counts["d"] / 46, 0.10, 2)
+    np.testing.assert_almost_equal(counts["e"] / 46, 0.35, 2)

@@ -1,4 +1,4 @@
-# flake8: noqa
+# ruff: noqa: F401
 from .genotype import Genotype
 
 from .dna_builders import UniformRandomDnaBuilder, NormalRandomDnaBuilder, CompositeDnaBuilder
