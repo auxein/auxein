@@ -52,6 +52,18 @@ x0_range = 4.0
 name = "auxein-core-random"
 adapter = "auxein_core_random"
 
+[[algorithms]]
+name = "auxein-core-ga"
+adapter = "auxein_core_ga"
+[algorithms.params]
+# explicit so that the overhead benchmark can vary population_size; these are the constructor defaults of GeneticAlgorithm
+population_size = 50
+offspring_size = 50
+selection = { type = "tournament", size = 2 }
+recombination = { type = "intermediate", per_gene = false }
+mutation = { type = "self_adaptive", per_gene = false, initial_step = 0.1, min_step = 1e-12 }
+repair = "clip"
+
 [overhead]
 budget = 20000
 repeats = 5

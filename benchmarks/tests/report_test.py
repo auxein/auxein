@@ -92,3 +92,14 @@ def test_sanity_checks_pass_and_fail_on_success_counts(tiny_results, hits, expec
     lines = sanity_checks(results)
     sphere_lines = [line for line in lines if "sphere" in line and "ellipsoid" not in line]
     assert [line.split(":")[0].strip("- ") for line in sphere_lines].count(expected) >= 1
+
+
+def test_the_report_has_a_mean_rank_table(tiny_results):
+    from benchmarks.report import mean_ranks
+
+    text = build_report(tiny_results).read_text()
+    assert "### Mean rank" in text and "| Algorithm | sphere d=2 |" in text and "Mean rank |" in text
+    cells, ranks = mean_ranks(Results(tiny_results))
+    assert len(cells) == 6 and set(ranks) == {"auxein-default", "random-search", "cma-es"}
+    for position in range(len(cells)):
+        assert sorted(r[position] for r in ranks.values()) == [1, 2, 3]  # each cell ranks every algorithm exactly once

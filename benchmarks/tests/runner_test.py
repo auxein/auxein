@@ -115,13 +115,14 @@ def test_the_shipped_configs_are_valid():
         "random-search",
         "cma-es",
         "auxein-core-random",
+        "auxein-core-ga",
     ]
     assert full.budget(10) == 20000
     assert full.targets == (1e-1, 1e-3, 1e-6)
     assert full.overhead is not None and full.overhead.dims == (2, 10, 100) and full.overhead.population_sizes == (50, 200, 800)
 
     assert quick.runs == 3 and quick.dims == (2, 10) and len(quick.problems) == 5
-    assert [a.name for a in quick.algorithms] == ["auxein-default", "random-search", "cma-es", "auxein-core-random"]
+    assert [a.name for a in quick.algorithms] == ["auxein-default", "random-search", "cma-es", "auxein-core-random", "auxein-core-ga"]
     assert quick.budget(10) == 5000
 
 
@@ -130,3 +131,13 @@ def test_duplicate_algorithm_names_are_rejected(tiny_config):
     raw["algorithms"] = [raw["algorithms"][1], raw["algorithms"][1]]
     with pytest.raises(ValueError, match="unique"):
         parse_config(raw)
+
+
+def test_the_auxein_core_ga_entries_of_the_configs_are_the_constructor_defaults():
+    from auxein.strategies import GeneticAlgorithm
+    from benchmarks.adapters.auxein_core_ga import build_strategy
+
+    for name in ("full.toml", "quick.toml"):
+        entry = load_config(CONFIGS / name).algorithm("auxein-core-ga")
+        assert repr(build_strategy(entry.params)) == repr(GeneticAlgorithm())  # the benchmarked default is the library default
+        assert "population_size" in entry.params  # so that the overhead benchmark varies it

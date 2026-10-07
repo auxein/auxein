@@ -141,6 +141,34 @@ def summary_table(results: Results, cell: dict[str, list[dict[str, Any]]]) -> st
     return "\n".join(rows)
 
 
+def mean_ranks(results: Results) -> tuple[list[tuple[str, int]], dict[str, list[int]]]:
+    """The rank (1 = best) of every algorithm by median final error in each problem x dimension, in the order of the cells."""
+    cells = [(p, d) for p in results.problems for d in results.dims if results.cell(p, d)]
+    ranks: dict[str, list[int]] = {a: [] for a in results.algorithms}
+    for problem, dim in cells:
+        cell = results.cell(problem, dim)
+        medians = {a: statistics.median(final_errors(records)) for a, records in cell.items()}
+        ordered = sorted(medians, key=lambda a: (medians[a], results.algorithms.index(a)))
+        for algorithm in ranks:
+            ranks[algorithm].append(ordered.index(algorithm) + 1 if algorithm in ordered else 0)
+    return cells, ranks
+
+
+def mean_rank_table(results: Results) -> str:
+    """A table of the rank of each algorithm in every cell, and its mean rank (lower is better)."""
+    cells, ranks = mean_ranks(results)
+    header = ["Algorithm", *[f"{p} d={d}" for p, d in cells], "Mean rank"]
+    rows = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
+    for algorithm, values in sorted(ranks.items(), key=lambda kv: statistics.mean(kv[1]) if kv[1] else math.inf):
+        present = [v for v in values if v]
+        rows.append(
+            "| "
+            + " | ".join([algorithm, *[str(v) if v else "" for v in values], f"{statistics.mean(present):.2f}" if present else ""])
+            + " |"
+        )
+    return "\n".join(rows)
+
+
 def comparison_rows(cell: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
     """auxein-default against every other algorithm, with Holm correction over the comparisons of this cell."""
     if REFERENCE not in cell:
@@ -397,6 +425,14 @@ def build_report(results_dir: Path) -> Path:
             if rows:
                 comparisons += [f"### {problem}, d={dim}", "", comparison_table(rows), ""]
 
+    sections += [
+        "### Mean rank",
+        "",
+        "Rank of each algorithm by the median final error in each problem × dimension (1 = best), and the mean rank.",
+        "",
+        mean_rank_table(results),
+        "",
+    ]
     sections += ["## 3. Statistical comparison", ""]
     sections += [
         f"Final error of `{REFERENCE}` against every other algorithm: two-sided Mann-Whitney U with Holm correction within each table, and the Vargha-Delaney A12 effect size (the probability that `{REFERENCE}` wins).",
