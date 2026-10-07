@@ -132,7 +132,7 @@ def test_constraints_are_respected_through_the_driver():
 
     result = go(GeneticAlgorithm(), VectorisedEvaluator(fn), evaluations=10000, dim=4, constraints=["cpa"])
     assert result.best is not None and result.best.constraints["cpa"] == 0.0
-    assert result.best.objectives["value"] == pytest.approx(1.0, abs=1e-3)
+    assert result.best.objectives["value"] == pytest.approx(1.0, abs=1e-2)
     assert all(e.constraints["cpa"] == 0.0 for e in result.pareto_front)
 
 

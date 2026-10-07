@@ -3,6 +3,9 @@
 from dataclasses import dataclass
 from typing import cast
 
+import numpy as np
+import numpy.typing as npt
+
 from auxein.backend import Array, Backend
 from auxein.core import (
     ArrayBatch,
@@ -15,9 +18,9 @@ from auxein.core import (
 )
 from auxein.core.ids import CandidateId
 from auxein.spaces import Box
-from auxein.strategies.ga.base import BoundsRepair, Mutation, ParentSelection, Recombination
+from auxein.strategies.ga.base import BoundsRepair, Mutation, ParentSelection, PopulationView, Recombination
 from auxein.strategies.ga.mutation import SelfAdaptiveMutation
-from auxein.strategies.ga.ranking import rank_order, view_of
+from auxein.strategies.ga.ranking import rank_order
 from auxein.strategies.ga.recombination import IntermediateRecombination, mix_genes, mix_steps
 from auxein.strategies.ga.repair import ClipRepair
 from auxein.strategies.ga.selection import TournamentSelection
@@ -32,6 +35,23 @@ class _Block:
     ids: list[int]
     genomes: Array
     steps: Array | None
+
+
+def _survivor_positions(keep: npt.NDArray[np.int64], members: int) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64]]:
+    """Where the survivors sit in the new population, in rank order, and the inverse of that permutation.
+
+    `keep` lists the survivors best first, as indices into the old members followed by the children. They are stored as
+    [the kept old members, then the kept children], each in the order of `keep`, so that the position of a survivor is
+    its running count among those of its kind (plus the number of kept old members, for children).
+    """
+    from_old = keep < members
+    old_count = int(from_old.sum())
+    among_old = from_old.cumsum() - 1
+    among_new = (~from_old).cumsum() - 1
+    position = from_old * among_old + (~from_old) * (old_count + among_new)
+    inverse = np.empty_like(position)
+    inverse[position] = np.arange(position.size)
+    return position, inverse
 
 
 class GeneticAlgorithm:
@@ -108,13 +128,15 @@ class GeneticAlgorithm:
         self._blocks: dict[int, _Block] = {}
         self._pending: dict[int, tuple[int, int]] = {}  # candidate id -> (block, row)
         self._next_block = 0
-        # the population, ranked or not: a member is a row of each array
-        self._ids: list[int] = []
+        # the population, in no particular order: a member is a row of each array
         self._ids_array: Array | None = None
         self._genomes: Array | None = None
         self._values: Array | None = None
         self._violation: Array | None = None
         self._steps: Array | None = None
+        # the ranking of the population, kept up to date by tell so that ask doesn't sort it again
+        self._order: Array | None = None  # member indices, best first
+        self._rank: Array | None = None  # the rank of each member: the inverse permutation of the order
 
     def _bound(self) -> tuple[ProblemSpec[Array], StrategyContext, Box]:
         if self._problem is None or self._ctx is None or self._box is None:
@@ -124,14 +146,15 @@ class GeneticAlgorithm:
     @property
     def size(self) -> int:
         """How many members the population holds now."""
-        return len(self._ids)
+        return 0 if self._ids_array is None else int(self._ids_array.shape[0])
 
     def ranked_ids(self) -> list[int]:
         """The ids of the population's members, best first (by the ranking in the class documentation)."""
         if self._ctx is None or self._ids_array is None or self._values is None or self._violation is None:
             return []
-        order = rank_order(self._values, self._violation, self._ids_array, self._ctx.backend)
-        return [self._ids[i] for i in self._ctx.backend.to_numpy(order).tolist()]
+        backend = self._ctx.backend
+        order = rank_order(self._values, self._violation, self._ids_array, backend)
+        return [int(i) for i in backend.to_numpy(backend.xp.take(self._ids_array, order, axis=0)).tolist()]
 
     def bind(self, problem: ProblemSpec[Array], ctx: StrategyContext) -> None:
         if len(problem.objectives) != 1:
@@ -149,8 +172,8 @@ class GeneticAlgorithm:
         self._genomes = xp.zeros((0, dim), dtype=backend.dtype, device=backend.device)
         self._values = xp.zeros((0,), dtype=backend.dtype, device=backend.device)
         self._violation = xp.zeros((0,), dtype=backend.dtype, device=backend.device)
-        initial = self.mutation.initial_steps(0, dim, backend)
-        self._steps = initial
+        self._steps = self.mutation.initial_steps(0, dim, backend)
+        self._order = self._rank = xp.zeros((0,), dtype=backend.int_dtype, device=backend.device)
 
     # --- ask ---
 
@@ -191,7 +214,8 @@ class GeneticAlgorithm:
         backend, rng = ctx.backend, ctx.rng
         xp = backend.xp
         assert self._genomes is not None and self._values is not None and self._violation is not None and self._ids_array is not None
-        view = view_of(self._values, self._violation, self._ids_array, backend)
+        assert self._order is not None and self._rank is not None
+        view = PopulationView(self._values, self._violation, self._order, self._rank, backend)
 
         first, second = self.selection.select(view, count, rng)
         parents_a, parents_b = xp.take(self._genomes, first, axis=0), xp.take(self._genomes, second, axis=0)
@@ -214,10 +238,9 @@ class GeneticAlgorithm:
         genomes, steps = self.mutation.mutate(genomes, steps, width, rng, backend)
         genomes = self.repair.repair(genomes, box)
 
-        first_ids, second_ids = backend.to_numpy(first).tolist(), backend.to_numpy(second).tolist()
-        parents: list[tuple[int, ...]] = [
-            (self._ids[a],) if c else (self._ids[a], self._ids[b]) for a, b, c in zip(first_ids, second_ids, copied)
-        ]
+        first_ids = backend.to_numpy(xp.take(self._ids_array, first, axis=0)).tolist()
+        second_ids = backend.to_numpy(xp.take(self._ids_array, second, axis=0)).tolist()
+        parents: list[tuple[int, ...]] = [(int(a),) if c else (int(a), int(b)) for a, b, c in zip(first_ids, second_ids, copied)]
         base = f"{self.selection.name}+%s+{self.mutation.name}"
         origins = [base % ("copy" if c else self.recombination.name) for c in copied]
         return genomes, steps, parents, origins
@@ -237,30 +260,47 @@ class GeneticAlgorithm:
         if unknown:
             raise ValueError(f"tell() was called with candidates that are not pending (never asked for, or already told): {unknown[:5]}")
 
-        genomes, steps, order_in_told = self._take_pending(told, backend)
-        values = xp.take(results.minimisation_matrix(problem.objectives, backend)[:, 0], order_in_told, axis=0)
-        violation = xp.take(results.total_violation(backend), order_in_told, axis=0)
+        genomes, steps, positions = self._take_pending(told, backend)
+        values = results.minimisation_matrix(problem.objectives, backend)[:, 0]
+        violation = results.total_violation(backend)
+        if positions is not None:  # the children came from several blocks: put the values in the order of the genomes
+            index = backend.asarray(positions, dtype=backend.int_dtype)
+            values, violation = xp.take(values, index, axis=0), xp.take(violation, index, axis=0)
+            told = [told[i] for i in positions]
+        new_ids = backend.asarray(told, dtype=backend.int_dtype)
 
         assert self._genomes is not None and self._values is not None and self._violation is not None and self._ids_array is not None
-        new_ids = backend.asarray([told[i] for i in backend.to_numpy(order_in_told).tolist()], dtype=backend.int_dtype)
-        all_ids = xp.concat([self._ids_array, new_ids], axis=0)
-        all_values = xp.concat([self._values, values], axis=0)
-        all_violation = xp.concat([self._violation, violation], axis=0)
-        all_genomes = xp.concat([self._genomes, genomes], axis=0)
-        all_steps = None if steps is None else xp.concat([cast("Array", self._steps), steps], axis=0)
+        members = self.size
+        ranking_ids = xp.concat([self._ids_array, new_ids], axis=0)
+        ranking_values = xp.concat([self._values, values], axis=0)
+        ranking_violation = xp.concat([self._violation, violation], axis=0)
+        keep = backend.to_numpy(rank_order(ranking_values, ranking_violation, ranking_ids, backend)[: self.population_size])
+        kept_old, kept_new = keep[keep < members], keep[keep >= members] - members
+        if kept_new.size == 0 and kept_old.size == members:
+            return  # no child survives: the population is unchanged, and nothing needs copying
 
-        keep = rank_order(all_values, all_violation, all_ids, backend)[: self.population_size]
-        host_ids = backend.to_numpy(all_ids).tolist()
-        self._ids = [host_ids[i] for i in backend.to_numpy(keep).tolist()]
-        self._ids_array = xp.take(all_ids, keep, axis=0)
-        self._values = xp.take(all_values, keep, axis=0)
-        self._violation = xp.take(all_violation, keep, axis=0)
-        self._genomes = xp.take(all_genomes, keep, axis=0)
-        self._steps = None if all_steps is None else xp.take(all_steps, keep, axis=0)
+        # gather the survivors straight from the population and from the children: the big arrays are copied once
+        old, new = backend.asarray(kept_old, dtype=backend.int_dtype), backend.asarray(kept_new, dtype=backend.int_dtype)
 
-    def _take_pending(self, told: list[int], backend: Backend) -> tuple[Array, Array | None, Array]:
-        """The genomes and step sizes of the told children, in the order of the blocks they came from, and the
-        positions (in `told`) that this order corresponds to."""
+        def survivors(current: Array, incoming: Array) -> Array:
+            return xp.concat([xp.take(current, old, axis=0), xp.take(incoming, new, axis=0)], axis=0)
+
+        # the survivors are stored as [kept old members, kept children], each in rank order: the position of every survivor
+        # follows from `keep`, which is the ranking, so the ranking of the new population needs no sorting
+        position, inverse = _survivor_positions(keep, members)
+        self._order = backend.asarray(position, dtype=backend.int_dtype)
+        self._rank = backend.asarray(inverse, dtype=backend.int_dtype)
+        self._ids_array = survivors(self._ids_array, new_ids)
+        self._values = survivors(self._values, values)
+        self._violation = survivors(self._violation, violation)
+        self._genomes = survivors(self._genomes, genomes)
+        if steps is not None:
+            assert self._steps is not None
+            self._steps = survivors(self._steps, steps)
+
+    def _take_pending(self, told: list[int], backend: Backend) -> tuple[Array, Array | None, list[int] | None]:
+        """The genomes and step sizes of the told children, in the order of the blocks they came from, and the positions
+        (in `told`) that this order corresponds to, or None if it is the order of `told` already."""
         xp = backend.xp
         by_block: dict[int, tuple[list[int], list[int]]] = {}
         for position, cid in enumerate(told):
@@ -285,7 +325,7 @@ class GeneticAlgorithm:
                 del self._blocks[block_id]
         genomes = genome_parts[0] if len(genome_parts) == 1 else xp.concat(genome_parts, axis=0)
         steps = None if not step_parts else (step_parts[0] if len(step_parts) == 1 else xp.concat(step_parts, axis=0))
-        return genomes, steps, backend.asarray(positions_in_order, dtype=backend.int_dtype)
+        return genomes, steps, None if positions_in_order == list(range(len(told))) else positions_in_order
 
     # --- stopping ---
 
@@ -327,7 +367,7 @@ class GeneticAlgorithm:
             "stream": ctx.rng.state_dict(),
             "step": self._step,
             "initial_asked": self._initial_asked,
-            "ids": list(self._ids),
+            "ids": [int(i) for i in backend.to_numpy(self._ids_array).tolist()],
             "genomes": self._genomes,
             "values": self._values,
             "violation": self._violation,
@@ -344,12 +384,13 @@ class GeneticAlgorithm:
         ctx.rng.load_state_dict(cast("dict[str, object]", state["stream"]))
         self._step = cast("int", state["step"])
         self._initial_asked = cast("int", state["initial_asked"])
-        self._ids = [int(i) for i in cast("list[int]", state["ids"])]
-        self._ids_array = backend.asarray(self._ids, dtype=backend.int_dtype)
+        self._ids_array = backend.asarray([int(i) for i in cast("list[int]", state["ids"])], dtype=backend.int_dtype)
         self._genomes = backend.asarray(state["genomes"])
         self._values = backend.asarray(state["values"])
         self._violation = backend.asarray(state["violation"])
         self._steps = None if state["steps"] is None else backend.asarray(state["steps"])
+        self._order = rank_order(self._values, self._violation, self._ids_array, backend)
+        self._rank = backend.xp.argsort(self._order)
         self._blocks, self._pending, self._next_block = {}, {}, 0
         for saved in cast("list[dict[str, object]]", state["pending"]):
             ids = [int(i) for i in cast("list[int]", saved["ids"])]

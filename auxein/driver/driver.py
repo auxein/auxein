@@ -87,7 +87,7 @@ class Driver(Generic[G]):
             lambda cid: run_seed.stream("evaluation", cid, backend=backend),
             lambda cid: run_seed.stream("evaluation-batch", cid, backend=backend),
         )
-        self._tracker: ResultTracker[G] = ResultTracker(problem.objectives)
+        self._tracker: ResultTracker[G] = ResultTracker(problem.objectives, constrained=bool(problem.constraints))
         self._seen = bytearray()  # one byte per issued id: whether a batch has already carried it
         self._last_step = -1
         self._used = 0
@@ -209,7 +209,7 @@ class Driver(Generic[G]):
         who = type(self._evaluator).__name__
         if not isinstance(results, EvaluationBatch):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise EvaluatorError(f"{who}.evaluate() must return an EvaluationBatch, got {type(results).__name__}")
-        asked = [c.id for c in batch.candidates]
+        asked = list(batch.ids) if isinstance(batch, ArrayBatch) else [c.id for c in batch.candidates]  # no candidates to build
         got = [e.candidate.id for e in results]
         if got != asked:
             raise EvaluatorError(

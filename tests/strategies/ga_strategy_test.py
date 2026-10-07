@@ -27,6 +27,7 @@ from auxein.strategies.ga import (
     SigmaScalingSUS,
     TournamentSelection,
     UniformRecombination,
+    rank_order,
 )
 
 DIM = 3
@@ -251,6 +252,9 @@ def test_the_population_is_the_best_mu_of_everything_told_against_a_brute_force_
         for _ in range(6):
             tell_random(ga.ask(1))
             assert ga.ranked_ids() == [k[2] for k in sorted(reference)[:mu]]
+            fresh = rank_order(ga._values, ga._violation, ga._ids_array, backend)  # the ranking kept by tell is the real one
+            np.testing.assert_array_equal(backend.to_numpy(ga._order), backend.to_numpy(fresh))
+            np.testing.assert_array_equal(backend.to_numpy(ga._rank), backend.to_numpy(backend.xp.argsort(fresh)))
 
 
 def test_telling_children_one_at_a_time_gives_the_same_population_as_telling_them_together(backend: Backend):
@@ -492,7 +496,7 @@ def test_children_inherit_their_parents_step_sizes(backend: Backend):
     ga, _ = started(backend, population_size=4, offspring_size=6, recombination=NoRecombination(), mutation=mutation)
     ga._steps = backend.asarray([0.01, 0.02, 0.03, 0.04])  # give the four members distinct steps
     ranked = ga.ranked_ids()
-    steps_by_id = dict(zip(ga._ids, backend.to_numpy(ga._steps).tolist()))
+    steps_by_id = dict(zip(backend.to_numpy(ga._ids_array).tolist(), backend.to_numpy(ga._steps).tolist()))
     batch = ga.ask(1)
     block = next(iter(ga._blocks.values()))
     for c, step in zip(batch.candidates, backend.to_numpy(block.steps).tolist()):

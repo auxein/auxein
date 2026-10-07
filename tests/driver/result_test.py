@@ -220,3 +220,35 @@ def run_quietly(strategy, evaluator, budget, *, objectives=VALUE, constraints=()
             strategy=strategy, evaluator=evaluator, space=Box(-5.0, 5.0, dim=3), objectives=objectives, constraints=constraints,
             budget=budget, seed=seed, backend=backend, batch_size=batch_size,
         )  # fmt: skip
+
+
+def test_the_cheaper_loop_for_one_objective_without_constraints_gives_the_same_results():
+    import numpy as np
+
+    rng = np.random.default_rng(11)
+    for _ in range(40):
+        sign_objective = Objective("score", "maximise") if rng.random() < 0.3 else LOSS
+        general, fast = ResultTracker([sign_objective]), ResultTracker([sign_objective], constrained=False)
+        ids_pool = list(rng.permutation(60))  # ids arrive in no particular order
+        used = 0
+        for _ in range(int(rng.integers(1, 6))):
+            size = int(rng.integers(1, 9))
+            batch = []
+            for _ in range(size):
+                cid = int(ids_pool.pop())
+                if rng.random() < 0.1:
+                    batch.append(ev(cid, 1.0, status=Status.FAILED, names=(sign_objective.name,)))
+                else:
+                    batch.append(ev(cid, float(rng.integers(0, 6)), names=(sign_objective.name,)))  # many ties
+            general.add(batch, used)
+            fast.add(batch, used)
+            used += size
+        assert (general.best.candidate.id if general.best else None) == (fast.best.candidate.id if fast.best else None)
+        assert general.trace == fast.trace
+        assert ids(general.pareto_front) == ids(fast.pareto_front)
+
+
+def test_a_problem_with_constraints_keeps_the_general_loop():
+    assert ResultTracker([LOSS], constrained=True)._unconstrained_single is False
+    assert ResultTracker([LOSS], constrained=False)._unconstrained_single is True
+    assert ResultTracker([LOSS, SCORE], constrained=False)._unconstrained_single is False

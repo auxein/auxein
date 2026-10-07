@@ -46,8 +46,10 @@ class ResultTracker(Generic[G]):
     with its length. For several objectives it holds the non-dominated archive, which is what the user asked for.
     """
 
-    def __init__(self, objectives: Sequence[Objective]) -> None:
+    def __init__(self, objectives: Sequence[Objective], *, constrained: bool = True) -> None:
         self._objectives = tuple(objectives)
+        # one objective and no constraints: nothing can be infeasible, and a much cheaper loop gives the same results
+        self._unconstrained_single = len(objectives) == 1 and not constrained
         self._names = tuple(o.name for o in objectives)
         self._signs = tuple(o.sign for o in objectives)
         self._best: Evaluation[G] | None = None
@@ -69,6 +71,9 @@ class ResultTracker(Generic[G]):
 
     def add(self, evaluations: Sequence[Evaluation[G]], used_before: int) -> None:
         """Take in a batch of evaluations, `used_before` being the number of evaluations made before it."""
+        if self._unconstrained_single:
+            self._add_unconstrained_single(evaluations, used_before)
+            return
         single = len(self._names) == 1
         for position, evaluation in enumerate(evaluations):
             if evaluation.status is not Status.OK:
@@ -82,6 +87,23 @@ class ResultTracker(Generic[G]):
                     self._trace.append((used_before + position + 1, evaluation.objectives[self._names[0]]))
             if violation == 0:
                 self._archive(values, evaluation)
+
+    def _add_unconstrained_single(self, evaluations: Sequence[Evaluation[G]], used_before: int) -> None:
+        """`add` for one objective and no constraints: the same results as the general loop, with less work per evaluation."""
+        name, sign = self._names[0], self._signs[0]
+        best_value = None if self._best_key is None else self._best_key[2]
+        best_id = -1 if self._best_key is None else self._best_key[3]
+        for position, evaluation in enumerate(evaluations):
+            if evaluation.status is not Status.OK:
+                continue
+            value = sign * evaluation.objectives[name]
+            candidate_id = evaluation.candidate.id
+            if best_value is None or value < best_value or (value == best_value and candidate_id < best_id):
+                best_value, best_id = value, candidate_id
+                self._best, self._best_key = evaluation, (0, 0.0, value, candidate_id)
+                self._trace.append((used_before + position + 1, evaluation.objectives[name]))
+            if not self._front or value < self._front[0][0][0]:  # strictly better: an equal value keeps the earlier candidate
+                self._front = [((value,), evaluation)]
 
     def _archive(self, values: tuple[float, ...], evaluation: Evaluation[G]) -> None:
         for member, _ in self._front:

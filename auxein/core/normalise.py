@@ -11,6 +11,7 @@ Every evaluator uses it, so the rules are the same whatever the evaluator:
 
 import math
 from collections.abc import Mapping, Sequence
+from types import MappingProxyType
 from typing import cast
 
 import numpy as np
@@ -19,11 +20,12 @@ import numpy.typing as npt
 from auxein.backend import Array, Backend, is_array
 from auxein.core._typing import G
 from auxein.core.candidate import Candidate
-from auxein.core.evaluation import Cost, Evaluation, Status
+from auxein.core.evaluation import Cost, Evaluation, Status, unchecked_evaluation
 from auxein.core.problem import ProblemSpec
 from auxein.core.results import BatchResult, Result
 
 _HOST = Backend()
+_EMPTY: Mapping[str, float] = MappingProxyType({})
 
 
 def _dict_error(origin: str, kind: str) -> TypeError:
@@ -116,7 +118,7 @@ def evaluation_from_return(raw: object, candidate: Candidate[G], problem: Proble
         raise TypeError(f"{origin} must return a number or a Result, got {type(raw).__name__}")
     name = _check_bare_allowed(problem, origin, "Result")
     _check_finite_objective(candidate.id, name, number)
-    return Evaluation(candidate, Status.OK, {name: number}, cost=Cost(wall_time))
+    return unchecked_evaluation(candidate, Status.OK, MappingProxyType({name: number}), _EMPTY, _EMPTY, Cost(wall_time))
 
 
 def evaluations_from_batch_return(
@@ -172,21 +174,29 @@ def evaluations_from_batch_return(
             _check_finite_objective(candidates[bad].id, name, float(column[bad]))
 
     each = wall_time / n if n else 0.0
-    objective_rows = {name: column.tolist() for name, column in objectives.items()}
-    constraint_rows = {name: column.tolist() for name, column in constraints.items()}
-    descriptor_rows = {name: column.tolist() for name, column in descriptors.items()}
-    cost_rows = {name: column.tolist() for name, column in costs.items()}
+    objective_rows = _rows(objectives)
+    constraint_rows, descriptor_rows = _rows(constraints), _rows(descriptors)
+    cost_rows = _rows(costs)  # empty without per-candidate cost units: then one immutable Cost serves the whole batch
+    shared = Cost(each)
     return [
-        Evaluation(
+        unchecked_evaluation(
             candidate,
             Status.OK,
-            {name: rows[i] for name, rows in objective_rows.items()},
-            {name: rows[i] for name, rows in constraint_rows.items()},
-            {name: rows[i] for name, rows in descriptor_rows.items()},
-            Cost(each, {name: rows[i] for name, rows in cost_rows.items()}),
+            objective_rows[i],
+            constraint_rows[i] if constraint_rows else _EMPTY,
+            descriptor_rows[i] if descriptor_rows else _EMPTY,
+            Cost(each, cost_rows[i]) if cost_rows else shared,
         )
         for i, candidate in enumerate(candidates)
     ]
+
+
+def _rows(columns: Mapping[str, npt.NDArray[np.float64]]) -> list[Mapping[str, float]]:
+    """Per-candidate read-only mappings of name to value, built from columns (empty if there are no columns)."""
+    if not columns:
+        return []
+    names = tuple(columns)
+    return [MappingProxyType(dict(zip(names, values))) for values in zip(*(column.tolist() for column in columns.values()))]
 
 
 def _to_values(raw: Array) -> npt.NDArray[np.float64]:

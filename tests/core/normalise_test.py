@@ -214,3 +214,58 @@ def test_a_non_finite_value_names_the_candidate(backend: Backend, value: float):
 
 def test_an_empty_batch():
     assert evaluations_from_batch_return(np.zeros(0), [], ONE, 0.0) == []
+
+
+def test_the_evaluations_of_a_batch_equal_the_validated_ones(backend: Backend):
+    from auxein.core import Cost, Evaluation
+
+    fast = many(backend.asarray([3.0, 1.0, 2.0]), wall=0.3)
+    expected = [Evaluation(c, Status.OK, {"loss": v}, cost=Cost(0.1)) for c, v in zip(CANDIDATES, [3.0, 1.0, 2.0])]
+    assert [
+        (
+            e.candidate,
+            e.status,
+            dict(e.objectives),
+            dict(e.constraints),
+            dict(e.descriptors),
+            e.cost.wall_time,
+            dict(e.cost.units),
+            e.raw,
+            e.error,
+        )
+        for e in fast
+    ] == [
+        (
+            e.candidate,
+            e.status,
+            dict(e.objectives),
+            dict(e.constraints),
+            dict(e.descriptors),
+            pytest.approx(e.cost.wall_time),
+            dict(e.cost.units),
+            e.raw,
+            e.error,
+        )
+        for e in expected
+    ]
+
+
+def test_the_evaluations_of_a_batch_are_immutable(backend: Backend):
+    evaluation = many(backend.asarray([3.0, 1.0, 2.0]))[0]
+    with pytest.raises(TypeError):
+        evaluation.objectives["loss"] = 0.0  # type: ignore[index]
+    with pytest.raises(TypeError):
+        evaluation.constraints["x"] = 0.0  # type: ignore[index]
+    with pytest.raises(TypeError):
+        evaluation.descriptors["x"] = 0.0  # type: ignore[index]
+    with pytest.raises(AttributeError):
+        evaluation.status = Status.FAILED  # type: ignore[misc]
+    with pytest.raises(AttributeError):
+        evaluation.cost = None  # type: ignore[misc]
+
+
+def test_a_batch_shares_one_immutable_cost_unless_cost_units_are_per_candidate(backend: Backend):
+    shared = many(backend.asarray([3.0, 1.0, 2.0]))
+    assert shared[0].cost is shared[1].cost and shared[0].cost.wall_time == pytest.approx(0.1)
+    own = many(BatchResult({"loss": [1.0, 2.0, 3.0]}, cost={"tokens": [1.0, 2.0, 3.0]}))
+    assert [e.cost.units["tokens"] for e in own] == [1.0, 2.0, 3.0] and own[0].cost is not own[1].cost
