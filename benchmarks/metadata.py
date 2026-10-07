@@ -27,7 +27,8 @@ def git_sha() -> str | None:
 
 
 def git_dirty() -> bool | None:
-    status = _git("status", "--porcelain")
+    """Whether tracked files differ from the commit. Untracked files do not count (results are gitignored)."""
+    status = _git("status", "--porcelain", "--untracked-files=no")
     return None if status is None else bool(status)
 
 
