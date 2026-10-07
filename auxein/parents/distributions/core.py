@@ -29,6 +29,11 @@ class Fps(Distribution):
         return list(map(lambda item: (item.individual.id, item.fitness / total_fitness), population.pool))
 
 
+def _uniform(population: Population) -> List[Tuple[str, float]]:
+    probability = 1 / population.size()
+    return [(item.individual.id, probability) for item in population.pool]
+
+
 class FpsWithWindowing(Distribution):
     def __init__(self) -> None:
         super().__init__()
@@ -39,6 +44,8 @@ class FpsWithWindowing(Distribution):
     def get(self, population: Population) -> List[Tuple[str, float]]:
         minimum_fitness = population.min_fitness()
         total_fitness = sum(self.__scale_fitness_function(item, minimum_fitness) for item in population.pool)
+        if total_fitness == 0:
+            return _uniform(population)
         return list(
             map(lambda item: (item.individual.id, self.__scale_fitness_function(item, minimum_fitness) / total_fitness), population.pool)
         )
@@ -53,5 +60,9 @@ class SigmaScaling(Distribution):
         return max_value
 
     def get(self, population: Population) -> List[Tuple[str, float]]:
+        if population.min_fitness() == population.max_fitness():
+            return _uniform(population)
         total_fitness = sum(self.__scale_fitness_function(item, population) for item in population.pool)
+        if total_fitness == 0:
+            return _uniform(population)
         return list(map(lambda item: (item[0].id, self.__scale_fitness_function(item, population) / total_fitness), population.pool))

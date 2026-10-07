@@ -167,7 +167,6 @@ def test_fps_rejects_zero_total_fitness():
         Fps().get(population)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: converged population gives NaN/ZeroDivision probabilities")
 @pytest.mark.parametrize("distribution", [FpsWithWindowing(), SigmaScaling()], ids=["windowing", "sigma_scaling"])
 def test_distribution_on_converged_population_is_uniform(distribution):
     population = build_population_with_fitnesses([-4.2, -4.2, -4.2, -4.2])
