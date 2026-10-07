@@ -6,9 +6,11 @@ Choosing the default configuration of `GeneticAlgorithm`: three candidates, 15 r
 - **B**: as A, with one self-adaptive step size per gene.
 - **C**: as A, with stochastic universal sampling with sigma scaling instead of the tournament.
 
-**Mean rank of the median final error** (the table under "Mean rank"): A 1.80, B 2.10, C 2.10. The mean ranks are within 0.5 of each other, a near tie, so the simplest configuration is preferred; A is also the best by mean rank. **A is the default.**
+**Mean rank of the median final error** (the table under "Mean rank"): C 1.70, A 2.10, B 2.20. All three are within 0.5 of the best, a near tie, so the simplest configuration is chosen: **A is the default** (a tournament needs no weights, and one step size per individual is the simpler self-adaptation).
 
-- On the sphere and the noisy sphere all three reach errors around 10⁻²² at d = 10 and 30, except B, which is slower at d = 30 (5 × 10⁻¹⁷ on the sphere, 6 × 10⁻⁶ on the noisy sphere).
-- B (per-gene step sizes) is the best on Rosenbrock and Rastrigin at both dimensions, by a small margin (for example Rastrigin d = 30: 32.8 against 36.8 for A).
-- C is the best on the 10-D ellipsoid (850 against 1,020 for A) and the 10-D noisy sphere, and the worst on the 30-D ellipsoid.
+How far to trust the order: the same selection run before an internal optimisation of the strategy (which changes the order in which the population is stored, and with it the random draws, not the algorithm) gave A 1.80, B 2.10, C 2.10, a different order and the same near tie. With 15 runs per cell the three configurations cannot be told apart by their ranks; what the data do show is below.
+
+- On the sphere and the noisy sphere all three reach errors around 10⁻²² at d = 10 and 30, except B, which is slower at d = 30 (2 × 10⁻¹⁵ on the sphere, 6 × 10⁻⁴ on the noisy sphere).
+- B (per-gene step sizes) is the best on Rastrigin at both dimensions (d = 30: 28.9 against 39.8 for A and 46.8 for C), and by a small margin on Rosenbrock at d = 10.
+- C is the best on the ellipsoid at both dimensions (d = 30: 6.1 × 10³ against 6.9 × 10³ for A), by a small margin.
 - All three are far from solving the ellipsoid (errors of 10³ to 10⁴ for a condition number of 10⁶): isotropic step sizes cannot adapt to a rotated, ill-conditioned landscape.

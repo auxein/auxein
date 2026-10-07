@@ -8,11 +8,13 @@ Choosing the default configuration of `GeneticAlgorithm`: three candidates, 15 r
 - **B**: as A, with one self-adaptive step size per gene.
 - **C**: as A, with stochastic universal sampling with sigma scaling instead of the tournament.
 
-**Mean rank of the median final error** (the table under "Mean rank"): A 1.80, B 2.10, C 2.10. The mean ranks are within 0.5 of each other, a near tie, so the simplest configuration is preferred; A is also the best by mean rank. **A is the default.**
+**Mean rank of the median final error** (the table under "Mean rank"): C 1.70, A 2.10, B 2.20. All three are within 0.5 of the best, a near tie, so the simplest configuration is chosen: **A is the default** (a tournament needs no weights, and one step size per individual is the simpler self-adaptation).
 
-- On the sphere and the noisy sphere all three reach errors around 10⁻²² at d = 10 and 30, except B, which is slower at d = 30 (5 × 10⁻¹⁷ on the sphere, 6 × 10⁻⁶ on the noisy sphere).
-- B (per-gene step sizes) is the best on Rosenbrock and Rastrigin at both dimensions, by a small margin (for example Rastrigin d = 30: 32.8 against 36.8 for A).
-- C is the best on the 10-D ellipsoid (850 against 1,020 for A) and the 10-D noisy sphere, and the worst on the 30-D ellipsoid.
+How far to trust the order: the same selection run before an internal optimisation of the strategy (which changes the order in which the population is stored, and with it the random draws, not the algorithm) gave A 1.80, B 2.10, C 2.10, a different order and the same near tie. With 15 runs per cell the three configurations cannot be told apart by their ranks; what the data do show is below.
+
+- On the sphere and the noisy sphere all three reach errors around 10⁻²² at d = 10 and 30, except B, which is slower at d = 30 (2 × 10⁻¹⁵ on the sphere, 6 × 10⁻⁴ on the noisy sphere).
+- B (per-gene step sizes) is the best on Rastrigin at both dimensions (d = 30: 28.9 against 39.8 for A and 46.8 for C), and by a small margin on Rosenbrock at d = 10.
+- C is the best on the ellipsoid at both dimensions (d = 30: 6.1 × 10³ against 6.9 × 10³ for A), by a small margin.
 - All three are far from solving the ellipsoid (errors of 10³ to 10⁴ for a condition number of 10⁶): isotropic step sizes cannot adapt to a rotated, ill-conditioned landscape.
 
 ## 1. Convergence
@@ -47,81 +49,81 @@ Final error, success rate per precision target (runs that reached it) and expect
 
 | Algorithm | Final error, median [IQR] | Success 0.1 | Success 0.001 | Success 1e-06 | ERT 0.1 | ERT 0.001 | ERT 1e-06 |
 |---|---|---|---|---|---|---|---|
-| ga-a | 1.10e-22 [9.34e-23, 1.19e-22] | 15/15 | 15/15 | 15/15 | 1,139 | 1,963 | 3,214 |
-| ga-b | 1.83e-22 [1.69e-22, 1.97e-22] | 15/15 | 15/15 | 15/15 | 1,328 | 2,615 | 4,461 |
-| ga-c | 1.10e-22 [8.40e-23, 1.22e-22] | 15/15 | 15/15 | 15/15 | 1,105 | 1,897 | 3,138 |
+| ga-a | 1.19e-22 [1.04e-22, 1.25e-22] | 15/15 | 15/15 | 15/15 | 1,117 | 1,922 | 3,186 |
+| ga-b | 1.53e-22 [1.34e-22, 1.83e-22] | 15/15 | 15/15 | 15/15 | 1,382 | 2,623 | 4,513 |
+| ga-c | 1.02e-22 [9.49e-23, 1.32e-22] | 15/15 | 15/15 | 15/15 | 1,052 | 1,910 | 3,145 |
 
 ### sphere, d=30
 
 | Algorithm | Final error, median [IQR] | Success 0.1 | Success 0.001 | Success 1e-06 | ERT 0.1 | ERT 0.001 | ERT 1e-06 |
 |---|---|---|---|---|---|---|---|
-| ga-a | 1.19e-21 [1.09e-21, 1.25e-21] | 15/15 | 15/15 | 15/15 | 3,142 | 5,099 | 8,157 |
-| ga-b | 5.15e-17 [5.63e-21, 2.53e-13] | 15/15 | 15/15 | 15/15 | 5,038 | 10,420 | 21,601 |
-| ga-c | 1.23e-21 [1.14e-21, 1.26e-21] | 15/15 | 15/15 | 15/15 | 3,286 | 5,218 | 8,048 |
+| ga-a | 1.19e-21 [1.12e-21, 1.28e-21] | 15/15 | 15/15 | 15/15 | 3,232 | 5,204 | 8,298 |
+| ga-b | 1.98e-15 [3.83e-21, 8.45e-14] | 15/15 | 15/15 | 15/15 | 4,971 | 9,348 | 19,786 |
+| ga-c | 1.21e-21 [1.14e-21, 1.28e-21] | 15/15 | 15/15 | 15/15 | 3,207 | 5,269 | 8,164 |
 
 ### ellipsoid, d=10
 
 | Algorithm | Final error, median [IQR] | Success 0.1 | Success 0.001 | Success 1e-06 | ERT 0.1 | ERT 0.001 | ERT 1e-06 |
 |---|---|---|---|---|---|---|---|
-| ga-a | 1.02e+03 [618, 1.39e+03] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
-| ga-b | 1.41e+03 [700, 1.83e+03] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
-| ga-c | 850 [634, 1.57e+03] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-a | 957 [453, 1.9e+03] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-b | 966 [701, 1.4e+03] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-c | 914 [648, 1.17e+03] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
 
 ### ellipsoid, d=30
 
 | Algorithm | Final error, median [IQR] | Success 0.1 | Success 0.001 | Success 1e-06 | ERT 0.1 | ERT 0.001 | ERT 1e-06 |
 |---|---|---|---|---|---|---|---|
-| ga-a | 6.26e+03 [5.35e+03, 1.07e+04] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
-| ga-b | 7.29e+03 [6.35e+03, 9.81e+03] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
-| ga-c | 7.49e+03 [4.32e+03, 9.31e+03] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-a | 6.94e+03 [5.89e+03, 9.25e+03] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-b | 6.69e+03 [4.37e+03, 1.13e+04] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-c | 6.11e+03 [5.58e+03, 8.87e+03] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
 
 ### rosenbrock, d=10
 
 | Algorithm | Final error, median [IQR] | Success 0.1 | Success 0.001 | Success 1e-06 | ERT 0.1 | ERT 0.001 | ERT 1e-06 |
 |---|---|---|---|---|---|---|---|
-| ga-a | 6.97 [6.44, 7.79] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
-| ga-b | 5.91 [5.8, 6.1] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
-| ga-c | 6.46 [5.61, 7.25] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-a | 6.81 [6.26, 7.15] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-b | 5.8 [5.59, 6.02] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-c | 6.58 [5.35, 7.31] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
 
 ### rosenbrock, d=30
 
 | Algorithm | Final error, median [IQR] | Success 0.1 | Success 0.001 | Success 1e-06 | ERT 0.1 | ERT 0.001 | ERT 1e-06 |
 |---|---|---|---|---|---|---|---|
-| ga-a | 29.4 [26.8, 88.9] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
-| ga-b | 25.9 [24.7, 78.7] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
-| ga-c | 29.4 [25.5, 89.4] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-a | 28.5 [25.9, 38.6] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-b | 28.2 [24.3, 75.5] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-c | 28 [25.7, 86.4] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
 
 ### rastrigin, d=10
 
 | Algorithm | Final error, median [IQR] | Success 0.1 | Success 0.001 | Success 1e-06 | ERT 0.1 | ERT 0.001 | ERT 1e-06 |
 |---|---|---|---|---|---|---|---|
-| ga-a | 9.95 [5.97, 15.9] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
-| ga-b | 8.95 [5.47, 11.9] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
-| ga-c | 9.95 [6.47, 11.9] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-a | 10.9 [6.96, 10.9] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-b | 5.97 [3.98, 7.96] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-c | 10.9 [5.47, 12.4] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
 
 ### rastrigin, d=30
 
 | Algorithm | Final error, median [IQR] | Success 0.1 | Success 0.001 | Success 1e-06 | ERT 0.1 | ERT 0.001 | ERT 1e-06 |
 |---|---|---|---|---|---|---|---|
-| ga-a | 36.8 [29.4, 41.3] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
-| ga-b | 32.8 [24.4, 44.3] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
-| ga-c | 38.8 [35.8, 50.7] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-a | 39.8 [36.8, 52.7] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-b | 28.9 [25.9, 31.8] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
+| ga-c | 46.8 [36.3, 53.2] | 0/15 | 0/15 | 0/15 | ∞ | ∞ | ∞ |
 
 ### noisy_sphere, d=10
 
 | Algorithm | Final error, median [IQR] | Success 0.1 | Success 0.001 | Success 1e-06 | ERT 0.1 | ERT 0.001 | ERT 1e-06 |
 |---|---|---|---|---|---|---|---|
-| ga-a | 1.18e-22 [1.07e-22, 1.35e-22] | 15/15 | 15/15 | 15/15 | 1,108 | 2,006 | 3,257 |
-| ga-b | 1.97e-22 [1.70e-22, 2.07e-22] | 15/15 | 15/15 | 15/15 | 1,344 | 2,506 | 4,281 |
-| ga-c | 9.31e-23 [7.96e-23, 1.25e-22] | 15/15 | 15/15 | 15/15 | 1,107 | 1,947 | 3,222 |
+| ga-a | 1.05e-22 [9.08e-23, 1.23e-22] | 15/15 | 15/15 | 15/15 | 1,102 | 1,967 | 3,297 |
+| ga-b | 1.82e-22 [1.66e-22, 2.21e-22] | 15/15 | 15/15 | 15/15 | 1,363 | 2,575 | 4,330 |
+| ga-c | 1.09e-22 [1.01e-22, 1.39e-22] | 15/15 | 15/15 | 15/15 | 1,090 | 1,932 | 3,201 |
 
 ### noisy_sphere, d=30
 
 | Algorithm | Final error, median [IQR] | Success 0.1 | Success 0.001 | Success 1e-06 | ERT 0.1 | ERT 0.001 | ERT 1e-06 |
 |---|---|---|---|---|---|---|---|
-| ga-a | 1.25e-21 [1.15e-21, 1.37e-21] | 15/15 | 15/15 | 15/15 | 3,636 | 5,868 | 9,360 |
-| ga-b | 5.94e-06 [1.60e-06, 1.35e-03] | 14/15 | 11/15 | 3/15 | 10,188 | 33,670 | 263,737 |
-| ga-c | 1.23e-21 [1.13e-21, 1.31e-21] | 15/15 | 15/15 | 15/15 | 3,614 | 5,955 | 9,316 |
+| ga-a | 1.18e-21 [1.13e-21, 1.28e-21] | 15/15 | 15/15 | 15/15 | 3,652 | 5,983 | 9,368 |
+| ga-b | 5.62e-04 [1.66e-04, 1.37e-03] | 14/15 | 10/15 | 3/15 | 10,280 | 43,363 | 283,098 |
+| ga-c | 1.27e-21 [1.20e-21, 1.34e-21] | 15/15 | 15/15 | 15/15 | 3,606 | 5,882 | 9,287 |
 
 ### Mean rank
 
@@ -129,9 +131,9 @@ Rank of each algorithm by the median final error in each problem × dimension (1
 
 | Algorithm | sphere d=10 | sphere d=30 | ellipsoid d=10 | ellipsoid d=30 | rosenbrock d=10 | rosenbrock d=30 | rastrigin d=10 | rastrigin d=30 | noisy_sphere d=10 | noisy_sphere d=30 | Mean rank |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| ga-a | 1 | 1 | 2 | 1 | 3 | 2 | 2 | 2 | 2 | 2 | 1.80 |
-| ga-b | 3 | 3 | 3 | 2 | 1 | 1 | 1 | 1 | 3 | 3 | 2.10 |
-| ga-c | 2 | 2 | 1 | 3 | 2 | 3 | 3 | 3 | 1 | 1 | 2.10 |
+| ga-c | 1 | 2 | 1 | 1 | 2 | 1 | 2 | 3 | 2 | 2 | 1.70 |
+| ga-a | 2 | 1 | 2 | 3 | 3 | 3 | 3 | 2 | 1 | 1 | 2.10 |
+| ga-b | 3 | 3 | 3 | 2 | 1 | 2 | 1 | 1 | 3 | 3 | 2.20 |
 
 ## 3. Statistical comparison
 
@@ -151,7 +153,7 @@ The overhead benchmark was not run.
 
 ## 6. Methodology
 
-- **Config**: `ga-default-selection`, commit `6318268c2c`, run at 2026-10-07T21:38:30+00:00 on 11 worker processes.
+- **Config**: `ga-default-selection`, commit `c4ad5374b2`, run at 2026-10-07T21:51:11+00:00 on 11 worker processes.
 - **Software**: Python 3.12.13, auxein 0.2.0, numpy 2.5.3, pycma 4.5.0, scipy 1.18.1.
 - **Machine**: Apple M4 Pro (12 logical CPUs), macOS-15.6.1-arm64-arm-64bit.
 - **Budget**: 2000 × d fitness evaluations for every algorithm, counted outside the algorithms by `CountingObjective`. The initial population counts, and a partial generation is fine. Progress is always against evaluations, never generations.
