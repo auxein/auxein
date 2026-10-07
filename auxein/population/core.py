@@ -122,9 +122,13 @@ class Population:
         }
 
     def get_full_genome(self) -> np.ndarray:
-        genome = []
-        for item in self.pool:
-            genome.append(item.individual.genotype.dna)
+        """Returns the dna of every individual: a 2-D array, or a 1-D object array when the dna lengths differ."""
+        genome = [item.individual.genotype.dna for item in self.pool]
+        if len({len(dna) for dna in genome}) > 1:
+            ragged = np.empty(len(genome), dtype=object)
+            for i, dna in enumerate(genome):
+                ragged[i] = dna
+            return ragged
         return np.array(genome)
 
 

@@ -140,6 +140,17 @@ def test_get_full_genome():
     assert np.array_equal(genome, [[0.1, 0.1], [0.1, 0.3], [0.3, 0.2]])
 
 
+def test_get_full_genome_with_variable_dimensions():
+    population = Population()
+    population.add(build_individual([0.1]), 0.2)
+    population.add(build_individual([0.1, 0.3, 0.5]), 0.4)
+    genome = population.get_full_genome()
+
+    assert genome.shape == (2,)
+    assert np.array_equal(genome[0], [0.1])
+    assert np.array_equal(genome[1], [0.1, 0.3, 0.5])
+
+
 def test_rank_by_fitness_desc():
     population = Population()
     population.add(build_individual([0.1, 0.1], id="3adee626-de78-4f83-84f9-ebde4e8ee64d"), 0.2)
