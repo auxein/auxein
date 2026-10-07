@@ -137,7 +137,8 @@ def test_get_full_genome():
     population.add(build_individual([0.3, 0.2], [], "01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.5)
     genome = population.get_full_genome()
 
-    np.array_equal(genome, [[0.1, 0.1], [0.1, 0.3], [0.3, 0.2]])
+    assert genome.shape == (3, 2)
+    assert np.array_equal(genome, [[0.1, 0.1], [0.1, 0.3], [0.3, 0.2]])
 
 
 def test_rank_by_fitness_desc():
