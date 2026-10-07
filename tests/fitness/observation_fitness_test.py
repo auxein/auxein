@@ -1,4 +1,3 @@
-import pytest
 import numpy as np
 
 from auxein.population import build_individual
@@ -9,7 +8,7 @@ def test_multiple_linear_regression():
     xs = np.array([[23], [26], [30], [34], [43], [48], [52], [57], [58]])
     y = np.array([651, 762, 856, 1063, 1190, 1298, 1421, 1440, 1518])
 
-    i = build_individual([23.42, 167.68], [])
+    i = build_individual([23.42, 167.68])
     fitness_function = MultipleLinearRegression(xs, y)
     assert np.isclose(fitness_function.fitness(i), -18804)
 
@@ -71,7 +70,6 @@ def test_maximum_likelihood_value():
     assert np.isclose(fitness_function.value(i, [5]), 0.97, atol=0.01)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: auxein.fitness does not export MaximumLikelihood")
 def test_fitness_package_exports_maximum_likelihood():
     import auxein.fitness
 
@@ -85,7 +83,6 @@ STUDY_HOURS = np.array(
 PASSED = np.array([0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1])
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: MaximumLikelihood sums probabilities instead of log-probabilities")
 def test_maximum_likelihood_is_the_log_likelihood():
     fitness_function = MaximumLikelihood(STUDY_HOURS.reshape(-1, 1), PASSED)
 
@@ -99,7 +96,6 @@ def test_maximum_likelihood_is_the_log_likelihood():
     assert fitness_function.fitness(optimum) > fitness_function.fitness(poor)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: MaximumLikelihood does not clip probabilities")
 def test_maximum_likelihood_is_finite_for_saturated_probabilities():
     fitness_function = MaximumLikelihood(STUDY_HOURS.reshape(-1, 1), PASSED)
     saturated = build_individual([-1000.0, 1000.0])  # p is exactly 0 or 1 for every observation

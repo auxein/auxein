@@ -25,7 +25,7 @@ class Mutation(ABC):
         if np.random.uniform(0, 1) <= self.extend_probability:
             dna = genotype.dna
             mask = genotype.mask
-            return Genotype(np.append(dna, new_gene), np.append(mask, np.random.normal(0, 1)))
+            return Genotype(np.append(dna, new_gene), np.append(mask, mask[-1] if mask.size else 1.0))
         return genotype
 
     @abstractmethod
@@ -53,9 +53,10 @@ class FixedVariance(Mutation):
         self.sigma = sigma
 
     def mutate(self, genotype: Genotype) -> Genotype:
-        move = np.vectorize(lambda g: g + np.random.normal(0, self.sigma))
+        dna = genotype.dna
+        moved = dna + np.random.normal(0, self.sigma, dna.size)
         new_gene = np.random.normal(0, self.sigma)
-        return super()._extend(Genotype(move(genotype.dna), genotype.mask), new_gene)
+        return super()._extend(Genotype(moved, genotype.mask), new_gene)
 
 
 class SelfAdaptiveSingleStep(Mutation):
@@ -71,8 +72,7 @@ class SelfAdaptiveSingleStep(Mutation):
 
     def mutate(self, genotype: Genotype) -> Genotype:
         multiplier = np.exp(np.random.normal(0, self.tau))
-        move_mask = np.vectorize(lambda g: g * multiplier)
-        updated_mask = move_mask(genotype.mask)
+        updated_mask = genotype.mask * multiplier
         scalr = np.random.normal(0, 1, genotype.dimension)
         dna = genotype.dna + (updated_mask * scalr)
         new_gene = np.random.normal(0, self.tau)

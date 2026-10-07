@@ -18,8 +18,8 @@ def linear_fit(coeff: np.ndarray, x: np.ndarray) -> float:
 
 
 def polynomial_fit(coeff: np.ndarray, x: np.ndarray) -> float:
-    assert type(coeff) and x.size == 1, "Only simple polynomial fit is supported."
-    result: float = np.polyval(coeff, x[0])
+    assert isinstance(x, np.ndarray) and x.size == 1, "Only simple polynomial fit is supported: x must be a np.ndarray of size 1."
+    result: float = np.polyval(np.asarray(coeff), x[0])
     return result
 
 

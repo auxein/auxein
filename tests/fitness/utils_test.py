@@ -79,7 +79,6 @@ def test_logit_3d():
     assert np.isclose(value, 0.48750, atol=0.00001)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: polynomial_fit asserts on type(coeff), which is always truthy")
 def test_polynomial_fit_requires_numpy_variable_of_size_one():
     with pytest.raises(AssertionError):
         polynomial_fit([0.5, -2.5, 1, 2], [1.5])  # x is not a numpy array

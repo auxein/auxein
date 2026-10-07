@@ -1,4 +1,3 @@
-import pytest
 # -*- coding: utf-8 -*-
 
 from typing import Tuple
@@ -68,7 +67,6 @@ def test_matrix_recombination():
     assert np.array_equal(child2_dna, dna2)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: MatrixRecombination flattens to shape (1, n), so the crossover point is always 0")
 def test_matrix_recombination_with_simple_arithmetic_crosses_over(monkeypatch):
     dna1 = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     dna2 = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
@@ -87,6 +85,5 @@ def test_matrix_recombination_with_simple_arithmetic_crosses_over(monkeypatch):
     assert np.allclose(child2_dna.reshape(-1)[3:], [(40 + 4) / 2, (50 + 5) / 2, (60 + 6) / 2])
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: MatrixRecombination.__init__ does not call super().__init__()")
 def test_matrix_recombination_has_allow_uneven():
     assert MatrixRecombination((3, 2), SimpleArithmetic(alpha=0.5)).allow_uneven is False

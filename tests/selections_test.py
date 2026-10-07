@@ -53,14 +53,12 @@ def bounded_sampling(monkeypatch):
     monkeypatch.setattr("auxein.parents.selections.core.cumulative_probability_distribution", bounded, raising=False)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: SUS loops forever on NaN probabilities")
 @pytest.mark.timeout(2)
 def test_sus_nan_probabilities_do_not_hang(bounded_sampling):
     with pytest.raises(ValueError):
         StochasticUniversalSampling(4096).select(IDS, [np.nan] * 5)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: SUS loops forever when the cumulative sum ends just below the last pointer")
 @pytest.mark.timeout(2)
 def test_sus_terminates_when_cumulative_sum_rounds_below_one(bounded_sampling, monkeypatch):
     selection = StochasticUniversalSampling(180)
@@ -74,7 +72,6 @@ def test_sus_terminates_when_cumulative_sum_rounds_below_one(bounded_sampling, m
     assert len(ids) == n
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: SUS does not validate its input")
 @pytest.mark.timeout(2)
 @pytest.mark.parametrize(
     "probabilities",
@@ -91,7 +88,6 @@ def test_sus_rejects_invalid_probabilities(bounded_sampling, probabilities):
         StochasticUniversalSampling(4096).select(IDS, probabilities)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: SUS does not normalise its probabilities")
 @pytest.mark.timeout(2)
 def test_sus_normalises_probabilities(bounded_sampling):
     selection = StochasticUniversalSampling(4096)

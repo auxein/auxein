@@ -33,14 +33,27 @@ class StochasticUniversalSampling(Selection):
         super().__init__(offspring_size=offspring_size)
 
     def select(self, individual_ids: List[str], probabilities: List[float]) -> List[str]:
+        if len(individual_ids) != len(probabilities):
+            raise ValueError("individual_ids and probabilities must have the same length")
+        weights = np.asarray(probabilities, dtype=float)
+        if not np.all(np.isfinite(weights)) or np.any(weights < 0):
+            raise ValueError("probabilities must be finite and non-negative")
+        total = weights.sum()
+        if not total > 0:
+            raise ValueError("probabilities must have a strictly positive sum")
+
+        cumulative = np.cumsum(weights / total)
+        cumulative[-1] = 1.0  # rounding must not leave the last pointers beyond the end
+
+        n = int(self.parents_to_select)
+        step = 1 / n
+        pointer = np.random.uniform(0, step)
         index = 0
         mating_pool: List[str] = []
-        r = np.random.uniform(0, 1 / self.parents_to_select)
-        while len(mating_pool) < self.parents_to_select:
-            while r <= cumulative_probability_distribution(index, probabilities):
-                mating_pool.append(individual_ids[index])
-                r += 1 / self.parents_to_select
-
-            index += 1
+        while len(mating_pool) < n:
+            while pointer > cumulative[index] and index < len(cumulative) - 1:
+                index += 1
+            mating_pool.append(individual_ids[index])
+            pointer += step
 
         return mating_pool

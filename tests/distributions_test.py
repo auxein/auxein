@@ -10,16 +10,16 @@ def init_population(dimension, size, fitness_function):
     population = Population()
     for _ in range(0, size):
         dna = np.random.uniform(-1, 1, dimension)
-        i = build_individual(dna, [])
+        i = build_individual(dna)
         population.add(i, fitness_function.fitness(i))
     return population
 
 
 def build_fully_specified_population():
     population = Population()
-    population.add(build_individual([0.1, 0.9], [], "3adee626-de78-4f83-84f9-ebde4e8ee64d"), 1.0)  # fitness = 1
-    population.add(build_individual([0.1, 0.5], [], "e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 0.6)  # fitness = 0.6
-    population.add(build_individual([0.1, 0.1], [], "01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.2)  # fitness = 0.2
+    population.add(build_individual([0.1, 0.9], id="3adee626-de78-4f83-84f9-ebde4e8ee64d"), 1.0)  # fitness = 1
+    population.add(build_individual([0.1, 0.5], id="e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 0.6)  # fitness = 0.6
+    population.add(build_individual([0.1, 0.1], id="01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.2)  # fitness = 0.2
     return population
 
 
@@ -42,7 +42,8 @@ def test_fps_constant_fitness_function():
 def test_fps_non_constant_fitness_function():
     class TestFitnessFunction(Fitness):
         def fitness(self, individual):
-            return individual.genotype.dna[0] + individual.genotype.dna[1]
+            # dna genes are in [-1, 1], so shift to keep the fitness non-negative
+            return individual.genotype.dna[0] + individual.genotype.dna[1] + 2
 
         def value(self, individual, x):
             pass
@@ -154,21 +155,18 @@ def build_population_with_fitnesses(fitnesses):
     return population
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: Fps favours the worst individual when fitness is negative")
 def test_fps_rejects_negative_fitness():
     population = build_population_with_fitnesses([-1.0, -2.0, -3.0])
     with pytest.raises(ValueError, match="FpsWithWindowing"):
         Fps().get(population)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: Fps divides by zero when the total fitness is zero")
 def test_fps_rejects_zero_total_fitness():
     population = build_population_with_fitnesses([0.0, 0.0, 0.0])
     with pytest.raises(ValueError):
         Fps().get(population)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: converged population gives NaN/ZeroDivision probabilities")
 @pytest.mark.parametrize("distribution", [FpsWithWindowing(), SigmaScaling()], ids=["windowing", "sigma_scaling"])
 def test_distribution_on_converged_population_is_uniform(distribution):
     population = build_population_with_fitnesses([-4.2, -4.2, -4.2, -4.2])
@@ -176,7 +174,6 @@ def test_distribution_on_converged_population_is_uniform(distribution):
     assert np.allclose(probabilities, [0.25] * 4)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: SigmaScaling recomputes population mean and std for every individual")
 def test_sigma_scaling_computes_population_statistics_once(monkeypatch):
     population = build_population_with_fitnesses([1.0, 2.0, 3.0, 4.0, 5.0])
     calls = {"mean": 0, "std": 0}
