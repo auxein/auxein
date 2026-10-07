@@ -29,11 +29,11 @@ requires-dist = [{ name = "numpy", specifier = ">=1.26" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-timeout" },
-    { name = "ruff" },
+    { name = "pyright", specifier = ">=1.1.380" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "pytest-cov", specifier = ">=5" },
+    { name = "pytest-timeout", specifier = ">=2.3" },
+    { name = "ruff", specifier = ">=0.6" },
 ]
 
 [[package]]

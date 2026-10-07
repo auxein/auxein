@@ -11,11 +11,11 @@ dependencies = ["numpy>=1.26"]
 
 [dependency-groups]
 dev = [
-    "pytest",
-    "pytest-cov",
-    "pytest-timeout",
-    "ruff",
-    "pyright",
+    "pytest>=8",
+    "pytest-cov>=5",
+    "pytest-timeout>=2.3",
+    "ruff>=0.6",
+    "pyright>=1.1.380",
 ]
 
 [build-system]
