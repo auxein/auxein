@@ -123,19 +123,38 @@ class StrategyContext:
 
 ### 3.3 The composable genetic-algorithm strategy
 
-Auxein keeps its character as a toolkit of interchangeable operators. A `GeneticAlgorithm` strategy is assembled from:
+Auxein keeps its character as a toolkit of interchangeable operators. A `GeneticAlgorithm` strategy is assembled from operator objects, each a small class with a protocol of its own (in `auxein.strategies.ga`), all working on whole arrays through the backend's array namespace, with no Python loops over individuals or genes:
 
-- **selection**: e.g. stochastic universal sampling with sigma scaling, tournament
-- **variation**: mutation (Gaussian, self-adaptive), recombination (arithmetic, uniform)
-- **replacement**: generational with elitism, steady-state replace-worst
+- **parent selection**: tournament (size `k`, default 2), and stochastic universal sampling with sigma scaling
+- **recombination**: intermediate, uniform, and none (asexual), plus a crossover probability `p_c`
+- **mutation**: Gaussian with a fixed step, and self-adaptive with one step size per individual or per gene
+- **bounds repair**: clip and reflect
 - **initialisation**: sampling from the search space
 
-Operators are written against the array API (§7) and work on whole populations at once. The operator ideas from 0.x are re-implemented, not ported. The bugs found in 0.x are kept fixed through the tests written for them.
+The operator ideas from 0.x are re-implemented, not ported, and the limitations of 0.x are fixed by design: the number of offspring is exact, the two parents of a child are distinct members, every candidate is evaluated exactly once (the population is never re-scored), and step sizes have a lower bound.
+
+**Survivor selection is "plus" only.** The population of size μ always holds the best μ of everything evaluated so far, parents and offspring pooled. In a steady-state view each child replaces the current worst member if it is better; inserting children one at a time and taking the best μ of μ + λ give the same population, so one mechanism serves any way of telling results (generations, or one at a time). Comma selection and plain generational replacement are not in this version.
+
+**One ranking is used everywhere** (survivors, tournaments, elites): feasible before infeasible, then a lower total violation, then a lower objective in minimisation form, then a lower candidate id. Failed and timed-out evaluations appear as NaN objectives and infinite violation, so they rank last without a special case.
+
+**Breeding.** Parent selection, recombination, mutation, bounds repair, in that order: recombine first, then mutate (unlike 0.x).
+
+- *Tournament:* each parent is the best of `k` members drawn uniformly at random. *SUS:* the weight of a feasible member is `max(g − (mean(g) − c·std(g)), 0)` with goodness `g = −value` and `c = 2`; infeasible members have weight 0 unless none is feasible, when the weights come from a lower violation in the same way; if the weights are all zero or not finite the selection is uniform.
+- *Distinct parents:* when the second parent of a child equals the first, it is replaced by a uniformly random other member (at least two members are needed to breed).
+- *Recombination* mixes genes as `w·a + (1 − w)·b`: intermediate draws `w ~ U(0, 1)` per child (or per gene), uniform draws each gene from either parent with probability ½, none copies the first parent. A child that does not cross over (probability `1 − p_c`, or always with no recombination) copies its first parent and records one parent; otherwise two.
+- *Mutation* steps are relative to the box width, per dimension, so the operators are scale-free; they act in linear space, also on log-scale dimensions. Self-adaptive mutation updates the step first (`σ' = σ·exp(τ·N(0, 1))`, `τ = 1/√d`; per gene, `σᵢ' = σᵢ·exp(τ'·N(0, 1) + τ·Nᵢ(0, 1))` with `τ' = 1/√(2d)` and `τ = 1/√(2√d)`), bounded below by `σ_min` (default 10⁻¹² of the box width), then moves the genes.
+- *Bounds repair:* `clip` (via `Box.clip`) or `reflect` (a true reflection, however far out a gene is).
+
+**Step sizes are strategy state, not genome** (§4.1). They are kept per candidate inside the strategy, as arrays aligned with the population. A child inherits them by the same recombination as its genes, as a weighted geometric mean with the same weights (the geometric mean when the weights are equal; one parent's exactly with weights 0 or 1), then they mutate; the steps of non-survivors are discarded.
+
+**The ask/tell behaviour.** The first `ask` returns the whole initial population (origin `"init"`), whatever `n` the driver suggests. Afterwards `ask` returns exactly λ children (`offspring_size`), or exactly `n` when it is `None`, with their parents recorded and origins that name the operators, e.g. `"tournament+intermediate+self_adaptive"` (`copy` stands for the recombination of a child that copies a parent). Children that were asked for and not yet told are pending, with their parents' step sizes inherited; asking again before results arrive is allowed, and children are bred from the population as it is. Children that are never told (budget truncation) are dropped. If fewer than two members exist, because the initial candidates are still being evaluated, `ask` returns more random candidates. `tell` accepts any grouping of pending children. The strategy is single-objective, supports constraints, needs a `Box` space, and `should_stop` is false unless a convergence tolerance is given (the objective spread of a full population is below it, and every step size is at its floor).
+
+**The default configuration** (`GeneticAlgorithm()`) was chosen by benchmark among three candidates on instances other than those of the comparison with 0.2.0: μ = λ = 50, tournament selection (k = 2), intermediate recombination, one self-adaptive step size per individual (initial step 0.1 of the box width, floor 10⁻¹²) and clipping. The candidates (A: this one; B: as A with one step size per gene; C: as A with SUS and sigma scaling) ended within 0.5 of each other in mean rank of the median final error (C 1.70, A 2.10, B 2.20; an earlier run of the same selection gave A 1.80, B 2.10, C 2.10), a near tie, so the simplest configuration was chosen. The results are in `benchmarks/reports/ga-default-selection/`.
 
 ### 3.4 Strategies in the first implementation
 
-- `RandomSearch`: the floor.
-- `GeneticAlgorithm`: composable, as above, supporting both tell modes.
+- `RandomSearch`: the floor (done in step 2).
+- `GeneticAlgorithm`: composable, as above, supporting both tell modes (done in step 3a).
 - `PycmaStrategy`: a wrapper around pycma, as an optional extra. Its purpose is to prove that external algorithms fit the contract.
 
 More algorithms (native CMA-ES, NSGA-II, MAP-Elites and others) are added later on top of the same contract.
@@ -547,6 +566,7 @@ These are rewritten as notebooks and documentation for the new core.
 
 1. **Generality:** both toy domains and all problems in §11.3 run on the same core, with no special cases in the core.
 2. **Benchmark:** with a harness adapter for the new core, the `GeneticAlgorithm` strategy at equal evaluation budgets is **not statistically worse than the `v0.2.0` baseline** on any problem and dimension of the benchmark suite. Its **overhead per evaluation is lower**.
+   *Outcome (step 3a, [`benchmarks/reports/core-ga-0.3.0-dev/`](../../benchmarks/reports/core-ga-0.3.0-dev/report.md)):* **met.** The default `GeneticAlgorithm` is better than the 0.2.0 default on all 15 problem × dimension cells of the suite (large effect, Holm-adjusted p ≤ 10⁻⁷), and its time per evaluation is lower at every population size and dimension of the overhead benchmark (4.9 to 7.6 µs against 9.2 to 12.1 µs), after an optimisation of the driver and the strategy that the first run of the comparison called for.
 3. **Determinism:** in deterministic mode, the same seed produces an identical event log across synchronous and asynchronous evaluators and any worker count.
 4. **Resume:** a run killed and resumed from a checkpoint produces the same event log as an uninterrupted run.
 5. **Backends:** numeric tests pass on numpy and PyTorch (CPU) in float64 and float32. The GPU smoke suite passes on CUDA and Metal.
@@ -590,7 +610,9 @@ Each step ends with passing tests and is a candidate for its own Claude Code pro
 
 1. **Foundations:** core types, `Space`/`Box`, backend, random streams, deterministic ids. The backend and random layers are tested on numpy and PyTorch (CPU) from the start, so the abstraction is proven on two backends early.
 2. **Minimal driver:** synchronous generation mode, `FunctionEvaluator`, `VectorisedEvaluator`, budgets, SQLite recorder (metadata + event log), and `RandomSearch`, cross-checked against the benchmark harness's own random search.
-3. **Strategies:** `GeneticAlgorithm` with array-based operators, plus a benchmark-harness adapter. First comparison with the `v0.2.0` baseline.
+3. **Strategies:**
+   - **3a:** `GeneticAlgorithm` with array-based operators, its benchmark-harness adapter, the choice of its default configuration, and the first comparison with the `v0.2.0` baseline.
+   - **3b:** removing the 0.x engine, and switching the public API (`auxein/__init__.py`) to the new core.
 4. **Asynchrony:** async driver internals, steady-state delivery, deterministic mode, timeouts, failure policies, process isolation.
 5. **Checkpoints and resume:** `state_dict` for strategies, driver and RNG state, the genome store.
 6. **Agents:** `EpisodeEvaluator`, `Environment` protocol, scenario sets, aggregators. Toy domain A.
