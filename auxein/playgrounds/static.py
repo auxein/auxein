@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Static playground.
-"""
+"""Static playground."""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -48,7 +48,6 @@ class Playground(ABC):
 
 
 class Static(Playground):
-
     def __init__(
         self,
         population: Population,
@@ -59,7 +58,7 @@ class Static(Playground):
         recombination: Recombination,
         replacement: Replacement,
         verbose: bool = False,
-        pruning_function: Callable[[Individual], bool] = lambda i: False
+        pruning_function: Callable[[Individual], bool] = lambda i: False,
     ) -> None:
         super().__init__(population=population, fitness=fitness)
         self.mutation = mutation
@@ -73,11 +72,8 @@ class Static(Playground):
     def __mate(self, mating_pool: List[str]) -> List[Individual]:
         couples = permutations(mating_pool, 2)
         offspring = []
-        for (parent1_id, parent2_id) in couples:
-            (child1_genotype_dna, child1_genotype_mask, child2_genotype_dna, child2_genotype_mask) = self.__breed(
-                parent1_id,
-                parent2_id
-            )
+        for parent1_id, parent2_id in couples:
+            (child1_genotype_dna, child1_genotype_mask, child2_genotype_dna, child2_genotype_mask) = self.__breed(parent1_id, parent2_id)
 
             offspring.append(build_individual(child1_genotype_dna, child1_genotype_mask))
             offspring.append(build_individual(child2_genotype_dna, child2_genotype_mask))
@@ -91,32 +87,29 @@ class Static(Playground):
         parent1_genotype_dna = parent_1.genotype.dna
         parent2_genotype_dna = parent_2.genotype.dna
 
-        (child1_genotype_dna, child2_genotype_dna) = self.recombination.recombine(
-            parent1_genotype_dna,
-            parent2_genotype_dna
-        )
+        (child1_genotype_dna, child2_genotype_dna) = self.recombination.recombine(parent1_genotype_dna, parent2_genotype_dna)
         return (child1_genotype_dna, parent_1.genotype.mask, child2_genotype_dna, parent_2.genotype.mask)
 
     def train(self, max_generations: int) -> Dict[str, Any]:
-        logging.info(f'Starting evolution cycle with a maximum of {max_generations} generations')
-        stats: Dict[str, Any] = {
-            'generations': {}
-        }
+        logging.info(f"Starting evolution cycle with a maximum of {max_generations} generations")
+        stats: Dict[str, Any] = {"generations": {}}
         while self.population.generation_count < max_generations and self.population.size() > self.selection.offspring_size:
             mean_fitness = self.population.mean_fitness()
             if self.verbose is True:
-                logging.debug(f'Running generation: {self.population.generation_count}/{max_generations} -- average_fitness: {mean_fitness} -- population size: {self.population.size()}')
+                logging.debug(
+                    f"Running generation: {self.population.generation_count}/{max_generations} -- average_fitness: {mean_fitness} -- population size: {self.population.size()}"
+                )
             else:
-                logging.debug(f'Running generation: {self.population.generation_count}/{max_generations}')
+                logging.debug(f"Running generation: {self.population.generation_count}/{max_generations}")
 
-            stats['generations'][self.population.generation_count] = {}
-            stats['generations'][self.population.generation_count]['mean_fitness'] = mean_fitness
-            stats['generations'][self.population.generation_count]['genome'] = self.population.get_full_genome()
+            stats["generations"][self.population.generation_count] = {}
+            stats["generations"][self.population.generation_count]["mean_fitness"] = mean_fitness
+            stats["generations"][self.population.generation_count]["genome"] = self.population.get_full_genome()
 
             # Mating step
             distribution = self.distribution.get(self.population)
-            individual_ids = list(map(lambda i : i[0], distribution))
-            probabilities = list(map(lambda i : i[1], distribution))
+            individual_ids = list(map(lambda i: i[0], distribution))
+            probabilities = list(map(lambda i: i[1], distribution))
 
             mating_pool: List[str] = self.selection.select(individual_ids, probabilities)
             offspring = self.__mate(mating_pool)
@@ -128,7 +121,9 @@ class Static(Playground):
             self.replacement.replace(offspring, self.population, self.fitness)
             self.population.update(self.fitness)
 
-        logging.info(f'Training ended with average_fitness: {self.population.mean_fitness()} and a population size of {self.population.size()}')
+        logging.info(
+            f"Training ended with average_fitness: {self.population.mean_fitness()} and a population size of {self.population.size()}"
+        )
         return stats
 
     def predict(self, x: np.ndarray, depth: int = 0) -> float:

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Core Auxein mutations.
-"""
+"""Core Auxein mutations."""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -14,8 +14,7 @@ from auxein.population import build_individual, Individual
 
 
 class ObservationBasedFitness(Fitness):
-    """Abstract class for observation-based fitness function.
-    """
+    """Abstract class for observation-based fitness function."""
 
     @abstractmethod
     def fitness(self, individual: Individual) -> float:
@@ -32,7 +31,7 @@ class ObservationBasedFitness(Fitness):
         return np.array(F)
 
     def get_landscape(self, specs: np.ndarray, size: int) -> np.ndarray:
-        assert len(specs) == 2, 'Only 2-dimensional fitness landscapes are supported at the moment.'
+        assert len(specs) == 2, "Only 2-dimensional fitness landscapes are supported at the moment."
         A = np.linspace(specs[0][0], specs[0][1], size)
         B = np.linspace(specs[1][0], specs[1][1], size)
         return self.__compute_f(A, B)
@@ -46,7 +45,7 @@ class MultipleLinearRegression(ObservationBasedFitness):
 
     def __init__(self, xs: np.ndarray, y: np.ndarray) -> None:
         super().__init__()
-        assert xs.shape == (y.shape[0], xs.shape[1]), 'length of xs must be equal to length of y'
+        assert xs.shape == (y.shape[0], xs.shape[1]), "length of xs must be equal to length of y"
         self.xs = xs
         self.y = y
 
@@ -63,10 +62,9 @@ class MultipleLinearRegression(ObservationBasedFitness):
 
 
 class SimplePolynomialRegression(ObservationBasedFitness):
-
     def __init__(self, xs: np.ndarray, y: np.ndarray) -> None:
         super().__init__()
-        assert xs.shape == (y.shape[0], xs.shape[1]), 'length of xs must be equal to length of y'
+        assert xs.shape == (y.shape[0], xs.shape[1]), "length of xs must be equal to length of y"
         self.xs = xs
         self.y = y
 
@@ -80,12 +78,11 @@ class SimplePolynomialRegression(ObservationBasedFitness):
 
 
 class MaximumLikelihood(ObservationBasedFitness):
-
     def __init__(self, xs: np.ndarray, y: np.ndarray) -> None:
         super().__init__()
-        assert xs.shape == (y.shape[0], xs.shape[1]), 'length of xs must be equal to length of y'
+        assert xs.shape == (y.shape[0], xs.shape[1]), "length of xs must be equal to length of y"
         classes = np.unique(y)
-        assert len(classes) == 2 and np.array_equal(classes, np.array([0, 1])), 'y-values can only belong [0, 1] discrete interval'
+        assert len(classes) == 2 and np.array_equal(classes, np.array([0, 1])), "y-values can only belong [0, 1] discrete interval"
         self.xs = xs
         self.y = y
 

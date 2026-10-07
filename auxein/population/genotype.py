@@ -1,13 +1,13 @@
 """
 Contains various genotypes representations.
 """
+
 from __future__ import absolute_import
 
 import numpy as np
 
 
 class Genotype:
-
     def __init__(self, dna: np.ndarray, mask: np.ndarray) -> None:
         self._dimension = len(dna)
         self._dna = dna.copy()
@@ -26,5 +26,5 @@ class Genotype:
         return self._mask.copy()
 
     def __repr__(self) -> str:
-        repr: str = f'({self._dna}),({self._mask})'
+        repr: str = f"({self._dna}),({self._mask})"
         return repr

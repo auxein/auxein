@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Core Auxein mutations.
-"""
+"""Core Auxein mutations."""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -12,7 +12,6 @@ from auxein.population import Individual
 
 
 class Fitness(ABC):
-
     @abstractmethod
     def fitness(self, individual: Individual) -> float:
         pass

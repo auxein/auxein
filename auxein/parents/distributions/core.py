@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Core Auxein mutations.
-"""
+"""Core Auxein mutations."""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -11,14 +11,12 @@ from auxein.population import Item, Population
 
 
 class Distribution(ABC):
-
     @abstractmethod
     def get(self, population: Population) -> List[Tuple[str, float]]:
         pass
 
 
 class Fps(Distribution):
-
     def __init__(self) -> None:
         super().__init__()
 
@@ -27,7 +25,6 @@ class Fps(Distribution):
 
 
 class FpsWithWindowing(Distribution):
-
     def __init__(self) -> None:
         super().__init__()
 
@@ -37,11 +34,12 @@ class FpsWithWindowing(Distribution):
     def get(self, population: Population) -> List[Tuple[str, float]]:
         minimum_fitness = population.min_fitness()
         total_fitness = sum(self.__scale_fitness_function(item, minimum_fitness) for item in population.pool)
-        return list(map(lambda item: (item.individual.id, self.__scale_fitness_function(item, minimum_fitness) / total_fitness), population.pool))
+        return list(
+            map(lambda item: (item.individual.id, self.__scale_fitness_function(item, minimum_fitness) / total_fitness), population.pool)
+        )
 
 
 class SigmaScaling(Distribution):
-
     def __init__(self) -> None:
         super().__init__()
 

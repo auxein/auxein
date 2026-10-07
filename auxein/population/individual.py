@@ -1,5 +1,5 @@
-"""Contains the base Individual class.
-"""
+"""Contains the base Individual class."""
+
 from __future__ import absolute_import
 from typing import List, Optional
 from uuid import uuid4, UUID
@@ -12,7 +12,6 @@ from auxein.population.genotype import Genotype
 
 
 class Individual:
-
     def __init__(self, genotype: Genotype, id: Optional[str] = None) -> None:
         self._id = uuid4() if id is None else UUID(id)
         self._born_at = time.time()
@@ -32,7 +31,7 @@ class Individual:
     def genotype(self) -> Genotype:
         return self._genotype
 
-    def mutate(self, mutation_function: Mutation) -> 'Individual':
+    def mutate(self, mutation_function: Mutation) -> "Individual":
         return Individual(mutation_function.mutate(self._genotype))
 
     def __eq__(self, other: object) -> bool:
@@ -44,7 +43,7 @@ class Individual:
         return hash(self._id)
 
     def __repr__(self) -> str:
-        return f'[{self._id}],({self._genotype})'
+        return f"[{self._id}],({self._genotype})"
 
 
 def build_individual(dna: List[float], mask: List[float] = None, id: Optional[str] = None) -> Individual:
@@ -54,5 +53,5 @@ def build_individual(dna: List[float], mask: List[float] = None, id: Optional[st
             np.array(dna),
             np.array(mask) if mask is not None else np.array([]),
         ),
-        id
+        id,
     )
