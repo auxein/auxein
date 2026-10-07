@@ -18,10 +18,10 @@ dev = [
     "pyright>=1.1.380",
 ]
 examples = [
-    "ipykernel",
-    "matplotlib",
-    "nbclient",
-    "nbmake",
+    "ipykernel>=6.29",
+    "matplotlib>=3.9",
+    "nbclient>=0.10",
+    "nbmake>=1.5",
     "pytest>=8",
 ]
 

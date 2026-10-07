@@ -70,10 +70,10 @@ dev = [
     { name = "ruff", specifier = ">=0.6" },
 ]
 examples = [
-    { name = "ipykernel" },
-    { name = "matplotlib" },
-    { name = "nbclient" },
-    { name = "nbmake" },
+    { name = "ipykernel", specifier = ">=6.29" },
+    { name = "matplotlib", specifier = ">=3.9" },
+    { name = "nbclient", specifier = ">=0.10" },
+    { name = "nbmake", specifier = ">=1.5" },
     { name = "pytest", specifier = ">=8" },
 ]
 
