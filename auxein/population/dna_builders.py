@@ -1,8 +1,6 @@
 """Contains few classes to build random dna sequences."""
 
-from __future__ import absolute_import
 from abc import ABC, abstractmethod
-from typing import Tuple, List
 
 import numpy as np
 
@@ -27,7 +25,7 @@ class RandomDnaBuilder(DnaBuilder):
 
 
 class UniformRandomDnaBuilder(RandomDnaBuilder):
-    def __init__(self, interval: Tuple[float, float] = (-1.0, 1.0)):
+    def __init__(self, interval: tuple[float, float] = (-1.0, 1.0)):
         super().__init__(distribution="uniform")
         self.interval = interval
 
@@ -52,7 +50,7 @@ class CompositeDnaBuilder(RandomDnaBuilder):
     different underlyng distributions and concatenates them.
     """
 
-    def __init__(self, builders: List[Tuple[DnaBuilder, int]]):
+    def __init__(self, builders: list[tuple[DnaBuilder, int]]):
         super().__init__(distribution="composite")
         self.builders = builders
 

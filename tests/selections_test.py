@@ -1,9 +1,10 @@
-import pytest
-from auxein.parents.selections import cumulative_probability_distribution as cpd, StochasticUniversalSampling
-
 from collections import Counter
 
 import numpy as np
+import pytest
+
+from auxein.parents.selections import StochasticUniversalSampling
+from auxein.parents.selections import cumulative_probability_distribution as cpd
 
 
 def test_cumulative_probability_distribution_with_known_values():

@@ -1,11 +1,6 @@
-# -*- coding: utf-8 -*-
 """Core Auxein mutations."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 

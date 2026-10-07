@@ -1,9 +1,9 @@
-import pytest
 import numpy as np
+import pytest
 
 from auxein.fitness import Fitness
-from auxein.population import build_individual, Population
 from auxein.parents.distributions import Fps, FpsWithWindowing, SigmaScaling
+from auxein.population import Population, build_individual
 
 
 def init_population(dimension, size, fitness_function):

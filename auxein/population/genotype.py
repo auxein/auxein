@@ -2,8 +2,6 @@
 Contains various genotypes representations.
 """
 
-from __future__ import absolute_import
-
 import numpy as np
 
 

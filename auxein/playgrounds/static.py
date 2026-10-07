@@ -1,24 +1,20 @@
-# -*- coding: utf-8 -*-
 """Static playground."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Tuple, Callable
-
 import logging
+from abc import ABC, abstractmethod
+from collections.abc import Callable
 from itertools import permutations
+from typing import Any
 
 import numpy as np
 
 from auxein.fitness import Fitness
-from auxein.population.individual import build_individual, Individual
-from auxein.population import Population
 from auxein.mutations import Mutation
-from auxein.recombinations import Recombination
 from auxein.parents.distributions import Distribution
 from auxein.parents.selections import Selection
+from auxein.population import Population
+from auxein.population.individual import Individual, build_individual
+from auxein.recombinations import Recombination
 from auxein.replacements import Replacement
 
 logger = logging.getLogger(__name__)
@@ -35,7 +31,7 @@ class Playground(ABC):
         self.fitness = fitness
 
     @abstractmethod
-    def train(self, max_generations: int) -> Dict[str, Any]:
+    def train(self, max_generations: int) -> dict[str, Any]:
         pass
 
     @abstractmethod
@@ -69,7 +65,7 @@ class Static(Playground):
         self.verbose = verbose
         self.pruning_function = pruning_function
 
-    def __mate(self, mating_pool: List[str]) -> List[Individual]:
+    def __mate(self, mating_pool: list[str]) -> list[Individual]:
         couples = permutations(mating_pool, 2)
         offspring = []
         for parent1_id, parent2_id in couples:
@@ -80,7 +76,7 @@ class Static(Playground):
 
         return offspring
 
-    def __breed(self, parent1_id: str, parent2_id: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def __breed(self, parent1_id: str, parent2_id: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         parent_1 = self.population.get(parent1_id).individual.mutate(self.mutation)
         parent_2 = self.population.get(parent2_id).individual.mutate(self.mutation)
 
@@ -90,9 +86,9 @@ class Static(Playground):
         (child1_genotype_dna, child2_genotype_dna) = self.recombination.recombine(parent1_genotype_dna, parent2_genotype_dna)
         return (child1_genotype_dna, parent_1.genotype.mask, child2_genotype_dna, parent_2.genotype.mask)
 
-    def train(self, max_generations: int) -> Dict[str, Any]:
+    def train(self, max_generations: int) -> dict[str, Any]:
         logger.info(f"Starting evolution cycle with a maximum of {max_generations} generations")
-        stats: Dict[str, Any] = {"generations": {}}
+        stats: dict[str, Any] = {"generations": {}}
         while self.population.generation_count < max_generations and self.population.size() > self.selection.offspring_size:
             mean_fitness = self.population.mean_fitness()
             if self.verbose is True:
@@ -111,7 +107,7 @@ class Static(Playground):
             individual_ids = list(map(lambda i: i[0], distribution))
             probabilities = list(map(lambda i: i[1], distribution))
 
-            mating_pool: List[str] = self.selection.select(individual_ids, probabilities)
+            mating_pool: list[str] = self.selection.select(individual_ids, probabilities)
             offspring = self.__mate(mating_pool)
 
             # Pruning step

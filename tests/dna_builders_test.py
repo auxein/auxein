@@ -1,7 +1,8 @@
 from unittest.mock import patch
+
 import numpy as np
 
-from auxein.population.dna_builders import UniformRandomDnaBuilder, NormalRandomDnaBuilder, CompositeDnaBuilder
+from auxein.population.dna_builders import CompositeDnaBuilder, NormalRandomDnaBuilder, UniformRandomDnaBuilder
 
 
 def test_uniform_random_dna_builder_instantiation():

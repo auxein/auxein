@@ -1,8 +1,8 @@
 import numpy as np
 
 from auxein import Genotype
+from auxein.mutations import FixedVariance, SelfAdaptiveSingleStep, Uniform
 from auxein.population import build_individual
-from auxein.mutations import Uniform, FixedVariance, SelfAdaptiveSingleStep
 
 
 def test_uniform_mutate_one_gene():

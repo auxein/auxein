@@ -1,7 +1,7 @@
 import numpy as np
 
+from auxein.fitness.observation_based import MaximumLikelihood, MultipleLinearRegression, ObservationBasedFitness
 from auxein.population import build_individual
-from auxein.fitness.observation_based import ObservationBasedFitness, MultipleLinearRegression, MaximumLikelihood
 
 
 def test_multiple_linear_regression():

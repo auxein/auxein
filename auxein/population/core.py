@@ -1,21 +1,26 @@
 """Contains the population class."""
 
-from __future__ import absolute_import
+from collections.abc import Iterable
 from copy import deepcopy
-from typing import Tuple, NamedTuple, Iterable, Dict, Any, Optional, List
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
 from auxein.population.dna_builders import DnaBuilder
 from auxein.population.individual import Individual, build_individual
-from auxein.fitness.core import Fitness
 
-Item = NamedTuple("Item", [("individual", Individual), ("fitness", float)])
+if TYPE_CHECKING:  # imported lazily: auxein.fitness itself depends on auxein.population
+    from auxein.fitness.core import Fitness
+
+
+class Item(NamedTuple):
+    individual: Individual
+    fitness: float
 
 
 class Population:
     def __init__(self) -> None:
-        self.__pool: Dict[str, Item] = {}
+        self.__pool: dict[str, Item] = {}
         self.__generation_count = 0
 
     def size(self) -> int:
@@ -27,7 +32,7 @@ class Population:
     def get(self, individual_id: str) -> Item:
         return deepcopy(self.__pool[individual_id])
 
-    def update(self, fitness_function: Fitness) -> None:
+    def update(self, fitness_function: "Fitness") -> None:
         for item in self.__pool.values():
             individual = item.individual
             new_fitness = fitness_function.fitness(individual)
@@ -54,14 +59,14 @@ class Population:
     def generation_count(self) -> int:
         return self.__generation_count
 
-    def rank_by_fitness(self, k: Optional[int] = None, reverse: bool = True) -> List[Tuple[str, float]]:
+    def rank_by_fitness(self, k: int | None = None, reverse: bool = True) -> list[tuple[str, float]]:
         sorted_values = sorted(self.pool, key=lambda i: i.fitness, reverse=reverse)
         return list(map(lambda item: (item.individual.id, item.fitness), sorted_values))[:k]
 
-    def __get_ages(self) -> List[float]:
+    def __get_ages(self) -> list[float]:
         return list(map(lambda item: item.individual.age(), list(self.__pool.values())))
 
-    def __get_fitness(self) -> List[float]:
+    def __get_fitness(self) -> list[float]:
         return list(map(lambda item: item.fitness, list(self.__pool.values())))
 
     def mean_age(self) -> float:
@@ -102,7 +107,7 @@ class Population:
         value: float = np.std(pools_fitness_values)
         return value
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         return {
             "generation_count": self.__generation_count,
             "size": self.size(),
@@ -129,18 +134,18 @@ def build_random_individual(dimension: int, dna_builder: DnaBuilder) -> Individu
     return build_individual(dna, mask)
 
 
-def __add_to_population(population: Population, dimension: int, fitness_function: Fitness, dna_builder: DnaBuilder) -> None:
+def __add_to_population(population: Population, dimension: int, fitness_function: "Fitness", dna_builder: DnaBuilder) -> None:
     individual = build_random_individual(dimension, dna_builder)
     fitness = fitness_function.fitness(individual)
     population.add(individual, fitness)
 
 
-def build_fixed_dimension_population(dimension: int, initial_size: int, fitness_function: Fitness, dna_builder: DnaBuilder) -> Population:
+def build_fixed_dimension_population(dimension: int, initial_size: int, fitness_function: "Fitness", dna_builder: DnaBuilder) -> Population:
     """Function to create a population of individuals with a fixed dimension.
 
     :param int dimension: dimension of the individuals in the population.
     :param int initial_size: Initial size of the population in terms of number of individuals.
-    :param Fitness fitness_function: Fitness function to evaluate the individuals.
+    :param Fitness fitness_function: "Fitness" function to evaluate the individuals.
     :param DnaBuilder dna_builder: DnaBuilder to create the individuals.
     """
     population = Population()
@@ -149,7 +154,7 @@ def build_fixed_dimension_population(dimension: int, initial_size: int, fitness_
     return population
 
 
-def build_variable_dimension_population(initial_size: int, fitness_function: Fitness, dna_builder: DnaBuilder) -> Population:
+def build_variable_dimension_population(initial_size: int, fitness_function: "Fitness", dna_builder: DnaBuilder) -> Population:
     population = Population()
     for _ in range(0, initial_size):
         dimension = np.random.randint(1, 10)

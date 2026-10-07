@@ -1,14 +1,10 @@
-# -*- coding: utf-8 -*-
 """Core Auxein mutations."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 from abc import ABC, abstractmethod
 
-from auxein.population.genotype import Genotype
-
 import numpy as np
+
+from auxein.population.genotype import Genotype
 
 
 class Mutation(ABC):

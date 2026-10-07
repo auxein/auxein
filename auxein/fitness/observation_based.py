@@ -1,16 +1,13 @@
-# -*- coding: utf-8 -*-
 """Core Auxein mutations."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 from abc import abstractmethod
 
 import numpy as np
 
+from auxein.population import Individual, build_individual
+
 from .core import Fitness
-from .utils import linear_fit, polynomial_fit, least_squares, logit
-from auxein.population import build_individual, Individual
+from .utils import least_squares, linear_fit, logit, polynomial_fit
 
 
 class ObservationBasedFitness(Fitness):

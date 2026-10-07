@@ -1,11 +1,10 @@
+import numpy as np
 import pytest
 
-import numpy as np
-
-from auxein.population.dna_builders import UniformRandomDnaBuilder
 from auxein.fitness import Fitness
-from auxein.population.individual import build_individual, Genotype
-from auxein.population import build_fixed_dimension_population, build_variable_dimension_population, Population, Item
+from auxein.population import Item, Population, build_fixed_dimension_population, build_variable_dimension_population
+from auxein.population.dna_builders import UniformRandomDnaBuilder
+from auxein.population.individual import Genotype, build_individual
 
 
 def test_build_population_dimension_and_size():
