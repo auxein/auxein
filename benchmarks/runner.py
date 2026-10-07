@@ -55,7 +55,7 @@ def build_tasks(config: Config) -> list[Task]:
                             params=algorithm.params,
                             problem=problem,
                             dim=dim,
-                            instance=k,
+                            instance=config.instance_offset + k,
                             seed=config.base_seed + k,
                             budget=config.budget(dim),
                             targets=config.targets,

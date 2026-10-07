@@ -26,6 +26,7 @@ class OverheadConfig:
 class Config:
     name: str
     base_seed: int
+    instance_offset: int
     runs: int
     budget_per_dim: int
     dims: tuple[int, ...]
@@ -63,6 +64,7 @@ def parse_config(raw: dict[str, Any]) -> Config:
     return Config(
         name=raw["name"],
         base_seed=raw.get("base_seed", 0),
+        instance_offset=raw.get("instance_offset", 0),
         runs=raw["runs"],
         budget_per_dim=raw["budget_per_dim"],
         dims=tuple(raw["dims"]),

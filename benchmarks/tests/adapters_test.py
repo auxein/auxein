@@ -9,8 +9,13 @@ AUXEIN = {
     "auxein-fixedvar": {"mutation": {"type": "fixed_variance", "sigma": 0.1}},
     "auxein-windowing": {"distribution": "fps_windowing"},
 }
-CASES = [("auxein_static", params) for params in AUXEIN.values()] + [("random_search", {}), ("cmaes", {}), ("auxein_core_random", {})]
-IDS = [*AUXEIN, "random-search", "cma-es", "auxein-core-random"]
+CASES = [("auxein_static", params) for params in AUXEIN.values()] + [
+    ("random_search", {}),
+    ("cmaes", {}),
+    ("auxein_core_random", {}),
+    ("auxein_core_ga", {}),
+]
+IDS = [*AUXEIN, "random-search", "cma-es", "auxein-core-random", "auxein-core-ga"]
 
 
 def run_once(adapter, params, budget=700, dim=3, seed=5, problem="sphere"):
@@ -103,3 +108,44 @@ def test_the_new_core_adapter_does_not_depend_on_the_batch_size_for_the_budget()
     for batch_size in (1, 7, 64, 500):
         objective, _ = run_once("auxein_core_random", {"batch_size": batch_size}, budget=130)
         assert objective.evals == 130
+
+
+GA_VARIANTS = [
+    {"population_size": 20, "offspring_size": 20, "selection": {"type": "sus", "scaling": 2.0}},
+    {"mutation": {"type": "self_adaptive", "per_gene": True}, "repair": "reflect"},
+    {
+        "selection": "tournament",
+        "recombination": {"type": "uniform"},
+        "mutation": {"type": "gaussian", "step": 0.05},
+        "crossover_probability": 0.8,
+    },
+    {"population_size": 10, "offspring_size": 7, "recombination": "none"},
+]
+
+
+@pytest.mark.parametrize("params", GA_VARIANTS, ids=range(len(GA_VARIANTS)))
+def test_the_new_core_ga_adapter_accepts_operator_parameters(params):
+    for budget in (30, 400):
+        objective, info = run_once("auxein_core_ga", params, budget=budget)
+        assert objective.evals == budget and info.stop_reason == "budget"
+    again, _ = run_once("auxein_core_ga", params, budget=400)
+    assert again.trace == objective.trace
+
+
+def test_the_new_core_ga_adapter_reports_what_the_population_costs():
+    objective, info = run_once("auxein_core_ga", {"population_size": 20, "offspring_size": 10}, budget=420, dim=4)
+    assert objective.evals == 420 and info.extra["initial_evals"] == 20 and info.extra["population_size"] == 20
+    assert info.evals_per_generation == 10.0 and info.generations == 40  # (420 - 20) / 10: nothing is re-scored
+
+
+def test_the_new_core_ga_adapter_rejects_unknown_operators():
+    with pytest.raises(ValueError, match="unknown selection 'roulette'"):
+        run_once("auxein_core_ga", {"selection": "roulette"}, budget=10)
+    with pytest.raises(ValueError, match="needs a 'type'"):
+        run_once("auxein_core_ga", {"mutation": {"step": 0.1}}, budget=10)
+
+
+def test_the_new_core_ga_beats_random_search_on_the_sphere():
+    ga, _ = run_once("auxein_core_ga", {}, budget=4000, dim=5)
+    rs, _ = run_once("random_search", {}, budget=4000, dim=5)
+    assert ga.best_error < rs.best_error / 100

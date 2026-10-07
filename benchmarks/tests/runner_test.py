@@ -29,6 +29,24 @@ def test_tasks_pair_runs_with_instances_and_seeds(tiny_config):
     assert by_algorithm["auxein-default"] == by_algorithm["random-search"] == by_algorithm["cma-es"]
 
 
+def test_instance_offset_moves_the_instances_but_not_the_seeds(tiny_config):
+    from dataclasses import replace
+
+    shifted = replace(tiny_config, instance_offset=500)
+    tasks, moved = build_tasks(tiny_config), build_tasks(shifted)
+    assert [t.instance for t in moved] == [500 + t.instance for t in tasks]
+    assert [t.seed for t in moved] == [t.seed for t in tasks]
+
+
+def test_the_selection_config_uses_other_instances_than_the_full_one():
+    selection, full = load_config(CONFIGS / "ga-default-selection.toml"), load_config(CONFIGS / "full.toml")
+    assert (
+        selection.instance_offset >= full.runs and selection.base_seed != full.base_seed
+    )  # no run of the two shares an instance or a seed
+    assert [a.name for a in selection.algorithms] == ["ga-a", "ga-b", "ga-c"] and selection.runs == 15 and selection.dims == (10, 30)
+    assert selection.overhead is None and set(selection.problems) == set(full.problems)
+
+
 def test_results_directory_layout(tiny_results):
     assert {"metadata.json", "overhead.jsonl", "runs.jsonl"} <= {p.name for p in tiny_results.iterdir()}
     assert "-" in tiny_results.name and tiny_results.name[0].isdigit()  # <timestamp>-<short-sha>
