@@ -17,6 +17,13 @@ dev = [
     "ruff>=0.6",
     "pyright>=1.1.380",
 ]
+examples = [
+    "ipykernel",
+    "matplotlib",
+    "nbclient",
+    "nbmake",
+    "pytest>=8",
+]
 
 [build-system]
 requires = ["hatchling"]
