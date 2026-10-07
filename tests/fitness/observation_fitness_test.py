@@ -71,7 +71,6 @@ def test_maximum_likelihood_value():
     assert np.isclose(fitness_function.value(i, [5]), 0.97, atol=0.01)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: auxein.fitness does not export MaximumLikelihood")
 def test_fitness_package_exports_maximum_likelihood():
     import auxein.fitness
 
