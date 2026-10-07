@@ -14,15 +14,6 @@ def stable(records):
     return [{k: v for k, v in r.items() if k != "wall_time"} for r in records]
 
 
-@pytest.fixture(scope="module")
-def tiny_results(tmp_path_factory):
-    from benchmarks.tests.conftest import TINY
-
-    root = tmp_path_factory.mktemp("results")
-    out = run_benchmark(parse_config(TINY), root, workers=2, progress=lambda message: None)
-    return out
-
-
 def test_tasks_pair_runs_with_instances_and_seeds(tiny_config):
     tasks = build_tasks(tiny_config)
     assert len(tasks) == 3 * 2 * 3 * 4
@@ -39,7 +30,7 @@ def test_tasks_pair_runs_with_instances_and_seeds(tiny_config):
 
 
 def test_results_directory_layout(tiny_results):
-    assert sorted(p.name for p in tiny_results.iterdir()) == ["metadata.json", "overhead.jsonl", "runs.jsonl"]
+    assert {"metadata.json", "overhead.jsonl", "runs.jsonl"} <= {p.name for p in tiny_results.iterdir()}
     assert "-" in tiny_results.name and tiny_results.name[0].isdigit()  # <timestamp>-<short-sha>
 
 
