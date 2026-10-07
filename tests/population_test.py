@@ -40,15 +40,15 @@ def init_population(dimension, size):
     population = Population()
     for _ in range(0, size):
         dna = np.random.uniform(-1, 1, dimension)
-        population.add(build_individual(dna, []), 1.0)
+        population.add(build_individual(dna), 1.0)
     return population
 
 
 def build_fully_specified_population():
     population = Population()
-    population.add(build_individual([0.1, 0.9], [], "3adee626-de78-4f83-84f9-ebde4e8ee64d"), 1.0)
-    population.add(build_individual([0.1, 0.5], [], "e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 1.0)
-    population.add(build_individual([0.1, 0.1], [], "01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 1.0)
+    population.add(build_individual([0.1, 0.9], id="3adee626-de78-4f83-84f9-ebde4e8ee64d"), 1.0)
+    population.add(build_individual([0.1, 0.5], id="e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 1.0)
+    population.add(build_individual([0.1, 0.1], id="01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 1.0)
     return population
 
 
@@ -68,7 +68,7 @@ def test_add():
     with pytest.raises(KeyError):
         p.get("d5984693-5965-4534-9001-2616dfee90f9")
 
-    p.add(build_individual([0.1, 0.9], [], "d5984693-5965-4534-9001-2616dfee90f9"), 1.0)
+    p.add(build_individual([0.1, 0.9], id="d5984693-5965-4534-9001-2616dfee90f9"), 1.0)
     assert p.get("d5984693-5965-4534-9001-2616dfee90f9") is not None
     assert p.size() == 4
 
@@ -102,16 +102,16 @@ def test_get_stats():
 
 def test_update():
     population = Population()
-    population.add(build_individual([0.1, 0.1], [], "3adee626-de78-4f83-84f9-ebde4e8ee64d"), 0.2)
-    population.add(build_individual([0.1, 0.3], [], "e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 0.4)
-    population.add(build_individual([0.3, 0.2], [], "01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.5)
+    population.add(build_individual([0.1, 0.1], id="3adee626-de78-4f83-84f9-ebde4e8ee64d"), 0.2)
+    population.add(build_individual([0.1, 0.3], id="e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 0.4)
+    population.add(build_individual([0.3, 0.2], id="01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.5)
 
     assert population.get("3adee626-de78-4f83-84f9-ebde4e8ee64d")[1] == 0.2
     assert population.get("e2ee1fd8-7bb9-4556-9435-cd012b0f5403")[1] == 0.4
     assert population.get("01f4eadc-e799-42d1-bc18-0fd85159bfb6")[1] == 0.5
 
     population.kill("3adee626-de78-4f83-84f9-ebde4e8ee64d")
-    population.add(build_individual([0.5, 0.5], [], "4f5db033-896a-4521-ab41-48b2177d7cd7"), 1.0)
+    population.add(build_individual([0.5, 0.5], id="4f5db033-896a-4521-ab41-48b2177d7cd7"), 1.0)
 
     class TestFitnessFunction(Fitness):
         def fitness(self, individual):
@@ -132,9 +132,9 @@ def test_update():
 
 def test_get_full_genome():
     population = Population()
-    population.add(build_individual([0.1, 0.1], [], "3adee626-de78-4f83-84f9-ebde4e8ee64d"), 0.2)
-    population.add(build_individual([0.1, 0.3], [], "e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 0.4)
-    population.add(build_individual([0.3, 0.2], [], "01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.5)
+    population.add(build_individual([0.1, 0.1], id="3adee626-de78-4f83-84f9-ebde4e8ee64d"), 0.2)
+    population.add(build_individual([0.1, 0.3], id="e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 0.4)
+    population.add(build_individual([0.3, 0.2], id="01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.5)
     genome = population.get_full_genome()
 
     assert genome.shape == (3, 2)
@@ -143,9 +143,9 @@ def test_get_full_genome():
 
 def test_rank_by_fitness_desc():
     population = Population()
-    population.add(build_individual([0.1, 0.1], [], "3adee626-de78-4f83-84f9-ebde4e8ee64d"), 0.2)
-    population.add(build_individual([0.1, 0.3], [], "e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 0.4)
-    population.add(build_individual([0.3, 0.2], [], "01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.5)
+    population.add(build_individual([0.1, 0.1], id="3adee626-de78-4f83-84f9-ebde4e8ee64d"), 0.2)
+    population.add(build_individual([0.1, 0.3], id="e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 0.4)
+    population.add(build_individual([0.3, 0.2], id="01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.5)
     rank = population.rank_by_fitness()
 
     assert rank[0] == ("01f4eadc-e799-42d1-bc18-0fd85159bfb6", 0.5)
@@ -155,9 +155,9 @@ def test_rank_by_fitness_desc():
 
 def test_rank_by_fitness_asc():
     population = Population()
-    population.add(build_individual([0.1, 0.1], [], "3adee626-de78-4f83-84f9-ebde4e8ee64d"), 0.2)
-    population.add(build_individual([0.1, 0.3], [], "e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 0.4)
-    population.add(build_individual([0.3, 0.2], [], "01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.5)
+    population.add(build_individual([0.1, 0.1], id="3adee626-de78-4f83-84f9-ebde4e8ee64d"), 0.2)
+    population.add(build_individual([0.1, 0.3], id="e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 0.4)
+    population.add(build_individual([0.3, 0.2], id="01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.5)
     rank = population.rank_by_fitness(reverse=False)
 
     assert rank[0] == Item("3adee626-de78-4f83-84f9-ebde4e8ee64d", 0.2)
@@ -182,14 +182,12 @@ def test_genotype_dna():
     assert genotype.dna[2] == 0.95
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: build_individual defaults to an empty mask")
 @pytest.mark.parametrize("mask", [None, []], ids=["none", "empty"])
 def test_build_individual_defaults_mask_to_ones(mask):
     individual = build_individual([0.1, 0.5, 0.95], mask)
     assert np.array_equal(individual.genotype.mask, np.ones(3))
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: Genotype does not check that mask and dna have the same length")
 def test_genotype_requires_mask_and_dna_of_the_same_length():
     with pytest.raises(ValueError):
         Genotype(np.array([0.1, 0.5, 0.95]), np.array([0.5, 0.5]))

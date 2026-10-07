@@ -9,7 +9,7 @@ def test_multiple_linear_regression():
     xs = np.array([[23], [26], [30], [34], [43], [48], [52], [57], [58]])
     y = np.array([651, 762, 856, 1063, 1190, 1298, 1421, 1440, 1518])
 
-    i = build_individual([23.42, 167.68], [])
+    i = build_individual([23.42, 167.68])
     fitness_function = MultipleLinearRegression(xs, y)
     assert np.isclose(fitness_function.fitness(i), -18804)
 

@@ -10,16 +10,16 @@ def init_population(dimension, size, fitness_function):
     population = Population()
     for _ in range(0, size):
         dna = np.random.uniform(-1, 1, dimension)
-        i = build_individual(dna, [])
+        i = build_individual(dna)
         population.add(i, fitness_function.fitness(i))
     return population
 
 
 def build_fully_specified_population():
     population = Population()
-    population.add(build_individual([0.1, 0.9], [], "3adee626-de78-4f83-84f9-ebde4e8ee64d"), 1.0)  # fitness = 1
-    population.add(build_individual([0.1, 0.5], [], "e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 0.6)  # fitness = 0.6
-    population.add(build_individual([0.1, 0.1], [], "01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.2)  # fitness = 0.2
+    population.add(build_individual([0.1, 0.9], id="3adee626-de78-4f83-84f9-ebde4e8ee64d"), 1.0)  # fitness = 1
+    population.add(build_individual([0.1, 0.5], id="e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 0.6)  # fitness = 0.6
+    population.add(build_individual([0.1, 0.1], id="01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.2)  # fitness = 0.2
     return population
 
 

@@ -9,17 +9,17 @@ from auxein.replacements import ReplaceWorst
 
 def build_fully_specified_population():
     population = Population()
-    population.add(build_individual([0.1, 0.9], [], "3adee626-de78-4f83-84f9-ebde4e8ee64d"), 1.0)  # fitness = 1
-    population.add(build_individual([0.1, 0.5], [], "e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 0.6)  # fitness = 0.6
-    population.add(build_individual([0.1, 0.1], [], "01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.2)  # fitness = 0.2
+    population.add(build_individual([0.1, 0.9], id="3adee626-de78-4f83-84f9-ebde4e8ee64d"), 1.0)  # fitness = 1
+    population.add(build_individual([0.1, 0.5], id="e2ee1fd8-7bb9-4556-9435-cd012b0f5403"), 0.6)  # fitness = 0.6
+    population.add(build_individual([0.1, 0.1], id="01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.2)  # fitness = 0.2
     return population
 
 
 def test_replace_worst():
     population = build_fully_specified_population()
     offspring = [
-        build_individual([0.1, 0.4], [], "7fdbb922-6435-4ab1-87ec-3acccbf71da6"),
-        build_individual([0.1, 0.3], [], "45ae2513-4a81-4385-ad45-4c6d2e172c92"),
+        build_individual([0.1, 0.4], id="7fdbb922-6435-4ab1-87ec-3acccbf71da6"),
+        build_individual([0.1, 0.3], id="45ae2513-4a81-4385-ad45-4c6d2e172c92"),
     ]
 
     class TestFitnessFunction(Fitness):
@@ -49,8 +49,8 @@ class SumFitness(Fitness):
 def test_replace_worst_with_fewer_offspring_than_replacement_size():
     population = build_fully_specified_population()
     offspring = [
-        build_individual([0.1, 0.4], [], "7fdbb922-6435-4ab1-87ec-3acccbf71da6"),
-        build_individual([0.1, 0.3], [], "45ae2513-4a81-4385-ad45-4c6d2e172c92"),
+        build_individual([0.1, 0.4], id="7fdbb922-6435-4ab1-87ec-3acccbf71da6"),
+        build_individual([0.1, 0.3], id="45ae2513-4a81-4385-ad45-4c6d2e172c92"),
     ]
 
     ReplaceWorst(5).replace(offspring, population, SumFitness())

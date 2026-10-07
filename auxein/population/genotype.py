@@ -9,6 +9,8 @@ import numpy as np
 
 class Genotype:
     def __init__(self, dna: np.ndarray, mask: np.ndarray) -> None:
+        if len(mask) != len(dna):
+            raise ValueError(f"mask and dna must have the same length, got {len(mask)} and {len(dna)}")
         self._dimension = len(dna)
         self._dna = dna.copy()
         self._mask = mask.copy()
