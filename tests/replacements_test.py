@@ -46,7 +46,6 @@ class SumFitness(Fitness):
         pass
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: ReplaceWorst crashes when fewer offspring than the population survive")
 def test_replace_worst_with_fewer_offspring_than_replacement_size():
     population = build_fully_specified_population()
     offspring = [
@@ -69,15 +68,7 @@ def test_replace_worst_with_fewer_offspring_than_replacement_size():
 
 @pytest.mark.parametrize(
     "offspring_size",
-    [
-        2,
-        pytest.param(
-            5,
-            marks=pytest.mark.xfail(
-                strict=True, reason="phase 3: ReplaceWorst with no offspring crashes when offspring_size >= population size"
-            ),
-        ),
-    ],
+    [2, 5],
     ids=["smaller_than_population", "larger_than_population"],
 )
 def test_replace_worst_with_no_offspring_is_a_noop(offspring_size):

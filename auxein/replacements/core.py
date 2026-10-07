@@ -20,10 +20,15 @@ class Replacement(ABC):
     def _replace(
         self, quantity: int, offspring: List[Individual], population: Population, individuals_to_kill: List[str], fitness_function: Fitness
     ) -> None:
-        for i in individuals_to_kill:
-            population.kill(i)
+        quantity = min(quantity, len(offspring))
+        if quantity == 0:
+            return
 
-        children: List[Individual] = np.random.choice(offspring, quantity, replace=False)
+        # sample the children before touching the population, so that a failure cannot leave it shrunk
+        chosen = np.random.choice(len(offspring), quantity, replace=False)
+        children = [offspring[i] for i in chosen]
+        for i in individuals_to_kill[:quantity]:
+            population.kill(i)
         for child in children:
             population.add(child, fitness_function.fitness(child))
 
@@ -37,6 +42,7 @@ class ReplaceWorst(Replacement):
         super().__init__(offspring_size=offspring_size)
 
     def replace(self, offspring: List[Individual], population: Population, fitness_function: Fitness) -> None:
-        quantity = population.size() if self.offspring_size >= population.size() else min(self.offspring_size, len(offspring))
+        target = population.size() if self.offspring_size >= population.size() else self.offspring_size
+        quantity = min(target, len(offspring))
         individuals_to_kill: List[str] = list(map(lambda item: item[0], population.rank_by_fitness(quantity, reverse=False)))
         super()._replace(quantity, offspring, population, individuals_to_kill, fitness_function)
