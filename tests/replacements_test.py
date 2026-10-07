@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import pytest
+
 from auxein.fitness import Fitness
 from auxein.population import build_individual, Population
 from auxein.replacements import ReplaceWorst
@@ -34,3 +36,54 @@ def test_replace_worst():
     assert population.get("3adee626-de78-4f83-84f9-ebde4e8ee64d") is not None
     assert population.get("7fdbb922-6435-4ab1-87ec-3acccbf71da6") is not None
     assert population.get("45ae2513-4a81-4385-ad45-4c6d2e172c92") is not None
+
+
+class SumFitness(Fitness):
+    def fitness(self, individual):
+        return individual.genotype.dna[0] + individual.genotype.dna[1]
+
+    def value(self, individual, x):
+        pass
+
+
+@pytest.mark.xfail(strict=True, reason="phase 3: ReplaceWorst crashes when fewer offspring than the population survive")
+def test_replace_worst_with_fewer_offspring_than_replacement_size():
+    population = build_fully_specified_population()
+    offspring = [
+        build_individual([0.1, 0.4], [], "7fdbb922-6435-4ab1-87ec-3acccbf71da6"),
+        build_individual([0.1, 0.3], [], "45ae2513-4a81-4385-ad45-4c6d2e172c92"),
+    ]
+
+    ReplaceWorst(5).replace(offspring, population, SumFitness())
+
+    # only as many individuals as offspring are replaced: the two worst
+    assert population.size() == 3
+    assert population.get("3adee626-de78-4f83-84f9-ebde4e8ee64d") is not None
+    with pytest.raises(KeyError):
+        population.get("e2ee1fd8-7bb9-4556-9435-cd012b0f5403")
+    with pytest.raises(KeyError):
+        population.get("01f4eadc-e799-42d1-bc18-0fd85159bfb6")
+    assert population.get("7fdbb922-6435-4ab1-87ec-3acccbf71da6") is not None
+    assert population.get("45ae2513-4a81-4385-ad45-4c6d2e172c92") is not None
+
+
+@pytest.mark.parametrize(
+    "offspring_size",
+    [
+        2,
+        pytest.param(
+            5,
+            marks=pytest.mark.xfail(
+                strict=True, reason="phase 3: ReplaceWorst with no offspring crashes when offspring_size >= population size"
+            ),
+        ),
+    ],
+    ids=["smaller_than_population", "larger_than_population"],
+)
+def test_replace_worst_with_no_offspring_is_a_noop(offspring_size):
+    population = build_fully_specified_population()
+    before = sorted(i.individual.id for i in population.pool)
+
+    ReplaceWorst(offspring_size).replace([], population, SumFitness())
+
+    assert sorted(i.individual.id for i in population.pool) == before
