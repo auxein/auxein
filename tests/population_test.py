@@ -137,7 +137,8 @@ def test_get_full_genome():
     population.add(build_individual([0.3, 0.2], [], "01f4eadc-e799-42d1-bc18-0fd85159bfb6"), 0.5)
     genome = population.get_full_genome()
 
-    np.array_equal(genome, [[0.1, 0.1], [0.1, 0.3], [0.3, 0.2]])
+    assert genome.shape == (3, 2)
+    assert np.array_equal(genome, [[0.1, 0.1], [0.1, 0.3], [0.3, 0.2]])
 
 
 def test_rank_by_fitness_desc():
@@ -179,3 +180,16 @@ def test_genotype_dna():
     assert genotype.dna[0] == 0.1
     assert genotype.dna[1] == 0.5
     assert genotype.dna[2] == 0.95
+
+
+@pytest.mark.xfail(strict=True, reason="phase 3: build_individual defaults to an empty mask")
+@pytest.mark.parametrize("mask", [None, []], ids=["none", "empty"])
+def test_build_individual_defaults_mask_to_ones(mask):
+    individual = build_individual([0.1, 0.5, 0.95], mask)
+    assert np.array_equal(individual.genotype.mask, np.ones(3))
+
+
+@pytest.mark.xfail(strict=True, reason="phase 3: Genotype does not check that mask and dna have the same length")
+def test_genotype_requires_mask_and_dna_of_the_same_length():
+    with pytest.raises(ValueError):
+        Genotype(np.array([0.1, 0.5, 0.95]), np.array([0.5, 0.5]))

@@ -1,6 +1,8 @@
+import pytest
 import numpy as np
 
 from auxein import Genotype
+from auxein.population import build_individual
 from auxein.mutations import Uniform, FixedVariance, SelfAdaptiveSingleStep
 
 
@@ -29,3 +31,27 @@ def test_uncorrelated_with_single_step_variance():
     assert np.count_nonzero(genotype.dna == mutated_genotype.dna) == 0
     assert np.unique(mutated_genotype.mask).size == 1
     assert np.unique(mutated_genotype.dna).size != 1
+
+
+@pytest.mark.xfail(strict=True, reason="phase 3: build_individual's empty default mask crashes SelfAdaptiveSingleStep")
+def test_self_adaptive_single_step_on_individual_built_with_default_mask():
+    individual = build_individual([0.0, 0.0, 0.0])
+    mutated = individual.mutate(SelfAdaptiveSingleStep(0.05))
+    assert mutated.genotype.dimension == 3
+    assert mutated.genotype.mask.shape == (3,)
+    assert np.unique(mutated.genotype.mask).size == 1
+
+
+@pytest.mark.xfail(strict=True, reason="phase 3: _extend appends a fresh random step size instead of the shared one")
+def test_self_adaptive_single_step_keeps_a_single_shared_step_size_when_extending():
+    genotype = Genotype(np.zeros(3), np.full(3, 0.5))
+    mutated = SelfAdaptiveSingleStep(0.05, extend_probability=1.0).mutate(genotype)
+    assert mutated.dimension == 4
+    assert mutated.mask.shape == (4,)
+    assert np.unique(mutated.mask).size == 1
+
+
+@pytest.mark.xfail(strict=True, reason="phase 3: np.vectorize fails on size-0 input")
+def test_fixed_variance_on_empty_genotype():
+    mutated = FixedVariance(1.0).mutate(Genotype(np.array([]), np.array([])))
+    assert mutated.dimension == 0

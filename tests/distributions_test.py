@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 
 from auxein.fitness import Fitness
@@ -144,3 +145,53 @@ def test_fps_sigma_scaling_with_known_values():
 
     assert ("e2ee1fd8-7bb9-4556-9435-cd012b0f5403", 0.3333333333333333) in distribution
     assert ("01f4eadc-e799-42d1-bc18-0fd85159bfb6", 0.12920918810140183) in distribution
+
+
+def build_population_with_fitnesses(fitnesses):
+    population = Population()
+    for fitness in fitnesses:
+        population.add(build_individual([0.0, 0.0]), fitness)
+    return population
+
+
+@pytest.mark.xfail(strict=True, reason="phase 3: Fps favours the worst individual when fitness is negative")
+def test_fps_rejects_negative_fitness():
+    population = build_population_with_fitnesses([-1.0, -2.0, -3.0])
+    with pytest.raises(ValueError, match="FpsWithWindowing"):
+        Fps().get(population)
+
+
+@pytest.mark.xfail(strict=True, reason="phase 3: Fps divides by zero when the total fitness is zero")
+def test_fps_rejects_zero_total_fitness():
+    population = build_population_with_fitnesses([0.0, 0.0, 0.0])
+    with pytest.raises(ValueError):
+        Fps().get(population)
+
+
+@pytest.mark.xfail(strict=True, reason="phase 3: converged population gives NaN/ZeroDivision probabilities")
+@pytest.mark.parametrize("distribution", [FpsWithWindowing(), SigmaScaling()], ids=["windowing", "sigma_scaling"])
+def test_distribution_on_converged_population_is_uniform(distribution):
+    population = build_population_with_fitnesses([-4.2, -4.2, -4.2, -4.2])
+    probabilities = [p for _, p in distribution.get(population)]
+    assert np.allclose(probabilities, [0.25] * 4)
+
+
+@pytest.mark.xfail(strict=True, reason="phase 3: SigmaScaling recomputes population mean and std for every individual")
+def test_sigma_scaling_computes_population_statistics_once(monkeypatch):
+    population = build_population_with_fitnesses([1.0, 2.0, 3.0, 4.0, 5.0])
+    calls = {"mean": 0, "std": 0}
+    mean_fitness, std_fitness = population.mean_fitness, population.std_fitness
+
+    def counting_mean():
+        calls["mean"] += 1
+        return mean_fitness()
+
+    def counting_std():
+        calls["std"] += 1
+        return std_fitness()
+
+    monkeypatch.setattr(population, "mean_fitness", counting_mean)
+    monkeypatch.setattr(population, "std_fitness", counting_std)
+    SigmaScaling().get(population)
+    assert calls["mean"] <= 1
+    assert calls["std"] <= 1
