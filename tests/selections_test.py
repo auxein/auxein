@@ -1,5 +1,7 @@
 from auxein.parents.selections import cumulative_probability_distribution as cpd, StochasticUniversalSampling
 
+from collections import Counter
+
 import numpy as np
 
 
@@ -15,14 +17,14 @@ def test_cumulative_probability_distribution_with_known_values():
 def test_stochastic_universal_sampling():
     individuals_ids = ["a", "b", "c", "d", "e"]
     probabilities = [0.15, 0.15, 0.25, 0.1, 0.35]
-    ids = StochasticUniversalSampling(4096).select(individuals_ids, probabilities)
+    selection = StochasticUniversalSampling(4096)
+    ids = selection.select(individuals_ids, probabilities)
 
-    from collections import Counter
+    n = int(selection.parents_to_select)
+    assert len(ids) == n
 
     counts = Counter(ids)
-
-    np.testing.assert_almost_equal(counts["a"] / 46, 0.15, 2)
-    np.testing.assert_almost_equal(counts["b"] / 46, 0.15, 2)
-    np.testing.assert_almost_equal(counts["c"] / 46, 0.25, 2)
-    np.testing.assert_almost_equal(counts["d"] / 46, 0.10, 2)
-    np.testing.assert_almost_equal(counts["e"] / 46, 0.35, 2)
+    for individual_id, probability in zip(individuals_ids, probabilities):
+        # equally spaced pointers: each count is within one of its expected value
+        assert abs(counts[individual_id] - n * probability) <= 1
+        np.testing.assert_allclose(counts[individual_id] / n, probability, atol=1 / n)
