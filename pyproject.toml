@@ -73,7 +73,16 @@ include = ["auxein", "benchmarks"]
 exclude = ["benchmarks/results"]
 pythonVersion = "3.11"
 # the new core is checked in strict mode; the 0.x modules are removed in a later step
-strict = ["auxein/backend", "auxein/random", "auxein/core", "auxein/spaces"]
+strict = [
+    "auxein/backend",
+    "auxein/random",
+    "auxein/core",
+    "auxein/spaces",
+    "auxein/evaluators",
+    "auxein/strategies",
+    "auxein/driver",
+    "auxein/recording",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "benchmarks/tests"]

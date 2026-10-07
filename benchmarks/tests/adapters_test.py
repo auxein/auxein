@@ -9,8 +9,8 @@ AUXEIN = {
     "auxein-fixedvar": {"mutation": {"type": "fixed_variance", "sigma": 0.1}},
     "auxein-windowing": {"distribution": "fps_windowing"},
 }
-CASES = [("auxein_static", params) for params in AUXEIN.values()] + [("random_search", {}), ("cmaes", {})]
-IDS = [*AUXEIN, "random-search", "cma-es"]
+CASES = [("auxein_static", params) for params in AUXEIN.values()] + [("random_search", {}), ("cmaes", {}), ("auxein_core_random", {})]
+IDS = [*AUXEIN, "random-search", "cma-es", "auxein-core-random"]
 
 
 def run_once(adapter, params, budget=700, dim=3, seed=5, problem="sphere"):
@@ -91,3 +91,15 @@ def test_cma_reports_its_population_size_and_generations():
 
 def test_adapters_can_be_loaded_by_module_path():
     assert load_adapter("benchmarks.adapters.random_search") is load_adapter("random_search")
+
+
+def test_the_new_core_adapter_reports_its_batches():
+    objective, info = run_once("auxein_core_random", {"batch_size": 10}, budget=95)
+    assert objective.evals == 95 and info.stop_reason == "budget"
+    assert info.generations == 10 and info.evals_per_generation == 10.0  # 9 full batches and one of 5
+
+
+def test_the_new_core_adapter_does_not_depend_on_the_batch_size_for_the_budget():
+    for batch_size in (1, 7, 64, 500):
+        objective, _ = run_once("auxein_core_random", {"batch_size": batch_size}, budget=130)
+        assert objective.evals == 130

@@ -28,6 +28,10 @@ adapter = "cmaes"
 sigma0 = 2.0
 x0_range = 4.0
 
+[[algorithms]]
+name = "auxein-core-random"
+adapter = "auxein_core_random"
+
 [overhead]
 budget = 2000
 repeats = 1

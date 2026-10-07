@@ -10,11 +10,12 @@ def test_stable_name_ids_are_pinned():
     assert stable_name_id("strategy") == 340149741
     assert stable_name_id("scenarios") == 2469974053
     assert stable_name_id("evaluation") == 321103221
+    assert stable_name_id("evaluation-batch") == 2065073135  # the one stream of a vectorised evaluator's batch (design doc §8)
     assert stable_name_id("é") == stable_name_id("é")
 
 
 def test_the_names_auxein_uses_map_to_different_integers():
-    names = ["strategy", "scenarios", "evaluation", "init", "selection", "variation", "replacement"]
+    names = ["strategy", "scenarios", "evaluation", "evaluation-batch", "init", "selection", "variation", "replacement"]
     assert len({stable_name_id(n) for n in names}) == len(names)
 
 

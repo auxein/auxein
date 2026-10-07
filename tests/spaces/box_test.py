@@ -275,3 +275,12 @@ def test_clip_validation(backend: Backend):
         box.clip(backend.asarray([1.0, 2.0, 3.0]))
     with pytest.raises(TypeError, match="floating-point"):
         box.clip(backend.asarray([1, 2], dtype=backend.int_dtype))
+
+
+def test_describe_is_a_json_serialisable_description():
+    import json
+
+    box = Box([-1.0, 1e-3], [1.0, 10.0], log_scale=[False, True])
+    description = box.describe()
+    assert description == {"type": "Box", "dim": 2, "lower": [-1.0, 1e-3], "upper": [1.0, 10.0], "log_scale": [False, True]}
+    assert json.loads(json.dumps(description)) == description

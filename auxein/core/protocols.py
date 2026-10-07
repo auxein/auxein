@@ -1,11 +1,12 @@
 """The contracts between strategies, evaluators and the driver (design doc §3.2 and §5.3).
 
-These are typing contracts only: the driver, the strategies and the evaluators are implemented in later steps.
+These are typing contracts: the driver, the strategies and the evaluators that implement them live in `auxein.driver`,
+`auxein.strategies` and `auxein.evaluators`.
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Generic, Literal, Protocol
 
 from auxein.backend import Backend
 from auxein.core._typing import G
@@ -49,14 +50,19 @@ class StrategyContext:
 
 
 @dataclass(frozen=True)
-class EvalContext:
+class EvalContext(Generic[G]):
     """What the driver gives an evaluator along with a batch."""
 
+    problem: ProblemSpec[G]
+    """What is being optimised: evaluators turn what user code returns into evaluations of this problem."""
     backend: Backend
     rng_for: Callable[[CandidateId], RandomStream]
     """Derives the evaluation stream of a candidate from its id, so that randomness follows the candidate, not the
     worker or the time of evaluation (§8). It is a factory rather than a list of streams, so that a batch of
     thousands of candidates does not create thousands of generators up front."""
+    batch_rng_for: Callable[[CandidateId], RandomStream]
+    """Derives the one stream a vectorised evaluator receives per batch, from the id of the batch's first candidate
+    (§8). It is deterministic because the composition of a batch is."""
     timeout: float | None = None
     """Seconds an evaluation may take, or None for no limit."""
     deadline: float | None = None
@@ -101,4 +107,4 @@ class Evaluator(Protocol[G]):
     wrap ordinary functions.
     """
 
-    async def evaluate(self, batch: Batch[G], ctx: EvalContext) -> EvaluationBatch[G]: ...
+    async def evaluate(self, batch: Batch[G], ctx: EvalContext[G]) -> EvaluationBatch[G]: ...

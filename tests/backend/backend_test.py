@@ -264,3 +264,12 @@ def test_mps_smoke():
     assert backend.matches(x)
     assert backend_of(x) == backend
     np.testing.assert_allclose(backend.to_numpy(x), [1.0, 2.0])
+
+
+def test_is_array_recognises_supported_arrays(backend: Backend):
+    from auxein.backend import is_array
+
+    assert is_array(backend.asarray([1.0]))
+    assert is_array(np.zeros(2))
+    for other in ([1.0], (1.0,), 1.0, "x", None, {"a": 1}):
+        assert not is_array(other)

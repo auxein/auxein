@@ -154,6 +154,11 @@ def _is_torch_tensor(x: Array) -> bool:
     return isinstance(x, devices.import_torch().Tensor)
 
 
+def is_array(x: Array) -> bool:
+    """Whether `x` is an array of a supported backend: a numpy array or a torch tensor."""
+    return _is_numpy_array(x) or _is_torch_tensor(x)
+
+
 def backend_of(array: Array) -> Backend:
     """Infer a `Backend` from an existing array: its namespace, device and (float) precision.
 

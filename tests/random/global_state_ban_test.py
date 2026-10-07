@@ -10,7 +10,7 @@ import pytest
 from tests.support.global_random import NUMPY_LEGACY, find_violations, scan_package
 
 PACKAGE = Path(__file__).resolve().parents[2] / "auxein"
-COVERED_SUBPACKAGES = ["core", "spaces", "backend", "random"]
+COVERED_SUBPACKAGES = ["core", "spaces", "backend", "random", "evaluators", "strategies", "driver", "recording"]
 
 
 @pytest.mark.parametrize("subpackage", COVERED_SUBPACKAGES)
