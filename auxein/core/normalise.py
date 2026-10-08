@@ -6,7 +6,8 @@ Every evaluator uses it, so the rules are the same whatever the evaluator:
 - a `Result` (or `BatchResult`) must match the problem exactly: every declared objective, constraint and descriptor
   present, and no unknown name;
 - a plain dict is a `TypeError` that points to `Result`;
-- a non-finite objective in what would be an `OK` evaluation is an error that names the candidate.
+- a non-finite objective is not an error in the contract but a failed evaluation (a diverged simulation typically shows
+  up this way): the candidate gets the status `FAILED` and an error that names the objective.
 """
 
 import math
@@ -80,9 +81,14 @@ def _mismatch(declared: Sequence[str], given: Mapping[str, object], what: str) -
     return details
 
 
-def _check_finite_objective(candidate_id: int, name: str, value: float) -> None:
-    if not math.isfinite(value):
-        raise ValueError(f"candidate {candidate_id}: objective {name!r} is {value}, but an OK evaluation needs finite objective values")
+def _non_finite(objectives: Mapping[str, float]) -> str | None:
+    """The error of an evaluation whose objectives are not all finite, or None when they are."""
+    bad = [f"{name!r} is {value}" for name, value in objectives.items() if not math.isfinite(value)]
+    if not bad:
+        return None
+    return (
+        f"non-finite objective value: {', '.join(bad)} (an evaluation needs finite objective values; a diverged simulation looks like this)"
+    )
 
 
 def _check_result_matches(
@@ -108,8 +114,9 @@ def evaluation_from_return(raw: object, candidate: Candidate[G], problem: Proble
     origin = f"the function for candidate {candidate.id}"
     if isinstance(raw, Result):
         _check_result_matches(problem, raw.objectives, raw.constraints, raw.descriptors, origin, "Result")
-        for name, value in raw.objectives.items():
-            _check_finite_objective(candidate.id, name, value)
+        problem_with_values = _non_finite(raw.objectives)
+        if problem_with_values is not None:
+            return Evaluation.failed(candidate, Status.FAILED, problem_with_values, wall_time, raw.cost)
         return Evaluation(candidate, Status.OK, raw.objectives, raw.constraints, raw.descriptors, Cost(wall_time, raw.cost))
     if isinstance(raw, Mapping):
         raise _dict_error(origin, "Result")
@@ -117,7 +124,8 @@ def evaluation_from_return(raw: object, candidate: Candidate[G], problem: Proble
     if number is None:
         raise TypeError(f"{origin} must return a number or a Result, got {type(raw).__name__}")
     name = _check_bare_allowed(problem, origin, "Result")
-    _check_finite_objective(candidate.id, name, number)
+    if not math.isfinite(number):
+        return Evaluation.failed(candidate, Status.FAILED, _non_finite({name: number}) or "", wall_time)
     return unchecked_evaluation(candidate, Status.OK, MappingProxyType({name: number}), _EMPTY, _EMPTY, Cost(wall_time))
 
 
@@ -168,28 +176,36 @@ def evaluations_from_batch_return(
         if array.shape[0] != n:
             raise ValueError(f"{origin} returned {array.shape[0]} values for a batch of {n} candidates")
 
+    broken: dict[int, str] = {}  # row -> why it failed: the rows with a non-finite objective
     for name, column in objectives.items():
         finite: npt.NDArray[np.bool_] = np.isfinite(column)
         if not finite.all():
-            bad = int((~finite).argmax())
-            _check_finite_objective(candidates[bad].id, name, float(column[bad]))
+            for row in np.nonzero(~finite)[0].tolist():
+                text = f"{name!r} is {float(column[row])}"
+                broken[row] = f"{broken[row]}, {text}" if row in broken else text
 
     each = wall_time / n if n else 0.0
     objective_rows = _rows(objectives)
     constraint_rows, descriptor_rows = _rows(constraints), _rows(descriptors)
     cost_rows = _rows(costs)  # empty without per-candidate cost units: then one immutable Cost serves the whole batch
     shared = Cost(each)
-    return [
-        unchecked_evaluation(
-            candidate,
-            Status.OK,
-            objective_rows[i],
-            constraint_rows[i] if constraint_rows else _EMPTY,
-            descriptor_rows[i] if descriptor_rows else _EMPTY,
-            Cost(each, cost_rows[i]) if cost_rows else shared,
+    evaluations: list[Evaluation[G]] = []
+    for i, candidate in enumerate(candidates):
+        if i in broken:
+            error = f"non-finite objective value: {broken[i]} (an evaluation needs finite objective values)"
+            evaluations.append(Evaluation.failed(candidate, Status.FAILED, error, each))
+            continue
+        evaluations.append(
+            unchecked_evaluation(
+                candidate,
+                Status.OK,
+                objective_rows[i],
+                constraint_rows[i] if constraint_rows else _EMPTY,
+                descriptor_rows[i] if descriptor_rows else _EMPTY,
+                Cost(each, cost_rows[i]) if cost_rows else shared,
+            )
         )
-        for i, candidate in enumerate(candidates)
-    ]
+    return evaluations
 
 
 def _rows(columns: Mapping[str, npt.NDArray[np.float64]]) -> list[Mapping[str, float]]:
