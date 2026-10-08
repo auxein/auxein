@@ -55,7 +55,7 @@ def test_a_thread_executor_runs_off_the_calling_thread():
     def record() -> None:
         where.append(threading.current_thread())
 
-    executor = ThreadExecutor(1)
+    executor = ThreadExecutor()
     try:
         call(executor, record)
         call(InlineExecutor(), record)
@@ -71,7 +71,7 @@ def test_a_process_executor_runs_in_another_process_started_with_spawn():
     executor = ProcessExecutor(1)
     try:
         assert call(executor, os.getpid) != os.getpid()
-        assert executor._pool._mp_context.get_start_method() == "spawn"  # pyright: ignore[reportPrivateUsage]
+        assert executor._pool._context.get_start_method() == "spawn"  # pyright: ignore[reportPrivateUsage]
     finally:
         executor.shutdown()
 
@@ -112,15 +112,19 @@ def test_pools_are_shut_down_and_leave_nothing_behind(kind: str):
     assert multiprocessing.active_children() == []
 
 
-def test_shutdown_waits_for_work_that_is_running():
-    executor = ThreadExecutor(1)
-    done = []
+def test_shutdown_does_not_wait_for_a_thread_that_is_still_running():
+    """Threads are daemons: an abandoned or interrupted function must never keep the program (or the run) from ending."""
+    executor = ThreadExecutor()
+    release = threading.Event()
+    finished = []
 
     async def main() -> None:
-        task = asyncio.ensure_future(executor.call(lambda: (__import__("time").sleep(0.05), done.append(1))))
-        await asyncio.sleep(0.01)
-        executor.shutdown()
+        task = asyncio.ensure_future(executor.call(lambda: (release.wait(5), finished.append(1))))
+        await asyncio.sleep(0.02)
+        executor.shutdown()  # returns at once although the function has not returned
+        assert finished == []
+        release.set()
         await task
 
     asyncio.run(main())
-    assert done == [1]
+    assert finished == [1]
