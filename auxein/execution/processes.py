@@ -117,12 +117,13 @@ class ProcessPool:
             raise RuntimeError("this executor has been shut down")
         await self._slots.acquire()
         worker: _Worker | None = None
+        raw = b""
         try:
             worker = await self._take()
-            return await self._exchange(worker, payload, timeout)
+            raw = await self._exchange(worker, payload, timeout)
         except BaseException:
-            # Whatever went wrong (a timeout, a crash, a cancellation of this evaluation), a worker that may still be busy
-            # or is gone must not serve the next call: its late reply would be taken for that call's.
+            # A timeout, a crash, or a cancellation of this evaluation: the worker may still be busy or is gone, and must not
+            # serve the next call (its late reply would be taken for that call's).
             if worker is not None:
                 self._discard(worker)
             raise
@@ -131,6 +132,9 @@ class ProcessPool:
                 worker.busy = False
                 self._idle.append(worker)
             self._slots.release()
+        # An exception of the user's function is raised only now, with the worker already back in the pool: it replied, so
+        # it is healthy, and a failing evaluation must not cost a new process.
+        return self._unpack(raw)
 
     async def _take(self) -> _Worker:
         while self._idle:
@@ -157,7 +161,7 @@ class ProcessPool:
             )
         return worker
 
-    async def _exchange(self, worker: _Worker, payload: bytes, timeout: float | None) -> object:
+    async def _exchange(self, worker: _Worker, payload: bytes, timeout: float | None) -> bytes:
         worker.busy = True
         try:
             worker.connection.send_bytes(payload)
@@ -169,7 +173,7 @@ class ProcessPool:
             raise EvaluationTimeout(timeout if timeout is not None else 0.0) from None  # the worker is killed by `run`
         if raw is None:
             raise WorkerCrashed(f"the worker process died while evaluating this candidate: {worker.exit_description()}")
-        return self._unpack(raw)
+        return raw
 
     @staticmethod
     def _unpack(raw: bytes) -> object:

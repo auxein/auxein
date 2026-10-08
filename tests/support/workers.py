@@ -14,6 +14,13 @@ def double(x: float) -> float:
     return 2 * x
 
 
+def pause_for(seconds: float) -> int:
+    import os
+
+    time.sleep(seconds)
+    return os.getpid()
+
+
 def divide_by_zero() -> float:
     return 1 / 0
 

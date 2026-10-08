@@ -90,15 +90,18 @@ def test_a_lambda_cannot_go_to_a_process_and_the_error_says_what_to_do():
 
 
 def test_what_a_worker_cannot_rebuild_or_send_back_is_explained():
-    executor = ProcessExecutor(1)
-    try:
-        with pytest.raises(ExecutorError, match="could not rebuild"):
-            call(executor, workers.identity, workers.Unrebuildable())
-        with pytest.raises(ExecutorError, match="cannot be sent back"):
-            call(executor, workers.make_lambda)  # returns a lambda
-        assert call(executor, workers.double, 1) == 2  # the pool is still healthy
-    finally:
-        executor.shutdown()
+    async def main() -> None:
+        executor = ProcessExecutor(1)  # one event loop for the whole session: a pool belongs to one run
+        try:
+            with pytest.raises(ExecutorError, match="could not rebuild"):
+                await executor.call(workers.identity, workers.Unrebuildable())
+            with pytest.raises(ExecutorError, match="cannot be sent back"):
+                await executor.call(workers.make_lambda)  # returns a lambda
+            assert await executor.call(workers.double, 1) == 2  # the pool is still healthy
+        finally:
+            executor.shutdown()
+
+    asyncio.run(main())
 
 
 @pytest.mark.parametrize("kind", ["thread", "process"])
@@ -128,3 +131,43 @@ def test_shutdown_does_not_wait_for_a_thread_that_is_still_running():
 
     asyncio.run(main())
     assert finished == [1]
+
+
+def test_an_exception_in_the_function_does_not_cost_a_new_worker_process():
+    import os
+
+    async def main() -> tuple[int, int]:
+        executor = ProcessExecutor(1)
+        try:
+            pid = await executor.call(os.getpid)
+            for _ in range(4):
+                with pytest.raises(ZeroDivisionError) as raised:
+                    await executor.call(workers.divide_by_zero)
+                assert "workers.py" in str(raised.value.__cause__)  # the worker's traceback is chained as text
+            return pid, await executor.call(os.getpid)
+        finally:
+            executor.shutdown()
+
+    before, after = asyncio.run(main())
+    assert before == after  # the worker that raised was healthy: it served the next call too
+
+
+def test_a_timed_out_worker_is_killed_and_replaced_while_another_keeps_its_work():
+    import os
+
+    from auxein.execution import EvaluationTimeout
+
+    async def main() -> tuple[int, int, int]:
+        executor = ProcessExecutor(2)
+        try:
+            first = await executor.call(os.getpid)
+            slow = asyncio.ensure_future(executor.call(workers.pause_for, 0.4, timeout=None))
+            with pytest.raises(EvaluationTimeout):
+                await executor.call(workers.pause_for, 30.0, timeout=0.3)
+            return first, await slow, await executor.call(os.getpid)
+        finally:
+            executor.shutdown()
+
+    first, slow_pid, later = asyncio.run(main())
+    assert slow_pid != 0 and later != 0
+    assert multiprocessing.active_children() == []
