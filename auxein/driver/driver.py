@@ -1,17 +1,26 @@
 """The driver: it owns the loop, the budget and the recording (design doc §9).
 
-Strategies never call evaluators; the driver asks, evaluates, records and tells. It is built on asyncio from the start, so
-that concurrency, steady-state delivery and timeouts can be added around `_step` without rewriting the loop; this
-version delivers results by generation only, one batch at a time, with candidates evaluated sequentially.
+Strategies never call evaluators; the driver asks, evaluates, records and tells. It is built on asyncio so that many
+evaluations can be in progress at once, and delivers results in one of two ways:
+
+- **generation**: ask a batch, evaluate it (up to `concurrency` candidates at once), tell all its results together.
+- **steady state**: keep a window of `W = batch_size` candidates asked but not yet told; evaluate up to `concurrency` of
+  them at once, each as a one-candidate batch, and tell results one at a time.
+
+`batch_size` (the window) is an algorithmic setting; `concurrency` is a resource setting. In deterministic mode the sequence
+of asks and tells depends only on the seed and `batch_size`, never on `concurrency`, the executor or timing (design doc §8.1).
 """
 
 import asyncio
+import dataclasses
 import time
 import warnings
+from collections import deque
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Generic, TypeVar, cast
+from typing import Generic, Literal, TypeVar, cast
 
 from auxein.backend import Backend
 from auxein.core import (
@@ -25,12 +34,15 @@ from auxein.core import (
     ProblemSpec,
     Strategy,
     StrategyContext,
+    single,
     take,
 )
 from auxein.core._typing import G
 from auxein.driver.budget import Budget
-from auxein.driver.errors import EvaluatorError, RecordingDisabledWarning, StrategyError
+from auxein.driver.errors import EvaluatorError, RecordingDisabledWarning, SteadyStateVectorisationWarning, StrategyError
 from auxein.driver.result import ResultTracker, RunResult
+from auxein.evaluators import VectorisedEvaluator
+from auxein.execution import ExecutorKind, ExecutorName, make_executor, resolve_executor
 from auxein.random import RunSeed
 from auxein.recording import NoopRecorder, Recorder, SQLiteRecorder
 from auxein.spaces import Space
@@ -38,6 +50,37 @@ from auxein.spaces import Space
 T = TypeVar("T")
 
 DEFAULT_OBJECTIVES = (Objective("value"),)
+
+Delivery = Literal["generation", "steady_state"]
+
+
+@dataclass
+class _Slot(Generic[G]):
+    """One candidate of a steady-state run, from the moment it is asked until it is told."""
+
+    seq: int
+    """Position in ask order across the whole run."""
+    step: int
+    batch: Batch[G]
+    """The candidate as a one-candidate batch, so that every evaluator works unchanged."""
+    task: "asyncio.Task[EvaluationBatch[G]] | None" = None
+    result: EvaluationBatch[G] | None = None
+
+
+@dataclass
+class _Window(Generic[G]):
+    """The state of a steady-state run."""
+
+    queue: deque[_Slot[G]]
+    """Asked, not yet started, in ask order."""
+    inflight: dict[int, _Slot[G]]
+    """Asked, not yet told, in ask order (a dict keeps insertion order). `len(inflight)` is what the window counts."""
+    running: dict["asyncio.Task[EvaluationBatch[G]]", _Slot[G]]
+    finished: list[_Slot[G]]
+    """Throughput mode only: evaluated, not yet told, in completion order."""
+    next_seq: int = 0
+    stop: str | None = None
+    """Why asking has stopped, once it has."""
 
 
 def _describe_space(space: object) -> dict[str, object]:
@@ -65,6 +108,10 @@ class Driver(Generic[G]):
         seed: int,
         backend: Backend,
         batch_size: int,
+        concurrency: int = 1,
+        executor: ExecutorName = "auto",
+        delivery: Delivery | None = None,
+        deterministic: bool = True,
         recorder: Recorder,
         run_dir: Path | None,
         name: str | None,
@@ -72,8 +119,11 @@ class Driver(Generic[G]):
     ) -> None:
         if batch_size < 1:
             raise ValueError(f"batch_size must be at least 1, got {batch_size}")
-        if strategy.capabilities.tell_mode == "steady_state":
-            raise ValueError("this driver delivers results by generation only, but the strategy requires steady-state delivery")
+        if concurrency < 1:
+            raise ValueError(f"concurrency must be at least 1, got {concurrency}")
+        self._executor_kind: ExecutorKind = resolve_executor(executor, concurrency)
+        self._delivery: Delivery = _resolve_delivery(delivery, strategy)
+        self._concurrency, self._deterministic = concurrency, deterministic
         self._strategy, self._evaluator, self._problem = strategy, evaluator, problem
         self._budget, self._seed, self._backend, self._batch_size = budget, seed, backend, batch_size
         self._recorder, self._run_dir, self._name, self._clock = recorder, run_dir, name, clock
@@ -82,12 +132,14 @@ class Driver(Generic[G]):
         self._issuer = IdIssuer()
         self._strategy_context = StrategyContext(run_seed.stream("strategy", backend=backend), backend, self._issuer.next)
         host_backend = Backend("numpy", "cpu", backend.precision)
-        self._eval_context: EvalContext[G] = EvalContext(
+        self._base_context: EvalContext[G] = EvalContext(
             problem,
             backend,
             lambda cid: run_seed.stream("evaluation", cid, backend=host_backend),  # always numpy: see EvalContext.rng_for
             lambda cid: run_seed.stream("evaluation-batch", cid, backend=backend),
+            concurrency=concurrency,
         )
+        self._eval_context = self._base_context
         self._tracker: ResultTracker[G] = ResultTracker(problem.objectives, constrained=bool(problem.constraints))
         self._seen = bytearray()  # one byte per issued id: whether a batch has already carried it
         self._last_step = -1
@@ -102,14 +154,21 @@ class Driver(Generic[G]):
         self._recorder.on_start(self._metadata())
         status: str = "failed"
         stop_reason: str | None = None
+        executor = make_executor(self._executor_kind, self._concurrency)
+        self._eval_context = dataclasses.replace(self._base_context, executor=executor)
         try:
             self._strategy.bind(self._problem, self._strategy_context)
-            stop_reason = await self._loop()
+            if self._delivery == "steady_state":
+                self._warn_if_vectorised()
+                stop_reason = await self._steady_state()
+            else:
+                stop_reason = await self._loop()
             status = "completed"
         except (KeyboardInterrupt, asyncio.CancelledError):
             status = "interrupted"
             raise
         finally:
+            executor.shutdown()  # pools never outlive the run, whatever ended it
             self._recorder.on_end(status, stop_reason, self._summary())
         assert stop_reason is not None  # the run completed
         return RunResult(
@@ -158,7 +217,16 @@ class Driver(Generic[G]):
 
         results = await self._evaluator.evaluate(batch, self._eval_context)
         self._validate_results(batch, results)
+        self._account(step, batch, results)
 
+        if truncated:
+            return True  # the strategy is not told about an incomplete batch
+        self._strategy.tell(results)
+        self._recorder.on_tell(step, len(results))
+        return False
+
+    def _account(self, step: int, batch: Batch[G], results: EvaluationBatch[G]) -> None:
+        """Count, track and record evaluations that are about to be told (or, for a truncated batch, dropped)."""
         self._tracker.add(results.evaluations, self._used)
         self._used += len(results)
         for evaluation in results:
@@ -167,11 +235,95 @@ class Driver(Generic[G]):
                     self._costs[unit] += amount
         self._recorder.on_batch(step, batch, results)
 
-        if truncated:
-            return True  # the strategy is not told about an incomplete batch
-        self._strategy.tell(results)
-        self._recorder.on_tell(step, len(results))
-        return False
+    # --- steady-state delivery ---
+
+    def _warn_if_vectorised(self) -> None:
+        if isinstance(self._evaluator, VectorisedEvaluator):
+            warnings.warn(
+                "steady-state delivery calls a VectorisedEvaluator with one candidate at a time, which defeats the purpose "
+                "of vectorising: use delivery='generation' (the default for strategies that support it)",
+                SteadyStateVectorisationWarning,
+                stacklevel=2,
+            )
+
+    async def _steady_state(self) -> str:
+        """Keep up to `batch_size` candidates asked-but-not-told, evaluate up to `concurrency` at once, tell one at a time.
+
+        Deterministic mode tells in ask order and asks only right after a tell, one result at a time, so that the strategy
+        sees the same calls whatever the timing and the number of workers. Throughput mode tells as results arrive and
+        refills the window at once. See design doc §9.2.
+        """
+        window: _Window[G] = _Window(deque(), {}, {}, [])
+        try:
+            while True:
+                self._refill(window)
+                self._start(window)
+                if not window.inflight:
+                    assert window.stop is not None  # nothing in flight and nothing asked: the budget is spent or asking stopped
+                    return window.stop
+                if self._deliver(window):
+                    continue
+                await self._wait_for_one(window)
+        finally:
+            for task in window.running:
+                task.cancel()
+            await asyncio.gather(*window.running, return_exceptions=True)  # nothing keeps running after the run
+
+    def _refill(self, window: _Window[G]) -> None:
+        """Ask for as many candidates as the window and the budget allow, unless the run must stop asking."""
+        if window.stop is None:
+            window.stop = self._stop_reason()
+            if window.stop is not None and window.stop != "budget:evaluations":
+                for slot in window.queue:  # whatever has not started will never be evaluated, told or recorded
+                    del window.inflight[slot.seq]
+                window.queue.clear()
+        if window.stop is not None:
+            return
+        room = self._batch_size - len(window.inflight)
+        remaining = None if self._budget.evaluations is None else self._budget.evaluations - self._used - len(window.inflight)
+        if room < 1 or (remaining is not None and remaining < 1):
+            return
+        batch = self._strategy.ask(room if remaining is None else min(room, remaining))
+        step = self._validate_batch(batch)
+        if remaining is not None and len(batch.candidates) > remaining:
+            batch = take(batch, remaining)  # a hard limit: the surplus is dropped before it is ever queued
+        for index in range(len(batch.candidates)):
+            slot = _Slot(window.next_seq, step, single(batch, index))
+            window.next_seq += 1
+            window.queue.append(slot)
+            window.inflight[slot.seq] = slot
+
+    def _start(self, window: _Window[G]) -> None:
+        while window.queue and len(window.running) < self._concurrency:
+            slot = window.queue.popleft()
+            slot.task = asyncio.ensure_future(self._evaluator.evaluate(slot.batch, self._eval_context))
+            window.running[slot.task] = slot
+
+    def _deliver(self, window: _Window[G]) -> bool:
+        """Tell one finished result, if the delivery rules allow one now. Returns whether it did."""
+        if self._deterministic:
+            slot = next(iter(window.inflight.values()))  # the oldest: results are told in ask order
+            if slot.result is None:
+                return False
+        else:
+            if not window.finished:
+                return False
+            slot = window.finished.pop(0)
+        assert slot.result is not None
+        del window.inflight[slot.seq]
+        self._validate_results(slot.batch, slot.result)
+        self._account(slot.step, slot.batch, slot.result)
+        self._strategy.tell(slot.result)
+        self._recorder.on_tell(slot.step, 1)
+        return True
+
+    async def _wait_for_one(self, window: _Window[G]) -> None:
+        done, _ = await asyncio.wait(window.running, return_when=asyncio.FIRST_COMPLETED)
+        for task in sorted(done, key=lambda t: window.running[t].seq):  # simultaneous finishes are told in ask order
+            slot = window.running.pop(task)
+            slot.result = task.result()  # raises the evaluator's error; the run's `finally` cancels the rest
+            if not self._deterministic:
+                window.finished.append(slot)
 
     # --- checks on what components hand back ---
 
@@ -235,6 +387,11 @@ class Driver(Generic[G]):
             },
             "budget": self._budget.describe(),
             "batch_size": self._batch_size,
+            "concurrency": self._concurrency,
+            "executor": self._executor_kind,
+            "delivery": self._delivery,
+            "deterministic": self._deterministic,
+            "in_flight_window": self._batch_size,
             "strategy": _describe_component(self._strategy),
             "evaluator": _describe_component(self._evaluator),
         }
@@ -250,6 +407,19 @@ class Driver(Generic[G]):
         }
 
 
+def _resolve_delivery(requested: Delivery | None, strategy: Strategy[G]) -> Delivery:
+    """`None` is generation delivery unless the strategy can only be told steady-state. A mode the strategy does not
+    support is an error at start-up, not a surprise in the middle of a run."""
+    mode = strategy.capabilities.tell_mode
+    if requested is None:
+        return "steady_state" if mode == "steady_state" else "generation"
+    if requested not in ("generation", "steady_state"):
+        raise ValueError(f"unknown delivery {requested!r}: expected 'generation', 'steady_state' or None")
+    if mode != "both" and mode != requested:
+        raise ValueError(f"{type(strategy).__name__} supports tell_mode={mode!r} only, so delivery={requested!r} is not possible")
+    return requested
+
+
 def _build(
     *,
     strategy: Strategy[G],
@@ -262,6 +432,10 @@ def _build(
     seed: int,
     backend: Backend | None,
     batch_size: int,
+    concurrency: int,
+    executor: ExecutorName,
+    delivery: Delivery | None,
+    deterministic: bool,
     run_dir: str | Path | None,
     name: str | None,
     clock: Callable[[], float],
@@ -276,6 +450,10 @@ def _build(
         seed=seed,
         backend=Backend() if backend is None else backend,
         batch_size=batch_size,
+        concurrency=concurrency,
+        executor=executor,
+        delivery=delivery,
+        deterministic=deterministic,
         recorder=recorder,
         run_dir=None if run_dir is None else Path(run_dir),
         name=name if name is not None else (None if run_dir is None else Path(run_dir).name),
@@ -305,6 +483,10 @@ def run(
     seed: int,
     backend: Backend | None = None,
     batch_size: int = 64,
+    concurrency: int = 1,
+    executor: ExecutorName = "auto",
+    delivery: Delivery | None = None,
+    deterministic: bool = True,
     run_dir: str | Path | None = None,
     name: str | None = None,
     clock: Callable[[], float] = time.monotonic,
@@ -315,13 +497,26 @@ def run(
     Jupyter), where it runs the driver on a fresh loop in a dedicated thread and waits for it.
 
     The run is recorded only if `run_dir` is given; otherwise nothing is written to disk and a
-    `RecordingDisabledWarning` is emitted, once. `batch_size` is the number of candidates the driver asks for per round.
-    `clock` is the time source of the wall-time budget (injectable for tests). See `Budget` for how limits are enforced.
+    `RecordingDisabledWarning` is emitted, once. `clock` is the time source of the wall-time budget (injectable for
+    tests). See `Budget` for how limits are enforced.
+
+    **How evaluation is scheduled.** `batch_size` is the number of candidates the driver asks for per round, and in
+    steady-state delivery the size of the in-flight window: candidates asked but not yet told. It is an algorithmic
+    setting, fixed per run. `concurrency` is the most evaluations in progress at once, a resource setting that never
+    changes what the strategy sees in deterministic mode. `executor` says where synchronous user functions run: `"inline"`
+    (the driver's thread), `"thread"`, `"process"` (spawned workers; the function and its arguments must be picklable) or
+    `"auto"` (inline when `concurrency == 1`, threads otherwise; never processes). `async def` functions always run on the
+    driver's event loop. `delivery` is `"generation"` (tell a batch's results together), `"steady_state"` (tell results
+    one at a time) or `None` (generation, unless the strategy needs steady-state). With `deterministic=True` (the default)
+    the run is reproducible whatever `concurrency` and `executor`: steady-state results are told in ask order and the window
+    is refilled only after a tell. With `deterministic=False` steady-state results are told as they finish, which is faster
+    when evaluation times vary and not reproducible; generation delivery is unaffected.
     """
     _warn_unrecorded(run_dir, stacklevel=3)
     driver = _build(
         strategy=strategy, evaluator=evaluator, space=space, objectives=objectives, constraints=constraints, descriptors=descriptors,
-        budget=budget, seed=seed, backend=backend, batch_size=batch_size, run_dir=run_dir, name=name, clock=clock,
+        budget=budget, seed=seed, backend=backend, batch_size=batch_size, concurrency=concurrency, executor=executor,
+        delivery=delivery, deterministic=deterministic, run_dir=run_dir, name=name, clock=clock,
     )  # fmt: skip
     try:
         asyncio.get_running_loop()
@@ -343,6 +538,10 @@ async def arun(
     seed: int,
     backend: Backend | None = None,
     batch_size: int = 64,
+    concurrency: int = 1,
+    executor: ExecutorName = "auto",
+    delivery: Delivery | None = None,
+    deterministic: bool = True,
     run_dir: str | Path | None = None,
     name: str | None = None,
     clock: Callable[[], float] = time.monotonic,
@@ -351,6 +550,7 @@ async def arun(
     _warn_unrecorded(run_dir, stacklevel=3)
     driver = _build(
         strategy=strategy, evaluator=evaluator, space=space, objectives=objectives, constraints=constraints, descriptors=descriptors,
-        budget=budget, seed=seed, backend=backend, batch_size=batch_size, run_dir=run_dir, name=name, clock=clock,
+        budget=budget, seed=seed, backend=backend, batch_size=batch_size, concurrency=concurrency, executor=executor,
+        delivery=delivery, deterministic=deterministic, run_dir=run_dir, name=name, clock=clock,
     )  # fmt: skip
     return await driver.execute()

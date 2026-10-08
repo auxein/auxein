@@ -23,3 +23,10 @@ class StrategyError(DriverError):
 
 class EvaluatorError(DriverError):
     """An evaluator returned results that do not match the batch: not one evaluation per candidate, in ask order."""
+
+
+class SteadyStateVectorisationWarning(UserWarning):
+    """A `VectorisedEvaluator` is used with steady-state delivery, which calls it with one candidate at a time.
+
+    That works but throws away the point of vectorising. Use generation delivery (`delivery="generation"`) instead.
+    """
