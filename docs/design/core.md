@@ -264,8 +264,8 @@ class Evaluator(Protocol[G]):
 
 The evaluator interface is asynchronous, but users rarely implement it directly. Built-in evaluators wrap ordinary code:
 
-- `FunctionEvaluator(f, uses_rng=False)`: `f(genome)`, or `f(genome, rng)` with `uses_rng=True`, called per candidate, where `rng` is the candidate's own evaluation stream (§8). `f` may be a plain function or an `async def`. In the first implementation candidates are evaluated sequentially and synchronous functions are called directly; thread and process pools and concurrency come with the asynchronous driver. Each candidate's wall time is recorded in its `Cost`.
-- `VectorisedEvaluator(f, uses_rng=False)`: `f(X)`, or `f(X, rng)`, once per batch with `X = batch.as_array()`; it needs an array-backed batch. This is the fast path for numeric problems, and runs on GPU when the arrays are on GPU. The batch's wall time is split equally across its candidates. With `uses_rng=True` it receives one stream per batch (§8).
+- `FunctionEvaluator(f, uses_rng=False)`: `f(genome)`, or `f(genome, rng)` with `uses_rng=True`, called per candidate, where `rng` is the candidate's own evaluation stream (§8). `f` may be a plain function or an `async def`. Concurrency and executors are described below. Each candidate's wall time is recorded in its `Cost`.
+- `VectorisedEvaluator(f, uses_rng=False)`: `f(X)`, or `f(X, rng)`, once per batch with `X = batch.as_array()`; it needs an array-backed batch. This is the fast path for numeric problems, and runs on GPU when the arrays are on GPU. The batch's wall time is split equally across its candidates. With `uses_rng=True` it receives one stream per batch (§8). **`concurrency` and `executor` do not apply to it**: there is one call per batch, on the driver's thread, and the parallelism is inside the array operation. Under steady-state delivery (§9.2) it would be called with one candidate at a time, which works but defeats its purpose, so the driver emits a `SteadyStateVectorisationWarning` once per run.
 - `EpisodeEvaluator(decoder, environment, scenarios, aggregator)`: the agent evaluator (§6).
 
 **What a fitness function returns.** The rules are the same for every evaluator, and are implemented in one normalisation function:
@@ -276,9 +276,19 @@ The evaluator interface is asynchronous, but users rarely implement it directly.
 - A vectorised function may return an array of shape `(n,)` (a single objective) or `(n, k)` (`k` declared objectives, columns in declared order) on any supported backend, or a `BatchResult`.
 - A non-finite objective value in what would be an `OK` evaluation is an error naming the candidate id.
 
-An exception raised by user code fails the run in the first implementation (failure policies come with the asynchronous driver, §6.6); it is wrapped in an `EvaluationError` that names the candidate id(s) and chains the original exception.
+An exception raised by user code fails the run for now (failure policies come in step 4b, §6.6); it is wrapped in an `EvaluationError` that names the candidate id(s) and chains the original exception. The other evaluations in progress in the same batch are cancelled first.
 
-`EvalContext` carries the problem specification (so that what user code returns can be checked against it), the backend, deadlines and timeouts, and two factories that derive evaluation random streams from candidate ids: `rng_for(id)` for a candidate, and `batch_rng_for(first_id)` for a vectorised batch (§8). They are factories rather than lists of streams so that a batch of thousands of candidates doesn't create thousands of generators up front.
+**Concurrency and executors.** `run(..., concurrency=N, executor=...)`:
+
+- `concurrency` (default 1) is the maximum number of evaluations in progress at once. It is a resource setting: in deterministic mode it never changes what the strategy sees (§8.1).
+- `executor` says where **synchronous** user functions run: `"inline"` (the driver's own thread, with no hand-off, and the least overhead), `"thread"` (a pool of `concurrency` threads), `"process"` (a pool of `concurrency` worker processes) or `"auto"` (the default: inline when `concurrency == 1`, threads otherwise). **Processes are never chosen automatically**, because they change what user code may do.
+- **`async def` functions always run natively** on the driver's event loop, limited by `concurrency`, whatever the executor. `executor="process"` with an `async def` function is an error. An inline executor does not stop `async def` functions from overlapping: it only means synchronous ones run one after the other.
+- **Pools belong to a run**: they are created when it starts and shut down when it ends, whatever ends it (normal end, an exception, `KeyboardInterrupt`, task cancellation). Python cannot interrupt a function already running in a thread or process, so shutdown waits for those to return; pending ones are cancelled.
+- **Processes use `spawn` on every platform**, which is what macOS and Windows do and which does not inherit the parent's state. The function and its arguments must be picklable, and the function importable by name in the worker, so lambdas, local functions and functions defined in a notebook or in a script's `__main__` fail (scripts also need the usual `if __name__ == "__main__":` guard). That is detected and reported as an `ExecutorError` that explains the fixes: define the function at the top level of a module, or use `executor="thread"`. A candidate's `RandomStream` is picklable, so `uses_rng=True` works in workers and gives the same numbers as everywhere else. What the function returns is sent back and turned into an `Evaluation` **in the parent**, so validation errors look the same with every executor.
+- `FunctionEvaluator` with `concurrency == 1` and the inline executor keeps the sequential fast path. Otherwise the candidates of a batch are evaluated concurrently and returned **in ask order**, whatever order they finish in.
+- **For user-written evaluators**, `EvalContext` offers `await ctx.call(fn, *args)`, which runs a synchronous function where the run's executor says, and `ctx.concurrency`, the limit an evaluator must respect. `async def` code needs neither: it simply awaits.
+
+`EvalContext` carries the problem specification (so that what user code returns can be checked against it), the backend, the executor with `ctx.call` and `ctx.concurrency`, deadlines and timeouts (unused until step 4b), and two factories that derive evaluation random streams from candidate ids: `rng_for(id)` for a candidate, and `batch_rng_for(first_id)` for a vectorised batch (§8). They are factories rather than lists of streams so that a batch of thousands of candidates doesn't create thousands of generators up front.
 
 ### 5.4 Scalarisation
 
@@ -404,22 +414,32 @@ class Backend:
 - **One seed per run.** The user supplies one seed (`RunSeed`). Independent streams are derived from it with `numpy.random.SeedSequence(entropy=seed, spawn_key=(name_id, *keys))`:
   - one for the strategy (`"strategy"`)
   - one for scenario generation (`"scenarios"`)
-  - one per candidate evaluation, derived from the candidate's (deterministic) id (`"evaluation", candidate_id`)
+  - one per candidate evaluation, derived from the candidate's (deterministic) id (`"evaluation", candidate_id`); **always numpy-backed**, whatever the run's backend (see below)
 - **Stable names.** A stream name is mapped to an integer with CRC-32 of its UTF-8 bytes, never with Python's `hash()` (randomised per process), so the same seed, name and keys give the same stream in any process on any machine. Keys are integers in `[0, 2**32)`. Two names could in principle collide in CRC-32 (about one chance in four billion); a test pins the names Auxein uses.
 - **Evaluation randomness follows the candidate**, not the worker or the time of evaluation. Evaluations are reproducible in any parallel or distributed setup.
 - **Exception for vectorised evaluators.** A vectorised function draws its randomness for the whole batch at once, so per-candidate streams would be unusable. It receives **one stream per batch**, derived from the id of the batch's first candidate (`SeedSequence` key `("evaluation-batch", first_id)`). That is deterministic because the composition of a batch is. Per-candidate streams remain the rule for per-candidate evaluators.
 - **Backend-native generation.** The random layer (`RandomStream`) wraps numpy's `Generator(PCG64)` on CPU and `torch.Generator` on the target device, seeded from the derived streams. Random numbers are produced where the arrays live. Streams offer `uniform`, `normal`, `integers`, `permutation` and `choice`, returning arrays in the backend's namespace, device and dtype (integers as int64).
-- **Torch seed width.** A `torch.Generator` on the CPU is an MT19937 that accepts only 32 bits of seed, so two derived seed sequences can give the same torch stream; the chance is negligible for the few streams a run needs but becomes likely around 65,000 torch streams, e.g. one per candidate evaluation. numpy streams use the full 128 bits, and generators on CUDA and Metal use the full 64-bit seed. **Decision (step 1): the limit is accepted for now** and revisited if a use case needs more than about 65,000 torch-CPU evaluation streams in one run (§15). Evaluators that need many independent streams can draw from numpy streams, which have no such limit.
+- **Per-candidate evaluation streams are numpy-backed.** `ctx.rng_for(id)` returns a numpy stream (with the run's float precision) on every backend. Evaluating one candidate is host-side Python anyway, and these are the only streams a run creates by the tens of thousands. numpy streams use the full 128 bits of the derived seed, which settles the limit of torch CPU generators, an MT19937 that accepts only 32 bits of seed and would make two derived streams collide around 65,000 of them (decided in step 4a). numpy streams are also picklable, so a candidate's stream can be sent to a worker process. The strategy stream and the vectorised per-batch stream (`batch_rng_for`) stay backend-native: a run creates only a few, and they feed array operations on the target device.
 - **Scope of reproducibility:** identical results for the same seed, backend and precision. Different backends or precisions give different (equally valid) runs.
 - **No global random state** anywhere in the package, enforced by a test that forbids numpy's legacy global functions.
 - **Checkpoints include all generator states.** `RandomStream.state_dict()` is JSON-serialisable: numpy's bit-generator state dict, or the bytes of `torch.Generator.get_state()` in base64.
 
 ### 8.1 Deterministic mode (default)
 
-In steady-state asynchronous runs, results arrive in an order that depends on timing. If the strategy received them in arrival order, two runs with the same seed could diverge.
+In steady-state runs, results arrive in an order that depends on timing. If the strategy received them in arrival order, two runs with the same seed could diverge. For the event log to be identical whatever the number of workers (§11.4, criterion 3), the **algorithmic** behaviour must not depend on it, so two things are kept apart:
 
-- **Deterministic mode (default on):** evaluations still run concurrently, but results are delivered to the strategy **in the order the candidates were asked for**. Same seed → identical event log, regardless of worker count or timing. The strategy may occasionally wait for a slow candidate.
-- **Throughput mode (opt-in):** results are delivered as they arrive. It's faster under uneven evaluation times, but not reproducible run to run.
+- **The in-flight window `W`**: the number of candidates asked for but not yet told. It is an algorithmic setting and equals **`batch_size`**, fixed per run.
+- **`concurrency`**: how many of those candidates are being evaluated at once. It is a resource setting. If `concurrency < W`, the rest wait in a queue.
+
+**Deterministic mode (default, `deterministic=True`)** in steady-state delivery:
+
+- Results are told **one at a time, in ask order**: a finished result is held until every earlier-asked candidate has been told.
+- The driver asks **only right after a tell**, whenever the window has room. It tells results one by one rather than "whatever is ready", because how many results are ready at a given moment depends on timing, and the number of candidates a strategy is asked for would depend on it.
+- The sequence of `ask(n)` and `tell(...)` calls the strategy sees, and so the event log, therefore depends only on the seed and `batch_size`, never on `concurrency`, the executor, sync or async functions, or timing. Evaluations still run concurrently, and the strategy may occasionally wait for a slow candidate (head-of-line blocking): the accepted cost.
+- Generation delivery needs no such rule: it is deterministic by construction.
+- Budgets measured in wall time or cost units are the exception: when they run out depends on the clock (§9.3).
+
+**Throughput mode (`deterministic=False`)** in steady-state delivery: results are told **as they finish**, and the window is refilled as soon as it has room. It is faster when evaluation times vary, but not reproducible run to run. Results that finish at the same moment are told in ask order. Generation delivery has nothing to reorder, so it is identical in both modes.
 
 ---
 
@@ -443,7 +463,11 @@ result = auxein.run(
     budget=auxein.Budget(evaluations=20_000), # also wall_time (seconds) and cost (limits per cost unit)
     seed=42,
     backend=auxein.Backend("numpy", "cpu", "float64"),
-    batch_size=64,
+    batch_size=64,                            # candidates per ask; in steady-state delivery, the in-flight window (§8.1)
+    concurrency=1,                            # evaluations in progress at once (a resource setting, §5.3)
+    executor="auto",                           # "inline" | "thread" | "process" | "auto" (inline for 1, else threads)
+    delivery=None,                            # "generation" | "steady_state" | None (the strategy's tell mode decides)
+    deterministic=True,                       # steady-state: tell in ask order (False: as results finish, §8.1)
     run_dir="runs/rastrigin-ga",              # opt-in recording; without it nothing is written and a warning is emitted
     name="rastrigin-ga",                      # defaults to the directory name
 )
@@ -454,22 +478,28 @@ result = await auxein.arun(...)  # same arguments
 The common case needs the one import. The top-level API is deliberately short: `run`, `arun`, `Budget`, `RunResult`, `Objective`, `Result`, `BatchResult`, `Status`, `Box`, `Backend`, `FunctionEvaluator`, `VectorisedEvaluator`, `RandomSearch`, `GeneticAlgorithm`, `open_run` and `RecordingDisabledWarning` (plus `__version__`). Everything else is imported from its subpackage: `auxein.core` (candidates, batches, evaluations, the protocols), `auxein.strategies.ga` (the operators), `auxein.backend`, `auxein.random`, `auxein.spaces`, `auxein.driver`, `auxein.evaluators`, `auxein.recording`.
 
 - **Recording is opt-in.** Without `run_dir` nothing is written to disk, and the run emits a `RecordingDisabledWarning` (a `UserWarning`) once per run, with a stack level that points at the user's call. `warnings.filterwarnings("ignore", category=RecordingDisabledWarning)` silences it. A `run_dir` that already exists and isn't empty is refused, so runs never mix.
-- The first implementation delivers results **by generation only**, one batch at a time, with candidates evaluated sequentially; `concurrency`, `deterministic` and `failure_policy` come with the asynchronous driver (step 4). The loop is built so that they extend it. A strategy whose `tell_mode` is `steady_state` only is rejected for now.
+- Results are delivered by generation or in steady state (§9.2), with up to `concurrency` evaluations in progress. The defaults (`concurrency=1`, generation delivery) keep today's sequential behaviour and cost. `failure_policy` comes in step 4b.
 - `run()` also accepts a `clock` (the time source of the wall-time budget, injectable for tests).
 
 ### 9.2 Delivery modes
 
-The driver respects each strategy's `tell_mode`:
+`delivery` is `"generation"`, `"steady_state"` or `None`. `None` means generation, unless the strategy's `tell_mode` is `steady_state`. Asking for a mode the strategy does not support (its `tell_mode` is neither `both` nor that mode) is an error at start-up.
 
-- **Generation:** ask a batch, evaluate it concurrently, tell all results together.
-- **Steady-state:** keep `concurrency` evaluations in flight. When one completes, tell it (in ask order in deterministic mode) and ask for a replacement.
+- **Generation:** ask a batch (`min(batch_size, remaining budget)`), evaluate it with up to `concurrency` evaluations in progress, tell all results together in ask order.
+- **Steady-state:** the driver keeps up to **`W = batch_size`** candidates in flight (asked, not yet told).
+  - Asked candidates go into a queue; at most `concurrency` are evaluated at once, each as a **one-candidate batch** through `evaluator.evaluate`, so every evaluator works unchanged.
+  - **When to ask:** whenever the window has room, for `min(room, remaining budget − in flight)` candidates. If a strategy returns more than asked (a generation-sized strategy such as the GA with a fixed `offspring_size`), the extra candidates stay in the queue: they count towards the window and the budget, and are evaluated in ask order. Nothing is asked while the window is full.
+  - **Told** one at a time: in ask order in deterministic mode, as they finish in throughput mode (§8.1).
+  - Each asked batch is validated as in §9.3 (ids issued by this run and new, steps that never go back).
+- **Cancellation.** On `KeyboardInterrupt`, an exception or task cancellation, evaluations in progress are cancelled, the pools are shut down, the recording is finalised with status `interrupted` or `failed`, and the exception is re-raised. No task, thread or process outlives the run.
 
 ### 9.3 Budgets and termination
 
 - **Budgets** (`Budget(evaluations, wall_time, cost)`) are measured in **evaluations** (the primary unit), and optionally wall time (seconds) and cost units (limits on the summed user-defined units, e.g. tokens, money). At least one limit is required. The run stops when any budget is exhausted, the strategy's `should_stop()` returns true, or the user interrupts.
 - Every evaluation is counted, including initialisation and re-evaluations.
 - **The evaluation budget is a hard limit.** The driver asks for `min(batch_size, remaining)` candidates; if a strategy returns more than remain, only the remaining candidates are evaluated (in ask order) and recorded, and the run ends **without telling the strategy** about the incomplete batch. Every evaluated candidate counts towards the result.
-- **Wall-time and cost budgets are checked between batches**: the batch in progress completes, so they can be exceeded by up to one batch.
+- **Under steady-state delivery** the evaluation limit is just as hard: the driver never starts more evaluations than remain, and a surplus returned by the strategy beyond the remaining budget is dropped before it is queued: never evaluated, never told, no row in the recording. Told evaluations are what count towards the limit.
+- **Wall-time and cost budgets are checked between batches** (generation delivery): the batch in progress completes, so they can be exceeded by up to one batch. **Under steady-state delivery** they are checked before every ask and every start: once one is exhausted (or the strategy asks to stop) the driver stops asking, **evaluations already in progress finish and are told** under the delivery rules, and candidates still queued are dropped (never evaluated, told or recorded). Which candidates were in progress at that moment depends on the clock, so a run that ends on a wall-time or cost budget is not reproducible.
 - **Stop reasons:** `budget:evaluations`, `budget:wall_time`, `budget:cost:<unit>` and `strategy`, checked in that order before each ask. On `KeyboardInterrupt` or any exception the recording is finalised with status `interrupted` or `failed`, and the exception is re-raised.
 - **The driver validates what it is handed.** An asked batch must be non-empty, with ids that this run issued and has not seen before (ids are never reused, not even for re-evaluations) and a single step that never goes back. The results of an evaluator must be one evaluation per candidate, in ask order. Violations raise `StrategyError` and `EvaluatorError`.
 
@@ -506,15 +536,16 @@ runs/<name>/
 
 ### 10.2 Event log (SQLite)
 
-- **Append-only.** Written by the driver, which is the single writer, one transaction per batch, so it's safe against crashes. The database is in WAL mode and is checkpointed when the run ends.
+- **Append-only.** Written by the driver, which is the single writer, one transaction per batch (per told candidate in steady-state delivery), so it's safe against crashes. The database is in WAL mode and is checkpointed when the run ends.
 - **Schema (version 1)**, as implemented; a `schema_version` table holds the version number:
   - `candidates`: `id` (primary key), `step`, `origin`, `genome_kind` (`array` or `json`), `genome` (raw bytes or JSON text), `genome_dtype` and `genome_shape` (arrays only), `created_at`
   - `lineage`: `parent_id`, `child_id`, both indexed
   - `evaluations`: `candidate_id` (primary key), `status`, `objectives`, `constraints`, `descriptors` and `cost_units` (JSON objects of name to value), `wall_time`, `error`, `finished_at`
   - `events`: `seq`, `kind` (`ask`, `tell` or `stop`), `step`, a JSON `payload`
   - `checkpoints` is added with checkpoints (step 5), together with the raw-measurement references of §6.4.
-- **Candidates are recorded once they are evaluated**, together with their evaluation. A candidate dropped by the budget truncation (§9.3) is never evaluated and has no row.
-- **Determinism:** the contents of `events.sqlite` are identical for the same seed, backend and precision, apart from `created_at`, `finished_at` and `wall_time`, which are timestamps and measured times.
+- **Candidates are recorded when they are told**, together with their evaluation, and a candidate that is never told has no row: one dropped by the budget truncation or by a wall-time stop (§9.3) was never evaluated. In generation delivery that is once per batch, in ask order. In steady-state delivery it is once per candidate, so the `ask` and `tell` events come per candidate (with a count of 1), in ask order in deterministic mode and in completion order in throughput mode. The tables are keyed by candidate id; the order of telling is in the `events` table.
+- **`metadata.json`** records, besides the seed, backend, budget and components, how the run was scheduled: `batch_size`, `in_flight_window`, `concurrency`, `executor` (as resolved, never `auto`), `delivery` (as resolved) and `deterministic`.
+- **Determinism:** the contents of `events.sqlite` are identical for the same seed, backend, precision and `batch_size`, apart from `created_at`, `finished_at` and `wall_time`, which are timestamps and measured times, **whatever `concurrency`, the executor and sync or async user code** (in generation delivery, and in steady-state delivery with `deterministic=True`; §8.1).
 - **Lineage queries** ("all descendants of X", "the ancestry of the best agent") are single recursive SQL queries; `auxein.recording.open_run(path)` offers `ancestry(id)` and `descendants(id)`, and iterates over the evaluations with their genomes decoded.
 - **Export** to JSONL or Parquet with one command comes later.
 
@@ -622,7 +653,9 @@ Each step ends with passing tests and is a candidate for its own Claude Code pro
 3. **Strategies (done):**
    - **3a:** `GeneticAlgorithm` with array-based operators, its benchmark-harness adapter, the choice of its default configuration, and the first comparison with the `v0.2.0` baseline.
    - **3b:** removing the 0.x engine, and switching the public API (`auxein/__init__.py`) to the new core.
-4. **Asynchrony:** async driver internals, steady-state delivery, deterministic mode, timeouts, failure policies, process isolation.
+4. **Asynchrony:**
+   - **4a (done):** concurrent evaluation (`concurrency`, `executor`), steady-state delivery, deterministic mode and throughput mode, numpy-backed per-candidate streams.
+   - **4b:** timeouts, failure policies, process isolation and crash handling.
 5. **Checkpoints and resume:** `state_dict` for strategies, driver and RNG state, the genome store.
 6. **Agents:** `EpisodeEvaluator`, `Environment` protocol, scenario sets, aggregators. Toy domain A.
 7. **Structured genomes:** structure-aware operators, toy domain B with the mock LLM.
@@ -641,4 +674,3 @@ Each step ends with passing tests and is a candidate for its own Claude Code pro
 - **Co-evolution:** how matchmaking between populations is configured.
 - **Noise handling:** built-in support for repeated evaluation and averaging, and how it interacts with caching.
 - **GPU CI:** whether to set up a self-hosted runner for CUDA and Metal.
-- **Torch CPU stream independence:** the 32-bit seed limit of torch CPU generators is accepted for now (§8). If it becomes a problem: keep evaluation streams on numpy, or generate on the host and transfer.
