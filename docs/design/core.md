@@ -133,6 +133,8 @@ Auxein keeps its character as a toolkit of interchangeable operators. A `Genetic
 
 The operator ideas from 0.x are re-implemented, not ported, and the limitations of 0.x are fixed by design: the number of offspring is exact, the two parents of a child are distinct members, every candidate is evaluated exactly once (the population is never re-scored), and step sizes have a lower bound.
 
+**Failed candidates (§6.6)** have infinite violation and rank last, so a failed child never displaces a member that did not fail, and **a member that failed is never chosen as a parent while any other exists**: tournaments are drawn from the members that did not fail, SUS gives failed members no weight, and a partner is always another such member. With fewer than two of them, the GA samples random candidates instead of breeding, as it does at the start. Failed members never count in the convergence test.
+
 **Survivor selection is "plus" only.** The population of size μ always holds the best μ of everything evaluated so far, parents and offspring pooled. In a steady-state view each child replaces the current worst member if it is better; inserting children one at a time and taking the best μ of μ + λ give the same population, so one mechanism serves any way of telling results (generations, or one at a time). Comma selection and plain generational replacement are not in this version.
 
 **One ranking is used everywhere** (survivors, tournaments, elites): feasible before infeasible, then a lower total violation, then a lower objective in minimisation form, then a lower candidate id. Failed and timed-out evaluations appear as NaN objectives and infinite violation, so they rank last without a special case.
@@ -247,7 +249,16 @@ class Evaluation(Generic[G]):
     error: str | None                   # message for FAILED / TIMEOUT
 ```
 
-Validation: objective values must be finite when the status is `OK`, and may be non-finite for `FAILED` or `TIMEOUT` evaluations, which strategies never read. Constraint violations are always finite and at least 0. The mappings are copied and made read-only. A `ProblemSpec` needs at least one objective, and names must be non-empty and unique within objectives, constraints and descriptors.
+Validation: objective values must be finite when the status is `OK`. A `FAILED` or `TIMEOUT` evaluation carries none (the batch views fill them in as NaN, with infinite constraint violation, which strategies never read).
+
+**Building a non-`OK` evaluation.** There is one way: `Evaluation.failed(candidate, status, error, wall_time, units)` with `status` `FAILED` or `TIMEOUT`. `error` is always a non-empty text that says what happened:
+
+- an **exception** in user code: its type, message and the full formatted traceback, including the chain of causes (for a worker process, the traceback of the worker, which is sent as text);
+- a **timeout**: that the evaluation timed out, and the limit (`wall_time` is the limit);
+- a **crash**: that the worker process died, and its exit code or the signal that killed it;
+- a **non-finite objective**: which objective was NaN or infinite, since that is how a diverged simulation shows up.
+
+The same tools build and read these records everywhere: `describe_exception(error)` formats the text, `EvaluationBatch` and the result tracker already skip non-`OK` rows, and the recorder stores the status and the error. `RunResult.status_counts` and the run's summary count the evaluations per status. Constraint violations are always finite and at least 0. The mappings are copied and made read-only. A `ProblemSpec` needs at least one objective, and names must be non-empty and unique within objectives, constraints and descriptors.
 
 ### 5.2 Conventions
 
@@ -274,21 +285,34 @@ The evaluator interface is asynchronous, but users rarely implement it directly.
 - Anything richer **must** use an explicit result object: `Result(objectives, constraints, descriptors, cost)` per candidate, or `BatchResult` for a vectorised function (the same fields, each a mapping of name to an array of shape `(n,)`). A result must match the problem exactly: every declared objective, constraint and descriptor present, and no unknown name, which catches typos. `cost` holds user-defined units (tokens, money, simulated seconds).
 - **Plain dicts are rejected** with a `TypeError` that points to `Result`: a dict can't say which keys are objectives, constraints or descriptors, so there is no flat-dict format.
 - A vectorised function may return an array of shape `(n,)` (a single objective) or `(n, k)` (`k` declared objectives, columns in declared order) on any supported backend, or a `BatchResult`.
-- A non-finite objective value in what would be an `OK` evaluation is an error naming the candidate id.
+- A **non-finite objective value** is not an error in the contract but a **failed evaluation** (`FAILED`, with a message that names the objective): a diverged simulation typically shows up this way, and it should rank last, not stop the run. In a vectorised batch only the rows concerned fail.
 
-An exception raised by user code fails the run for now (failure policies come in step 4b, §6.6); it is wrapped in an `EvaluationError` that names the candidate id(s) and chains the original exception. The other evaluations in progress in the same batch are cancelled first.
+**Failures.** The run's `failure_policy` (§6.6) decides what the built-in evaluators do when user code fails, and they read it from `EvalContext.failure_policy`:
+
+- under **`infeasible`** (the default) an exception in the function, a timeout, or a worker process that died becomes a `FAILED` or `TIMEOUT` evaluation with an informative `error`, and the other candidates are unaffected. For a `VectorisedEvaluator` an exception fails **every candidate of the batch**, each with the same error.
+- under **`fail_fast`** the first failure raises an `EvaluationError` that names the candidate id(s) and chains the original exception; the other evaluations in progress in the same batch are cancelled first.
+- **misconfiguration** raises whatever the policy (§6.6). The driver is a backstop for both policies, so custom evaluators are covered too.
 
 **Concurrency and executors.** `run(..., concurrency=N, executor=...)`:
 
 - `concurrency` (default 1) is the maximum number of evaluations in progress at once. It is a resource setting: in deterministic mode it never changes what the strategy sees (§8.1).
-- `executor` says where **synchronous** user functions run: `"inline"` (the driver's own thread, with no hand-off, and the least overhead), `"thread"` (a pool of `concurrency` threads), `"process"` (a pool of `concurrency` worker processes) or `"auto"` (the default: inline when `concurrency == 1`, threads otherwise). **Processes are never chosen automatically**, because they change what user code may do.
+- `executor` says where **synchronous** user functions run: `"inline"` (the driver's own thread, with no hand-off, and the least overhead), `"thread"` (daemon threads), `"process"` (up to `concurrency` worker processes) or `"auto"` (the default: inline when `concurrency == 1` and there is no `timeout`, threads otherwise). **Processes are never chosen automatically**, because they change what user code may do.
 - **`async def` functions always run natively** on the driver's event loop, limited by `concurrency`, whatever the executor. `executor="process"` with an `async def` function is an error. An inline executor does not stop `async def` functions from overlapping: it only means synchronous ones run one after the other.
-- **Pools belong to a run**: they are created when it starts and shut down when it ends, whatever ends it (normal end, an exception, `KeyboardInterrupt`, task cancellation). Python cannot interrupt a function already running in a thread or process, so shutdown waits for those to return; pending ones are cancelled.
+- **Pools belong to a run**: they are created when it starts and shut down when it ends, whatever ends it (normal end, an exception, `KeyboardInterrupt`, task cancellation). Worker processes are stopped, and killed if they are busy or do not stop promptly, so **no orphan process remains**. Threads are daemons, and Python cannot stop one, so a function still running in a thread when the run ends is left to finish in the background: it never blocks the end of the run or of the interpreter.
 - **Processes use `spawn` on every platform**, which is what macOS and Windows do and which does not inherit the parent's state. The function and its arguments must be picklable, and the function importable by name in the worker, so lambdas, local functions and functions defined in a notebook or in a script's `__main__` fail (scripts also need the usual `if __name__ == "__main__":` guard). That is detected and reported as an `ExecutorError` that explains the fixes: define the function at the top level of a module, or use `executor="thread"`. A candidate's `RandomStream` is picklable, so `uses_rng=True` works in workers and gives the same numbers as everywhere else. What the function returns is sent back and turned into an `Evaluation` **in the parent**, so validation errors look the same with every executor.
-- `FunctionEvaluator` with `concurrency == 1` and the inline executor keeps the sequential fast path. Otherwise the candidates of a batch are evaluated concurrently and returned **in ask order**, whatever order they finish in.
+- **The process pool is Auxein's own**, not `concurrent.futures.ProcessPoolExecutor`, which cannot kill one task and breaks the whole pool when one worker dies. It has up to `concurrency` workers, started with `spawn` **lazily** (when work first needs one, and again to replace a worker that was killed or died), each evaluating **one call at a time** and talking to the parent over its own pipe. A worker says `ready` once it is up: one that cannot start (typically a script without the `if __name__ == "__main__":` guard) is a misconfiguration and raises an `ExecutorError`, not a failed candidate. An exception in the function is re-raised in the parent with the worker's traceback chained as text. `ctx.call` is unchanged for user-written evaluators. On the same machine the pool costs about 56 µs per call against 149 µs for `ProcessPoolExecutor` at `concurrency=1` (30 against 89 µs at 4).
+- **Timeouts** (`run(..., timeout=seconds)`, per evaluation, default none; `EvalContext.timeout` carries it). How hard a timeout is depends on where the function runs, because Python cannot stop a thread:
+  - **`async def`: hard.** The evaluation is cancelled, and recorded as `TIMEOUT`. A `TimeoutError` raised by the function itself is an ordinary failure.
+  - **`executor="process"`: hard.** The worker is killed (terminated, then killed if needed) and replaced; evaluations on the other workers are unaffected. The clock starts when the call is handed to a started worker, so spawning a worker is not counted.
+  - **`executor="thread"`: soft.** The evaluation is recorded as `TIMEOUT` and its result, if it ever arrives, is discarded; the thread cannot be stopped and goes on in the background (it is a daemon, so it never blocks the interpreter from exiting). An `AbandonedEvaluationWarning` explains this once per run, and a second one at the end reports how many abandoned evaluations were still running (also in the summary as `abandoned_evaluations`). A concurrency slot is freed as soon as an evaluation times out, so `concurrency` keeps meaning "evaluations the run is waiting for"; abandoned threads do not count, so more threads than `concurrency` can exist temporarily.
+  - **Inline: not possible** for a synchronous function, since it blocks the event loop. With `executor="auto"` a `timeout` resolves to threads even for `concurrency == 1`; asking for `executor="inline"` together with a `timeout` is an error at start-up that lists the options.
+  - **`VectorisedEvaluator` does not support timeouts** in this version (setting one is an error at start-up): it runs on the driver's thread, and a vectorised call is normally cheap.
+  - A timed-out evaluation counts towards the evaluation budget, and its wall time is the timeout. `EvalContext.deadline` (an absolute deadline for a batch) was removed: nothing needs it, since every limit is per evaluation.
+- **A worker that dies** (a segfault, `os._exit`, being killed by the OS for memory) fails the candidate it was evaluating, as `FAILED` with an error that says the worker process died and gives the exit code or the signal. The worker is replaced and the other evaluations carry on.
+- `FunctionEvaluator` with `concurrency == 1`, the inline executor and no timeout keeps the sequential fast path. Otherwise the candidates of a batch are evaluated concurrently and returned **in ask order**, whatever order they finish in.
 - **For user-written evaluators**, `EvalContext` offers `await ctx.call(fn, *args)`, which runs a synchronous function where the run's executor says, and `ctx.concurrency`, the limit an evaluator must respect. `async def` code needs neither: it simply awaits.
 
-`EvalContext` carries the problem specification (so that what user code returns can be checked against it), the backend, the executor with `ctx.call` and `ctx.concurrency`, deadlines and timeouts (unused until step 4b), and two factories that derive evaluation random streams from candidate ids: `rng_for(id)` for a candidate, and `batch_rng_for(first_id)` for a vectorised batch (§8). They are factories rather than lists of streams so that a batch of thousands of candidates doesn't create thousands of generators up front.
+`EvalContext` carries the problem specification (so that what user code returns can be checked against it), the backend, the executor with `ctx.call` and `ctx.concurrency`, the failure policy and the timeout, and two factories that derive evaluation random streams from candidate ids: `rng_for(id)` for a candidate, and `batch_rng_for(first_id)` for a vectorised batch (§8). They are factories rather than lists of streams so that a batch of thousands of candidates doesn't create thousands of generators up front.
 
 ### 5.4 Scalarisation
 
@@ -363,11 +387,16 @@ aggregator = Aggregator(
 
 ### 6.6 Failures
 
-- A failed or timed-out episode or evaluation is **a result, not a crash**. It's recorded with its status and error, and the run continues.
-  - *Until the asynchronous driver exists (step 4), an exception in user code is not turned into a result: it fails the run, wrapped in an `EvaluationError` that names the candidate, and the recording is finalised with status `failed`.*
-- **Default policy: infeasible.** A failed candidate ranks below every feasible candidate, is kept in the lineage for inspection, and is never silently retried.
-- **`fail_fast`** stops the run at the first failure (useful when developing an environment). Custom policies are possible.
-- Auxein provides **timeouts** and **process isolation** for evaluations. Sandboxing what an agent is allowed to *do* is the environment's responsibility.
+- A failed or timed-out episode or evaluation is **a result, not a crash**. It's recorded with its status and error (§5.1), and the run continues.
+- **`failure_policy`** (a `run` argument):
+  - **`"infeasible"` (the default).** An exception in user code, a timeout or a worker crash produces an `Evaluation` with status `FAILED` or `TIMEOUT` and an informative `error`. Strategies receive it in `tell`; it ranks below every feasible candidate (NaN objectives, infinite violation), is kept in the lineage for inspection, and is **never retried** (there are no retries of any kind).
+  - **`"fail_fast"`** stops the run at the first `FAILED` or `TIMEOUT`, with an error that names the candidate and chains the original exception (useful when developing an environment). Custom policies are possible later.
+- **Misconfiguration always fails the run, whatever the policy**, because it is not a result and means nothing will work: executor errors (a function or arguments that cannot be pickled, results that cannot be sent back, workers that cannot start), return-value contract violations (wrong type, a plain dict, missing or unknown names), driver validation errors (`StrategyError`, `EvaluatorError`), and `KeyboardInterrupt` and other `BaseException`s that are not `Exception`s.
+- **A non-finite objective value** is an evaluation failure (`FAILED`, with a message saying which objective), not misconfiguration.
+- **Safety net, under `infeasible`.** A policy that swallows errors needs a guard against hiding a bug:
+  - **The first failure is shown at once**: an `EvaluationFailureWarning` (a `UserWarning`), once per run, with the candidate id, the status and the full traceback of the original exception (or the timeout or crash details). It is emitted by the driver, so it covers every evaluator.
+  - **The run stops if everything fails at the start.** If the first `N` evaluations to be told are all not `OK`, the run stops with an `AllEvaluationsFailedError` that includes the first failure's details and explains that this is almost certainly a bug in the evaluation, not a result, and how to turn the check off. `N` is `initial_failure_guard` (default 10; `None` disables it). The check ends as soon as one of the first `N` succeeds. "First to be told" is ask order in deterministic mode, so the outcome does not depend on `concurrency` or the executor. A run too short to reach `N` in which every evaluation failed is stopped at its end. The recording is finalised with status `failed`.
+- **Process isolation and crashes.** With `executor="process"` an evaluation runs in a worker process of Auxein's own pool (§5.3). A timeout kills that worker; a crash fails only the candidate it was evaluating; both are replaced, and the other evaluations are unaffected. Sandboxing what an agent is allowed to *do* is the environment's responsibility, and there are no memory or CPU limits on workers.
 - **Reserved for later:** episodes may report intermediate measurements, enabling multi-fidelity evaluation and early stopping. The interface leaves room for this; it isn't implemented in the first version.
 
 ---
@@ -437,7 +466,7 @@ In steady-state runs, results arrive in an order that depends on timing. If the 
 - The driver asks **only right after a tell**, whenever the window has room. It tells results one by one rather than "whatever is ready", because how many results are ready at a given moment depends on timing, and the number of candidates a strategy is asked for would depend on it.
 - The sequence of `ask(n)` and `tell(...)` calls the strategy sees, and so the event log, therefore depends only on the seed and `batch_size`, never on `concurrency`, the executor, sync or async functions, or timing. Evaluations still run concurrently, and the strategy may occasionally wait for a slow candidate (head-of-line blocking): the accepted cost.
 - Generation delivery needs no such rule: it is deterministic by construction.
-- Budgets measured in wall time or cost units are the exception: when they run out depends on the clock (§9.3).
+- The guarantee holds **given the same evaluation outcomes**: failures that depend on the candidate (an exception for a given genome or stream, a non-finite objective) are part of the log and stay deterministic, and the guard (§6.6) stops the same run everywhere. Outside it are **timeouts**, which depend on timing, budgets measured in wall time or cost units (§9.3), and the text of an error, whose traceback shows different frames inline, in a thread and in a worker process.
 
 **Throughput mode (`deterministic=False`)** in steady-state delivery: results are told **as they finish**, and the window is refilled as soon as it has room. It is faster when evaluation times vary, but not reproducible run to run. Results that finish at the same moment are told in ask order. Generation delivery has nothing to reorder, so it is identical in both modes.
 
@@ -468,6 +497,9 @@ result = auxein.run(
     executor="auto",                           # "inline" | "thread" | "process" | "auto" (inline for 1, else threads)
     delivery=None,                            # "generation" | "steady_state" | None (the strategy's tell mode decides)
     deterministic=True,                       # steady-state: tell in ask order (False: as results finish, §8.1)
+    failure_policy="infeasible",              # or "fail_fast": what an exception, a timeout or a crash does (§6.6)
+    timeout=None,                             # seconds per evaluation; hard for async def and processes, soft for threads (§5.3)
+    initial_failure_guard=10,                 # stop if the first 10 evaluations all fail (None: off, §6.6)
     run_dir="runs/rastrigin-ga",              # opt-in recording; without it nothing is written and a warning is emitted
     name="rastrigin-ga",                      # defaults to the directory name
 )
@@ -478,7 +510,7 @@ result = await auxein.arun(...)  # same arguments
 The common case needs the one import. The top-level API is deliberately short: `run`, `arun`, `Budget`, `RunResult`, `Objective`, `Result`, `BatchResult`, `Status`, `Box`, `Backend`, `FunctionEvaluator`, `VectorisedEvaluator`, `RandomSearch`, `GeneticAlgorithm`, `open_run` and `RecordingDisabledWarning` (plus `__version__`). Everything else is imported from its subpackage: `auxein.core` (candidates, batches, evaluations, the protocols), `auxein.strategies.ga` (the operators), `auxein.backend`, `auxein.random`, `auxein.spaces`, `auxein.driver`, `auxein.evaluators`, `auxein.recording`.
 
 - **Recording is opt-in.** Without `run_dir` nothing is written to disk, and the run emits a `RecordingDisabledWarning` (a `UserWarning`) once per run, with a stack level that points at the user's call. `warnings.filterwarnings("ignore", category=RecordingDisabledWarning)` silences it. A `run_dir` that already exists and isn't empty is refused, so runs never mix.
-- Results are delivered by generation or in steady state (§9.2), with up to `concurrency` evaluations in progress. The defaults (`concurrency=1`, generation delivery) keep today's sequential behaviour and cost. `failure_policy` comes in step 4b.
+- Results are delivered by generation or in steady state (§9.2), with up to `concurrency` evaluations in progress. The defaults (`concurrency=1`, generation delivery) keep today's sequential behaviour and cost. Failures are handled by `failure_policy` (§6.6), and `timeout` limits one evaluation.
 - `run()` also accepts a `clock` (the time source of the wall-time budget, injectable for tests).
 
 ### 9.2 Delivery modes
@@ -499,6 +531,7 @@ The common case needs the one import. The top-level API is deliberately short: `
 - Every evaluation is counted, including initialisation and re-evaluations.
 - **The evaluation budget is a hard limit.** The driver asks for `min(batch_size, remaining)` candidates; if a strategy returns more than remain, only the remaining candidates are evaluated (in ask order) and recorded, and the run ends **without telling the strategy** about the incomplete batch. Every evaluated candidate counts towards the result.
 - **Under steady-state delivery** the evaluation limit is just as hard: the driver never starts more evaluations than remain, and a surplus returned by the strategy beyond the remaining budget is dropped before it is queued: never evaluated, never told, no row in the recording. Told evaluations are what count towards the limit.
+- **A timed-out evaluation counts towards the evaluation budget** (and so does any failed one), and its wall time is the timeout.
 - **Wall-time and cost budgets are checked between batches** (generation delivery): the batch in progress completes, so they can be exceeded by up to one batch. **Under steady-state delivery** they are checked before every ask and every start: once one is exhausted (or the strategy asks to stop) the driver stops asking, **evaluations already in progress finish and are told** under the delivery rules, and candidates still queued are dropped (never evaluated, told or recorded). Which candidates were in progress at that moment depends on the clock, so a run that ends on a wall-time or cost budget is not reproducible.
 - **Stop reasons:** `budget:evaluations`, `budget:wall_time`, `budget:cost:<unit>` and `strategy`, checked in that order before each ask. On `KeyboardInterrupt` or any exception the recording is finalised with status `interrupted` or `failed`, and the exception is re-raised.
 - **The driver validates what it is handed.** An asked batch must be non-empty, with ids that this run issued and has not seen before (ids are never reused, not even for re-evaluations) and a single step that never goes back. The results of an evaluator must be one evaluation per candidate, in ask order. Violations raise `StrategyError` and `EvaluatorError`.
@@ -544,7 +577,7 @@ runs/<name>/
   - `events`: `seq`, `kind` (`ask`, `tell` or `stop`), `step`, a JSON `payload`
   - `checkpoints` is added with checkpoints (step 5), together with the raw-measurement references of §6.4.
 - **Candidates are recorded when they are told**, together with their evaluation, and a candidate that is never told has no row: one dropped by the budget truncation or by a wall-time stop (§9.3) was never evaluated. In generation delivery that is once per batch, in ask order. In steady-state delivery it is once per candidate, so the `ask` and `tell` events come per candidate (with a count of 1), in ask order in deterministic mode and in completion order in throughput mode. The tables are keyed by candidate id; the order of telling is in the `events` table.
-- **`metadata.json`** records, besides the seed, backend, budget and components, how the run was scheduled: `batch_size`, `in_flight_window`, `concurrency`, `executor` (as resolved, never `auto`), `delivery` (as resolved) and `deterministic`.
+- **`metadata.json`** records, besides the seed, backend, budget and components, how the run was scheduled: `batch_size`, `in_flight_window`, `concurrency`, `executor` (as resolved, never `auto`), `delivery` (as resolved), `deterministic`, `failure_policy`, `timeout` and `initial_failure_guard`. The **summary** written when the run ends holds the totals (`evaluations_used`, `wall_time`, the best candidate), the **failure counts** `status_counts` (`ok`, `failed`, `timeout`) and `abandoned_evaluations` (timed-out thread evaluations still running when the run ended).
 - **Determinism:** the contents of `events.sqlite` are identical for the same seed, backend, precision and `batch_size`, apart from `created_at`, `finished_at` and `wall_time`, which are timestamps and measured times, **whatever `concurrency`, the executor and sync or async user code** (in generation delivery, and in steady-state delivery with `deterministic=True`; §8.1).
 - **Lineage queries** ("all descendants of X", "the ancestry of the best agent") are single recursive SQL queries; `auxein.recording.open_run(path)` offers `ancestry(id)` and `descendants(id)`, and iterates over the evaluations with their genomes decoded.
 - **Export** to JSONL or Parquet with one command comes later.
@@ -606,6 +639,7 @@ These are rewritten as notebooks and documentation for the new core.
 4. **Resume:** a run killed and resumed from a checkpoint produces the same event log as an uninterrupted run.
 5. **Backends:** numeric tests pass on numpy and PyTorch (CPU) in float64 and float32. The GPU smoke suite passes on CUDA and Metal.
 6. **Failures:** runs with injected failures and timeouts complete, with every failure recorded and handled per the configured policy.
+   *Outcome (step 4b):* **met.** Tests inject exceptions, non-finite objectives, timeouts (async, process, thread), worker crashes (`os._exit`, `SIGKILL`) and custom evaluators that report failures, under both policies, both deliveries and every executor: runs complete, each failure is recorded with its status and error, the counts are in `RunResult` and the summary, and no worker process or non-daemon thread is left behind. The deterministic event log with candidate-driven failures is identical across `concurrency` and executors. A `GeneticAlgorithm` with 30% random failures still beats random search on the 10-D sphere at the same budget.
 
 ---
 
@@ -653,9 +687,9 @@ Each step ends with passing tests and is a candidate for its own Claude Code pro
 3. **Strategies (done):**
    - **3a:** `GeneticAlgorithm` with array-based operators, its benchmark-harness adapter, the choice of its default configuration, and the first comparison with the `v0.2.0` baseline.
    - **3b:** removing the 0.x engine, and switching the public API (`auxein/__init__.py`) to the new core.
-4. **Asynchrony:**
+4. **Asynchrony (done):**
    - **4a (done):** concurrent evaluation (`concurrency`, `executor`), steady-state delivery, deterministic mode and throughput mode, numpy-backed per-candidate streams.
-   - **4b:** timeouts, failure policies, process isolation and crash handling.
+   - **4b (done):** failure policies, the first-failure warning and the all-failures guard, timeouts (hard for `async def` and processes, soft for threads), Auxein's own process pool with crash handling, and failure-aware parent selection in the GA.
 5. **Checkpoints and resume:** `state_dict` for strategies, driver and RNG state, the genome store.
 6. **Agents:** `EpisodeEvaluator`, `Environment` protocol, scenario sets, aggregators. Toy domain A.
 7. **Structured genomes:** structure-aware operators, toy domain B with the mock LLM.
