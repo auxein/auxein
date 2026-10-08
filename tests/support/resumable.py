@@ -13,6 +13,8 @@ import numpy as np
 
 import auxein
 from auxein.strategies.ga import GeneticAlgorithm
+from tests.support import pointmass
+from tests.support.pointmass import PointMassEnvironment
 
 
 def logged_sphere(genome: np.ndarray) -> float:
@@ -25,6 +27,21 @@ def logged_sphere(genome: np.ndarray) -> float:
     return float((genome * genome).sum())
 
 
+class LoggedPointMass(PointMassEnvironment):
+    """The point mass, logging each episode it really runs (see `AUXEIN_CALL_LOG`), and taking a moment so that runs can be killed."""
+
+    def run_episode(self, agents: Any, scenario: Any, rng: Any) -> Any:
+        path = os.environ.get("AUXEIN_CALL_LOG")
+        if path:
+            with open(path, "a") as handle:
+                handle.write("x\n")
+        time.sleep(0.0005)
+        return super().run_episode(agents, scenario, rng)
+
+    def __repr__(self) -> str:
+        return "LoggedPointMass()"
+
+
 def strategy_for(name: str) -> Any:
     if name == "random":
         return auxein.RandomSearch()
@@ -33,10 +50,26 @@ def strategy_for(name: str) -> Any:
 
 def settings(config: dict[str, Any]) -> dict[str, Any]:
     """The arguments of `run` and `resume` for a configuration. The evaluator is built by the caller's module."""
+    if config.get("evaluator") == "episode":
+        evaluator: Any = auxein.EpisodeEvaluator(
+            pointmass.GainsDecoder() if config.get("batched") else pointmass.PerEpisodeDecoder(),
+            LoggedPointMass(),
+            pointmass.scenario_set(config.get("scenarios", 4)),
+            pointmass.aggregator(),
+        )
+        problem: dict[str, Any] = {
+            "space": pointmass.SPACE,
+            "objectives": [auxein.Objective("error")],
+            "constraints": ["overshoot"],
+            "descriptors": ["success_rate"],
+        }
+    else:
+        evaluator = auxein.FunctionEvaluator(logged_sphere)
+        problem = {"space": auxein.Box(-5.0, 5.0, dim=4)}
     return {
+        **problem,
         "strategy": strategy_for(config["strategy"]),
-        "evaluator": auxein.FunctionEvaluator(logged_sphere),
-        "space": auxein.Box(-5.0, 5.0, dim=4),
+        "evaluator": evaluator,
         "seed": config.get("seed", 5),
         "batch_size": config.get("batch_size", 10),
         "concurrency": config.get("concurrency", 1),

@@ -23,9 +23,12 @@ def event_log(run_dir: Path) -> dict[str, list[object]]:
         evaluations = db.execute(
             "SELECT candidate_id, status, objectives, constraints, descriptors, cost_units FROM evaluations ORDER BY rowid"
         ).fetchall()
+        episodes = db.execute(
+            "SELECT candidate_id, scenario_index, scenario_id, status, measurements FROM episodes ORDER BY candidate_id, scenario_index"
+        ).fetchall()
     finally:
         db.close()
-    return {"events": list(events), "candidates": candidates, "lineage": lineage, "evaluations": evaluations}
+    return {"events": list(events), "candidates": candidates, "lineage": lineage, "evaluations": evaluations, "episodes": episodes}
 
 
 def told_ids(run_dir: Path) -> list[int]:

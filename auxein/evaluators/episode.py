@@ -188,7 +188,7 @@ class EpisodeEvaluator(Generic[G]):
         if returned.shape != (n, s):
             raise ValueError(f"run_batch returned measurements of shape {returned.shape} for {n} candidates and {s} scenarios")
         measurements = {name: backend.asarray(array) for name, array in returned.measurements.items()}
-        outcome = _Outcome(tuple(measurements), measurements, dict(returned.failures), [wall / n] * n, {})
+        outcome = _Outcome(tuple(sorted(measurements)), measurements, dict(returned.failures), [wall / n] * n, {})
         return self._evaluations(candidates, outcome, ctx)
 
     # --- the per-episode path ---
