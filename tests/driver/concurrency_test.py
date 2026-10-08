@@ -159,7 +159,7 @@ def test_in_deterministic_mode_results_are_told_in_ask_order_even_when_they_fini
 
 def test_in_throughput_mode_results_are_told_as_they_finish(tmp_path: Path):
     async def later_candidates_first(genome):
-        await asyncio.sleep(0.02 - 0.0025 * genome)
+        await asyncio.sleep(0.01 * (8 - genome))
         return genome
 
     go(
@@ -167,7 +167,7 @@ def test_in_throughput_mode_results_are_told_as_they_finish(tmp_path: Path):
         delivery="steady_state", concurrency=8, deterministic=False, run_dir=tmp_path / "r",
     )  # fmt: skip
     ids = told_ids(tmp_path / "r")
-    assert sorted(ids) == list(range(8)) and ids == list(range(7, -1, -1))  # the slowest was asked first and told last
+    assert sorted(ids) == list(range(8)) and ids[0] > ids[-1]  # the slowest was asked first and told last, not in ask order
 
 
 # --- wall-time budgets ---

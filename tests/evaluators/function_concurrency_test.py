@@ -151,7 +151,7 @@ def test_validation_errors_of_what_the_function_returns_look_the_same_with_every
         with pytest.raises(TypeError) as raised:
             evaluate(FunctionEvaluator(workers.not_a_number), listing(2), concurrency=concurrency, kind=kind)
         messages.append(str(raised.value))
-    assert len(set(messages)) == 1 and "must return a number or a Result" in messages[0]  # normalised in the parent
+    assert len(set(messages)) == 1 and "candidate 0 must return a number or a Result" in messages[0]  # the first bad one, in the parent
 
 
 def test_a_process_executor_with_an_async_function_is_an_error():

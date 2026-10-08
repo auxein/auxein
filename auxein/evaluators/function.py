@@ -30,8 +30,8 @@ class FunctionEvaluator(Generic[G]):
     order the evaluations finish in. Each candidate's wall time is recorded in its `Cost`, next to any cost units of its
     `Result`; with a pool it includes the hand-off to the worker, not the wait for a free one.
 
-    What the function returns is turned into an `Evaluation` here, in the driver's process, so that validation errors look
-    the same with every executor. An exception in `fn` is raised as an `EvaluationError` naming the candidate; the other
+    What the function returns is turned into an `Evaluation` here, in the driver's process and in ask order, so that validation
+    errors look the same with every executor and always name the first bad candidate. An exception in `fn` is raised as an `EvaluationError` naming the candidate; the other
     evaluations of the batch are cancelled first (a function already running in a thread or process finishes first, as
     Python cannot interrupt it).
     """
@@ -76,7 +76,7 @@ class FunctionEvaluator(Generic[G]):
     async def _concurrent(self, batch: Batch[G], ctx: EvalContext[G]) -> EvaluationBatch[G]:
         slots = asyncio.Semaphore(ctx.concurrency)
 
-        async def evaluate_one(candidate: Candidate[G]) -> Evaluation[G]:
+        async def evaluate_one(candidate: Candidate[G]) -> tuple[object, float]:
             async with slots:
                 start = time.perf_counter()
                 try:
@@ -90,14 +90,22 @@ class FunctionEvaluator(Generic[G]):
                             value = await value
                 except Exception as error:
                     raise EvaluationError([candidate.id], error) from error
-                wall_time = time.perf_counter() - start
-            return evaluation_from_return(value, candidate, ctx.problem, wall_time)
+                return value, time.perf_counter() - start
 
-        tasks = [asyncio.ensure_future(evaluate_one(candidate)) for candidate in batch.candidates]
+        candidates = batch.candidates
+        tasks = [asyncio.ensure_future(evaluate_one(candidate)) for candidate in candidates]
         try:
-            return EvaluationBatch(await asyncio.gather(*tasks))  # gather keeps the order of its arguments, not of completion
+            returned = await asyncio.gather(*tasks)  # in the order of the arguments, not of completion
         except BaseException:
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)  # leave nothing running behind us
             raise
+        # Turned into evaluations here, in ask order and in the driver's process, so that a malformed return value is reported
+        # for the first bad candidate whatever the executor, concurrency or timing.
+        return EvaluationBatch(
+            [
+                evaluation_from_return(value, candidate, ctx.problem, wall_time)
+                for candidate, (value, wall_time) in zip(candidates, returned, strict=True)
+            ]
+        )
