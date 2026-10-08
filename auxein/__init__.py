@@ -21,7 +21,7 @@ from importlib import metadata
 
 from auxein.backend import Backend
 from auxein.core import BatchResult, Objective, Result, Status
-from auxein.driver import Budget, RecordingDisabledWarning, RunResult, arun, run
+from auxein.driver import Budget, RecordingDisabledWarning, RunResult, aresume, arun, resume, run
 from auxein.evaluators import FunctionEvaluator, VectorisedEvaluator
 from auxein.recording import open_run
 from auxein.spaces import Box
@@ -47,7 +47,9 @@ __all__ = [
     "Status",
     "VectorisedEvaluator",
     "__version__",
+    "aresume",
     "arun",
     "open_run",
+    "resume",
     "run",
 ]

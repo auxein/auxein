@@ -1,5 +1,7 @@
 """Errors and warnings of the driver."""
 
+from auxein.recording import ResumeError
+
 
 class RecordingDisabledWarning(UserWarning):
     """Emitted once per run that has no `run_dir`: nothing is written to disk.
@@ -42,3 +44,18 @@ class SteadyStateVectorisationWarning(UserWarning):
 
     That works but throws away the point of vectorising. Use generation delivery (`delivery="generation"`) instead.
     """
+
+
+class ConfigurationMismatchError(ResumeError):
+    """A run was resumed with settings that differ from the recorded ones. Only the budget may change when resuming: the
+    message lists every setting that differs, with its recorded and its given value."""
+
+
+class ReplayMismatchError(ResumeError):
+    """Replaying a recorded run regenerated a candidate that differs from the recorded one, so the recording cannot be
+    resumed: the strategy's configuration or code changed, or the seed is different. Nothing was recorded by the attempt."""
+
+
+class ResumeWarning(UserWarning):
+    """A resume that has nothing to do: the run is already complete with the given budget, so its result is returned
+    without evaluating anything. Give a larger budget to extend the run."""
