@@ -79,9 +79,13 @@ def test_the_metadata_describes_the_run(tmp_path: Path):
 
 def test_an_explicit_name_wins_and_declared_names_are_in_the_metadata(tmp_path: Path):
     record(
-        tmp_path / "dir", name="friendly", objectives=[Objective("loss"), Objective("score", "maximise")], constraints=["cpa"], descriptors=["speed"],
+        tmp_path / "dir",
+        name="friendly",
+        objectives=[Objective("loss"), Objective("score", "maximise")],
+        constraints=["cpa"],
+        descriptors=["speed"],
         evaluator=FunctionEvaluator(lambda g: Result({"loss": sphere(g), "score": -sphere(g)}, {"cpa": 0.0}, {"speed": 1.0})),
-    )  # fmt: skip
+    )
     with open_run(tmp_path / "dir") as recorded:
         meta = recorded.metadata
         first = next(iter(recorded.evaluations()))

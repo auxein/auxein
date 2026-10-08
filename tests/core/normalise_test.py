@@ -220,7 +220,7 @@ def test_the_evaluations_of_a_batch_equal_the_validated_ones(backend: Backend):
     from auxein.core import Cost, Evaluation
 
     fast = many(backend.asarray([3.0, 1.0, 2.0]), wall=0.3)
-    expected = [Evaluation(c, Status.OK, {"loss": v}, cost=Cost(0.1)) for c, v in zip(CANDIDATES, [3.0, 1.0, 2.0])]
+    expected = [Evaluation(c, Status.OK, {"loss": v}, cost=Cost(0.1)) for c, v in zip(CANDIDATES, [3.0, 1.0, 2.0], strict=True)]
     assert [
         (
             e.candidate,

@@ -375,7 +375,7 @@ def test_the_same_seed_gives_the_same_run_and_different_seeds_differ(backend: Ba
         return batches, ga.ranked_ids()
 
     a, b, c = run_for(5), run_for(5), run_for(6)
-    for (ids_a, x_a, parents_a), (ids_b, x_b, parents_b) in zip(a[0], b[0]):
+    for (ids_a, x_a, parents_a), (ids_b, x_b, parents_b) in zip(a[0], b[0], strict=True):
         assert ids_a == ids_b and parents_a == parents_b
         np.testing.assert_array_equal(x_a, x_b)
     assert a[1] == b[1]
@@ -429,7 +429,7 @@ def test_state_round_trip_continues_identically(backend: Backend, kwargs: dict):
     restored.load_state_dict(state)
     expected = continue_run(ga)
     actual = continue_run(restored)
-    for (ids_a, x_a, parents_a, origins_a), (ids_b, x_b, parents_b, origins_b) in zip(expected[0], actual[0]):
+    for (ids_a, x_a, parents_a, origins_a), (ids_b, x_b, parents_b, origins_b) in zip(expected[0], actual[0], strict=True):
         assert ids_a == ids_b and parents_a == parents_b and origins_a == origins_b
         np.testing.assert_array_equal(x_a, x_b)
     assert expected[1] == actual[1]
@@ -496,10 +496,10 @@ def test_children_inherit_their_parents_step_sizes(backend: Backend):
     ga, _ = started(backend, population_size=4, offspring_size=6, recombination=NoRecombination(), mutation=mutation)
     ga._steps = backend.asarray([0.01, 0.02, 0.03, 0.04])  # give the four members distinct steps
     ranked = ga.ranked_ids()
-    steps_by_id = dict(zip(backend.to_numpy(ga._ids_array).tolist(), backend.to_numpy(ga._steps).tolist()))
+    steps_by_id = dict(zip(backend.to_numpy(ga._ids_array).tolist(), backend.to_numpy(ga._steps).tolist(), strict=True))
     batch = ga.ask(1)
     block = next(iter(ga._blocks.values()))
-    for c, step in zip(batch.candidates, backend.to_numpy(block.steps).tolist()):
+    for c, step in zip(batch.candidates, backend.to_numpy(block.steps).tolist(), strict=True):
         assert step == pytest.approx(steps_by_id[c.parents[0]], rel=1e-5)
     assert set(c.parents[0] for c in batch.candidates) <= set(ranked)
 

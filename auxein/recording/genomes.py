@@ -38,7 +38,8 @@ def encode_genome(genome: object) -> EncodedGenome:
     except (TypeError, ValueError) as error:
         raise GenomeEncodingError(
             f"a genome of type {type(genome).__name__} cannot be recorded: it is neither an array nor JSON-serialisable ({error}). "
-            "Structured genomes get proper storage in a later step; until then use array or JSON-serialisable genomes, or run without run_dir."
+            "Structured genomes get proper storage in a later step; until then use array or JSON-serialisable genomes, "
+            "or run without run_dir."
         ) from error
 
 

@@ -96,7 +96,9 @@ class SphereEvaluator:
         array = batch.as_array()
         assert array is not None
         values = ctx.backend.to_numpy((array * array).sum(axis=1))
-        return EvaluationBatch([Evaluation(c, Status.OK, {"value": float(v)}, cost=Cost(0.0)) for c, v in zip(batch.candidates, values)])
+        return EvaluationBatch(
+            [Evaluation(c, Status.OK, {"value": float(v)}, cost=Cost(0.0)) for c, v in zip(batch.candidates, values, strict=True)]
+        )
 
 
 def test_the_core_types_compose_into_an_ask_evaluate_tell_loop(backend: Backend):

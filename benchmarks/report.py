@@ -191,7 +191,7 @@ def comparison_rows(cell: dict[str, list[dict[str, Any]]], reference_name: str) 
                 "p": stats.mann_whitney_p(reference, other),
             }
         )
-    for row, adjusted in zip(rows, stats.holm([r["p"] for r in rows])):
+    for row, adjusted in zip(rows, stats.holm([r["p"] for r in rows]), strict=True):
         row["p_holm"] = adjusted
         row["reading"] = stats.reading(reference_name, row["algorithm"], row["a12"], adjusted)
     return rows
@@ -272,7 +272,7 @@ def overhead_plots(results: Results, out_dir: Path) -> list[str]:
 
     if sizes and with_population:
         fig, axes = plt.subplots(1, len(dims), figsize=(3.6 * len(dims), 3.6), dpi=110, facecolor="#fcfcfb", sharey=True, squeeze=False)
-        for ax, d in zip(axes[0], dims):
+        for ax, d in zip(axes[0], dims, strict=True):
             for a in with_population:
                 ys = [grouped.get((a, d, s)) for s in sizes]
                 ax.plot(sizes, ys, color=results.color(a), linewidth=2, marker="o", markersize=5, label=a)
@@ -300,7 +300,7 @@ def overhead_plots(results: Results, out_dir: Path) -> list[str]:
         points = [(d, grouped[(a, d, size)]) for d in dims if (a, d, size) in grouped]
         if points:
             label = f"{a} (population {size})" if size is not None else a
-            ax.plot(*zip(*points), color=results.color(a), linewidth=2, marker="o", markersize=5, label=label)
+            ax.plot(*zip(*points, strict=True), color=results.color(a), linewidth=2, marker="o", markersize=5, label=label)
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xticks(dims, [str(d) for d in dims])

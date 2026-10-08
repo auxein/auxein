@@ -192,7 +192,7 @@ def test_state_dict_round_trip_continues_the_exact_sequence(backend: Backend):
         host(backend, restored.integers(0, 50, (9,))),
         host(backend, restored.choice(7, 4)),
     ]
-    for a, b in zip(expected, actual):
+    for a, b in zip(expected, actual, strict=True):
         np.testing.assert_array_equal(a, b)
 
 
@@ -235,7 +235,8 @@ from auxein.backend import Backend
 from auxein.random import RunSeed
 backend = Backend(sys.argv[1], "cpu", sys.argv[2])
 s = RunSeed(2024).stream("evaluation", 12345, backend=backend)
-out = [backend.to_numpy(x).tolist() for x in (s.uniform((6,)), s.normal((6,)), s.integers(0, 1000, (6,)), s.permutation(8), s.choice(10, 5, p=list(range(1, 11))))]
+draws = (s.uniform((6,)), s.normal((6,)), s.integers(0, 1000, (6,)), s.permutation(8), s.choice(10, 5, p=list(range(1, 11))))
+out = [backend.to_numpy(x).tolist() for x in draws]
 print(json.dumps(out))
 """
 

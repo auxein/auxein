@@ -1,3 +1,5 @@
+from itertools import pairwise
+
 import numpy as np
 import pytest
 
@@ -57,7 +59,7 @@ def test_trace_is_non_increasing_and_ends_at_the_last_evaluation():
     trace = objective.trace
     assert trace[0][0] == 1 and trace[-1][0] == 2000
     errors = [e for _, e in trace]
-    assert all(a >= b for a, b in zip(errors, errors[1:]))
+    assert all(a >= b for a, b in pairwise(errors))
     assert trace[-1][1] == objective.best_error
 
 

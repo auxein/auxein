@@ -1,4 +1,5 @@
 import math
+from itertools import pairwise
 
 import numpy as np
 import pytest
@@ -23,8 +24,8 @@ def test_holm_is_monotone_in_the_raw_p_values():
     raw = [0.002, 0.04, 0.01, 0.3, 0.2]
     adjusted = stats.holm(raw)
     order = np.argsort(raw)
-    assert all(adjusted[a] <= adjusted[b] for a, b in zip(order, order[1:]))
-    assert all(a >= r for a, r in zip(adjusted, raw))
+    assert all(adjusted[a] <= adjusted[b] for a, b in pairwise(order))
+    assert all(a >= r for a, r in zip(adjusted, raw, strict=True))
 
 
 def test_vargha_delaney_extremes_ties_and_symmetry():

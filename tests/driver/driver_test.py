@@ -176,7 +176,7 @@ class Replaying(ScriptedStrategy):
         self.asks += 1
         chosen = self._make_ids(self.asks, issued)
         steps = self._steps(self.asks) if self._steps else [self.asks - 1] * len(chosen)
-        return ListBatch([Candidate(c, float(i), (), "x", s) for i, (c, s) in enumerate(zip(chosen, steps))])
+        return ListBatch([Candidate(c, float(i), (), "x", s) for i, (c, s) in enumerate(zip(chosen, steps, strict=True))])
 
 
 def test_an_empty_batch_is_rejected():

@@ -16,7 +16,7 @@ SCORE = Objective("score", "maximise")
 def ev(i: int, *values: float, violation: float | None = None, status: Status = Status.OK, names=("loss", "score")) -> Evaluation:
     candidate = Candidate(CandidateId(i), None, (), "x", 0)
     constraints = {} if violation is None else {"cpa": violation}
-    objectives = dict(zip(names, values))
+    objectives = dict(zip(names[: len(values)], values, strict=True))
     if status is not Status.OK:
         objectives = {n: math.nan for n in names[: len(values)]}
     return Evaluation(candidate, status, objectives, constraints, cost=Cost())

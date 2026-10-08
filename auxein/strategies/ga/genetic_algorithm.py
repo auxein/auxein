@@ -160,7 +160,8 @@ class GeneticAlgorithm:
         if len(problem.objectives) != 1:
             names = ", ".join(repr(o.name) for o in problem.objectives)
             raise ValueError(
-                f"GeneticAlgorithm is single-objective but the problem has {len(problem.objectives)} objectives ({names}): use a single objective or a scalarisation"
+                f"GeneticAlgorithm is single-objective but the problem has {len(problem.objectives)} objectives ({names}): "
+                "use a single objective or a scalarisation"
             )
         if not isinstance(problem.space, Box):
             raise TypeError(f"GeneticAlgorithm needs a Box search space (a bounded real vector), got {type(problem.space).__name__}")
@@ -240,7 +241,9 @@ class GeneticAlgorithm:
 
         first_ids = backend.to_numpy(xp.take(self._ids_array, first, axis=0)).tolist()
         second_ids = backend.to_numpy(xp.take(self._ids_array, second, axis=0)).tolist()
-        parents: list[tuple[int, ...]] = [(int(a),) if c else (int(a), int(b)) for a, b, c in zip(first_ids, second_ids, copied)]
+        parents: list[tuple[int, ...]] = [
+            (int(a),) if c else (int(a), int(b)) for a, b, c in zip(first_ids, second_ids, copied, strict=True)
+        ]
         base = f"{self.selection.name}+%s+{self.mutation.name}"
         origins = [base % ("copy" if c else self.recombination.name) for c in copied]
         return genomes, steps, parents, origins

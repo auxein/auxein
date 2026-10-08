@@ -127,7 +127,7 @@ class SQLiteRecorder:
             encoded = [encode_genome(c.genome) for c in candidates]
 
         now = time.time()
-        candidate_rows = [(c.id, c.step, c.origin, e.kind, e.data, e.dtype, e.shape, now) for c, e in zip(candidates, encoded)]
+        candidate_rows = [(c.id, c.step, c.origin, e.kind, e.data, e.dtype, e.shape, now) for c, e in zip(candidates, encoded, strict=True)]
         lineage_rows = [(parent, c.id) for c in candidates for parent in c.parents]
         evaluation_rows = [
             (

@@ -57,7 +57,7 @@ class RandomSearch(Generic[G]):
             return cast("Batch[G]", ArrayBatch(genomes, ids, step, "random"))
         if len(genomes) != n:
             raise ValueError(f"the space returned {len(genomes)} genomes for a request of {n}")
-        return ListBatch([Candidate(cid, genome, (), "random", step) for cid, genome in zip(ids, genomes)])
+        return ListBatch([Candidate(cid, genome, (), "random", step) for cid, genome in zip(ids, genomes, strict=True)])
 
     def tell(self, results: EvaluationBatch[G]) -> None:
         self._bound()
