@@ -1,6 +1,6 @@
-"""No global random state in the new core (design doc §7.2 and §8).
+"""No global random state anywhere in the `auxein` package (design doc §7.2 and §8).
 
-Later steps widen COVERED_SUBPACKAGES; step 3 widens it to the whole package once the 0.x code is gone.
+The scan covers the whole package, so a new subpackage is covered the moment it exists.
 """
 
 from pathlib import Path
@@ -10,13 +10,17 @@ import pytest
 from tests.support.global_random import NUMPY_LEGACY, find_violations, scan_package
 
 PACKAGE = Path(__file__).resolve().parents[2] / "auxein"
-COVERED_SUBPACKAGES = ["core", "spaces", "backend", "random", "evaluators", "strategies", "driver", "recording"]
 
 
-@pytest.mark.parametrize("subpackage", COVERED_SUBPACKAGES)
-def test_subpackage_uses_no_global_random_state(subpackage: str):
-    assert (PACKAGE / subpackage).is_dir()
-    assert scan_package(PACKAGE / subpackage) == []
+def test_the_package_uses_no_global_random_state():
+    assert scan_package(PACKAGE) == []
+
+
+def test_the_scan_sees_every_subpackage_of_the_package():
+    scanned = {path.relative_to(PACKAGE).parts[0] for path in PACKAGE.rglob("*.py") if len(path.relative_to(PACKAGE).parts) > 1}
+    on_disk = {path.name for path in PACKAGE.iterdir() if path.is_dir() and (path / "__init__.py").exists()}
+    assert on_disk and on_disk == scanned  # nothing is skipped, and nothing is a package without being scanned
+    assert {"core", "random", "driver", "strategies", "evaluators", "recording", "spaces", "backend"} <= on_disk
 
 
 def test_the_legacy_numpy_names_cover_the_global_api():
