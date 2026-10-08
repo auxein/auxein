@@ -26,7 +26,7 @@ def test_tasks_pair_runs_with_instances_and_seeds(tiny_config):
     by_algorithm = {}
     for task in tasks:
         by_algorithm.setdefault(task.algorithm, []).append((task.problem, task.dim, task.instance, task.seed))
-    assert by_algorithm["auxein-default"] == by_algorithm["random-search"] == by_algorithm["cma-es"]
+    assert by_algorithm["auxein-core-ga"] == by_algorithm["random-search"] == by_algorithm["cma-es"]
 
 
 def test_instance_offset_moves_the_instances_but_not_the_seeds(tiny_config):
@@ -91,12 +91,12 @@ def test_overhead_records(tiny_results, tiny_config):
     records = read_jsonl(tiny_results / "overhead.jsonl")
     cases = list(overhead_cases(tiny_config))
     assert len(records) == len(cases) * 2  # two repeats per case
-    assert {r["population_size"] for r in records if r["algorithm"] == "auxein-default"} == {10, 30}
-    assert {r["population_size"] for r in records if r["algorithm"] != "auxein-default"} == {None}
+    assert {r["population_size"] for r in records if r["algorithm"] == "auxein-core-ga"} == {10, 30}
+    assert {r["population_size"] for r in records if r["algorithm"] != "auxein-core-ga"} == {None}
     for r in records:
         assert r["us_per_eval"] > 0
-    auxein = [r for r in records if r["algorithm"] == "auxein-default"]
-    assert all(r["evals_per_generation"] == r["population_size"] + 4 for r in auxein)
+    ga = [r for r in records if r["algorithm"] == "auxein-core-ga"]
+    assert all(r["evals_per_generation"] == 10 for r in ga)  # lambda children per generation, whatever the population size
 
 
 def test_same_config_and_seeds_reproduce_identical_results_whatever_the_workers(tiny_results, tiny_config, tmp_path):
@@ -108,21 +108,14 @@ def test_the_shipped_configs_are_valid():
     full, quick = load_config(CONFIGS / "full.toml"), load_config(CONFIGS / "quick.toml")
 
     assert full.runs == 25 and full.dims == (2, 10, 30) and len(full.problems) == 5
-    assert [a.name for a in full.algorithms] == [
-        "auxein-default",
-        "auxein-fixedvar",
-        "auxein-windowing",
-        "random-search",
-        "cma-es",
-        "auxein-core-random",
-        "auxein-core-ga",
-    ]
+    assert [a.name for a in full.algorithms] == ["auxein-core-ga", "auxein-core-random", "random-search", "cma-es"]
+    assert full.raw["report"] == {"references": ["auxein-core-ga"]}
     assert full.budget(10) == 20000
     assert full.targets == (1e-1, 1e-3, 1e-6)
     assert full.overhead is not None and full.overhead.dims == (2, 10, 100) and full.overhead.population_sizes == (50, 200, 800)
 
     assert quick.runs == 3 and quick.dims == (2, 10) and len(quick.problems) == 5
-    assert [a.name for a in quick.algorithms] == ["auxein-default", "random-search", "cma-es", "auxein-core-random", "auxein-core-ga"]
+    assert [a.name for a in quick.algorithms] == ["auxein-core-ga", "auxein-core-random", "random-search", "cma-es"]
     assert quick.budget(10) == 5000
 
 

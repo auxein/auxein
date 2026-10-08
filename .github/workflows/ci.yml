@@ -46,13 +46,14 @@ jobs:
       - run: uv sync
       - run: uv run pyright
 
-  examples:
+  build:
+    # The package builds, and the wheel carries the type marker. Nothing is published: there is no release workflow.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --group examples
-      - run: uv run --group examples pytest --nbmake notebooks/
+      - run: uv build
+      - run: unzip -l dist/*.whl | grep -q "auxein/py.typed"
 
   benchmarks:
     # Runs the quick benchmark and the report as a smoke test. It fails on crashes, exceptions or a timeout, never on quality results.

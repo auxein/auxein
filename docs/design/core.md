@@ -432,22 +432,26 @@ In steady-state asynchronous runs, results arrive in an order that depends on ti
 - **Users get a synchronous entry point** that works in scripts and in notebooks (where an event loop is already running: the driver then runs on a fresh loop in a dedicated thread, and `run()` waits for it), plus an async variant for embedding Auxein in async applications.
 
 ```python
-result = auxein.driver.run(
-    strategy=RandomSearch(),
-    evaluator=VectorisedEvaluator(rastrigin),
-    space=Box(lower=-5.0, upper=5.0, dim=10),
-    objectives=[Objective("value")],          # default: one minimised objective called "value"
+import auxein
+
+result = auxein.run(
+    strategy=auxein.GeneticAlgorithm(),
+    evaluator=auxein.VectorisedEvaluator(rastrigin),
+    space=auxein.Box(-5.12, 5.12, dim=10),
+    objectives=[auxein.Objective("value")],   # default: one minimised objective called "value"
     constraints=(), descriptors=(),
-    budget=Budget(evaluations=20_000),        # also wall_time (seconds) and cost (limits per cost unit)
+    budget=auxein.Budget(evaluations=20_000), # also wall_time (seconds) and cost (limits per cost unit)
     seed=42,
-    backend=Backend("numpy", "cpu", "float64"),
+    backend=auxein.Backend("numpy", "cpu", "float64"),
     batch_size=64,
-    run_dir="runs/rastrigin-random",          # opt-in recording; without it nothing is written and a warning is emitted
-    name="rastrigin-random",                  # defaults to the directory name
+    run_dir="runs/rastrigin-ga",              # opt-in recording; without it nothing is written and a warning is emitted
+    name="rastrigin-ga",                      # defaults to the directory name
 )
 
-result = await auxein.driver.arun(...)  # same arguments
+result = await auxein.arun(...)  # same arguments
 ```
+
+The common case needs the one import. The top-level API is deliberately short: `run`, `arun`, `Budget`, `RunResult`, `Objective`, `Result`, `BatchResult`, `Status`, `Box`, `Backend`, `FunctionEvaluator`, `VectorisedEvaluator`, `RandomSearch`, `GeneticAlgorithm`, `open_run` and `RecordingDisabledWarning` (plus `__version__`). Everything else is imported from its subpackage: `auxein.core` (candidates, batches, evaluations, the protocols), `auxein.strategies.ga` (the operators), `auxein.backend`, `auxein.random`, `auxein.spaces`, `auxein.driver`, `auxein.evaluators`, `auxein.recording`.
 
 - **Recording is opt-in.** Without `run_dir` nothing is written to disk, and the run emits a `RecordingDisabledWarning` (a `UserWarning`) once per run, with a stack level that points at the user's call. `warnings.filterwarnings("ignore", category=RecordingDisabledWarning)` silences it. A `run_dir` that already exists and isn't empty is refused, so runs never mix.
 - The first implementation delivers results **by generation only**, one batch at a time, with candidates evaluated sequentially; `concurrency`, `deterministic` and `failure_policy` come with the asynchronous driver (step 4). The loop is built so that they extend it. A strategy whose `tell_mode` is `steady_state` only is rejected for now.
@@ -574,33 +578,38 @@ These are rewritten as notebooks and documentation for the new core.
 
 ---
 
-## 12. Package layout (indicative)
+## 12. Package layout
+
+What exists after step 3 (the packages marked "later" are planned):
 
 ```
 auxein/
-  core/            # Candidate, Batch, Evaluation, Objective, ProblemSpec, protocols
+  __init__.py      # the public API (§9.1) and __version__
+  core/            # ids, Candidate, batches (ListBatch, ArrayBatch), Evaluation and EvaluationBatch, Result and BatchResult,
+                   # the normalisation of what user code returns, ProblemSpec, StateDict, the Strategy/Evaluator protocols
   spaces/          # Space protocol, Box
-  backend/         # Backend, array-API helpers, precision
-  random/          # seed streams, backend-native generators
-  driver/          # run/arun, budgets, delivery modes, failure policies, caching
+  backend/         # Backend, array-API helpers, precision, device validation
+  random/          # RunSeed, backend-native RandomStream
+  driver/          # run/arun, Budget, RunResult and its tracking, driver errors and warnings
   strategies/
     random_search.py
-    ga/            # GeneticAlgorithm + operators (selection, mutation, recombination, replacement)
-    external/      # PycmaStrategy (optional extra)
-  evaluators/      # FunctionEvaluator, VectorisedEvaluator, EpisodeEvaluator
-  environments/    # Environment protocol, step-level adapter, Gymnasium adapter (optional extra)
-  aggregators/     # Aggregator, reductions (mean, worst, quantile, CVaR)
-  recording/       # Recorder protocol, SQLite run directory, genome store, checkpoints, export
-examples/          # toy domains A and B, function optimisation, regression
+    ga/            # GeneticAlgorithm and its operators (selection, recombination, mutation, bounds repair)
+  evaluators/      # FunctionEvaluator, VectorisedEvaluator
+  recording/       # Recorder protocol, SQLiteRecorder run directory, genome encoding, a minimal reader
+  # later: strategies/external/ (PycmaStrategy), evaluators (EpisodeEvaluator), environments/, aggregators/,
+  #        recording (genome store, checkpoints, export)
+benchmarks/        # the benchmark harness, its configs, and the committed reports (frozen results are history)
+tests/             # tests of the package, parametrised over the available backends and precisions
 docs/design/core.md
+# later: examples/ (toy domains A and B, function optimisation, regression), rewritten notebooks
 ```
 
 ---
 
 ## 13. Versioning
 
-- **No backward compatibility** with 0.x. Old modules are replaced in place after the `v0.2.0` tag.
-- The new core is versioned **0.3.0** onwards, and stays on **0.x** until the acceptance criteria (§11.4) are met and the API has settled.
+- **No backward compatibility** with 0.x. The 0.x engine was removed in step 3b, and the git tag **`v0.2.0`** is its reference: the fixed engine, its notebooks and its documentation stay available there, and its benchmark results are kept, frozen, in `benchmarks/reports/baseline-0.2.0/`.
+- The new core is versioned **0.3.0** onwards (`0.3.0.dev0` until it is released), and stays on **0.x** until the acceptance criteria (§11.4) are met and the API has settled. Nothing is published to PyPI yet, and there is no release workflow.
 
 ---
 
@@ -608,9 +617,9 @@ docs/design/core.md
 
 Each step ends with passing tests and is a candidate for its own Claude Code prompt and PR.
 
-1. **Foundations:** core types, `Space`/`Box`, backend, random streams, deterministic ids. The backend and random layers are tested on numpy and PyTorch (CPU) from the start, so the abstraction is proven on two backends early.
-2. **Minimal driver:** synchronous generation mode, `FunctionEvaluator`, `VectorisedEvaluator`, budgets, SQLite recorder (metadata + event log), and `RandomSearch`, cross-checked against the benchmark harness's own random search.
-3. **Strategies:**
+1. **Foundations (done):** core types, `Space`/`Box`, backend, random streams, deterministic ids. The backend and random layers are tested on numpy and PyTorch (CPU) from the start, so the abstraction is proven on two backends early.
+2. **Minimal driver (done):** synchronous generation mode, `FunctionEvaluator`, `VectorisedEvaluator`, budgets, SQLite recorder (metadata + event log), and `RandomSearch`, cross-checked against the benchmark harness's own random search.
+3. **Strategies (done):**
    - **3a:** `GeneticAlgorithm` with array-based operators, its benchmark-harness adapter, the choice of its default configuration, and the first comparison with the `v0.2.0` baseline.
    - **3b:** removing the 0.x engine, and switching the public API (`auxein/__init__.py`) to the new core.
 4. **Asynchrony:** async driver internals, steady-state delivery, deterministic mode, timeouts, failure policies, process isolation.

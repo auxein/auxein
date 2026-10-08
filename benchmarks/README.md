@@ -2,7 +2,11 @@
 
 A harness to measure, repeatably and fairly, how good the solutions found by Auxein (and by other algorithms) are, and how much time the framework itself spends per fitness evaluation. It is not part of the installed package: it lives in `benchmarks/` and its dependencies are in the `bench` dependency group (installed by a plain `uv sync`).
 
-It exists so that a later redesign of Auxein's core can be judged against a baseline. The committed baseline for Auxein 0.2.0, with its findings, is in [`reports/baseline-0.2.0/`](reports/baseline-0.2.0/report.md).
+It exists so that changes to Auxein can be judged against stored results. The committed results are history and are never edited: the baseline of the 0.2.0 engine, [`reports/baseline-0.2.0/`](reports/baseline-0.2.0/report.md); the first comparison of the new core's `GeneticAlgorithm` with it, [`reports/core-ga-0.3.0-dev/`](reports/core-ga-0.3.0-dev/report.md); and how the default configuration of that strategy was chosen, [`reports/ga-default-selection/`](reports/ga-default-selection/report.md).
+
+## The 0.2.0 results are a frozen baseline
+
+The 0.x engine was removed from the repository in step 3b of the redesign (it remains at the git tag `v0.2.0`), so the harness no longer runs it. Its results are kept as they were committed. A new version of Auxein is compared against them, which is valid because the instances and seeds of `configs/full.toml` are fixed: run `full.toml` on the new version, and compare its runs with the stored `runs.jsonl` per problem and dimension. To reproduce the 0.2.0 results themselves, check out the commit recorded in `reports/baseline-0.2.0/metadata.json` (`git_sha`): the tag `v0.2.0` has the engine but predates the harness, while that commit has both. Timing figures depend on the machine; compare them only with results produced on the same one.
 
 It measures two things:
 
@@ -34,7 +38,7 @@ The same config, commit and seeds reproduce identical `runs.jsonl` contents (apa
 
 ### Configs
 
-TOML files in `configs/`: the problems, dimensions, number of runs, the budget per dimension (`budget_per_dim`), the precision targets, the overhead benchmark, and a list of named algorithm entries (`name`, `adapter`, `params`). Run *k* of every algorithm uses problem instance `instance_offset + k` (the offset is 0 unless the config says otherwise, e.g. to tune on other instances than the ones a comparison is judged on) and seed `base_seed + k`, so comparisons are paired. An optional `[report] references = [...]` names the algorithms the statistical comparison is made from (default: `auxein-default`).
+TOML files in `configs/`: the problems, dimensions, number of runs, the budget per dimension (`budget_per_dim`), the precision targets, the overhead benchmark, and a list of named algorithm entries (`name`, `adapter`, `params`). Run *k* of every algorithm uses problem instance `instance_offset + k` (the offset is 0 unless the config says otherwise, e.g. to tune on other instances than the ones a comparison is judged on) and seed `base_seed + k`, so comparisons are paired. An optional `[report] references = [...]` names the algorithms the statistical comparison is made from (default: the first algorithm of the config).
 
 ## Layout
 
@@ -42,7 +46,7 @@ TOML files in `configs/`: the problems, dimensions, number of runs, the budget p
 |---|---|
 | `problems.py` | the `Problem` interface and the five problems (sphere, ellipsoid, Rosenbrock, Rastrigin, noisy sphere) |
 | `objective.py` | `CountingObjective`, `BudgetExhausted` and the trace checkpoints |
-| `adapters/` | one module per algorithm: Auxein's 0.x `Static` playground, random search, CMA-ES, the new core's driver with `RandomSearch` (`auxein_core_random`, a cross-check of the driver) and with `GeneticAlgorithm` (`auxein_core_ga`, configured by operator tables) |
+| `adapters/` | one module per algorithm: random search, CMA-ES, the new core's driver with `RandomSearch` (`auxein_core_random`, a cross-check of the driver) and with `GeneticAlgorithm` (`auxein_core_ga`, configured by operator tables) |
 | `runner.py`, `config.py`, `metadata.py` | parallel runs, the overhead benchmark, configs and result metadata |
 | `report.py`, `stats.py` | the report: plots, tables and statistics |
 | `tests/` | tests of the harness, run by the main `uv run pytest` |

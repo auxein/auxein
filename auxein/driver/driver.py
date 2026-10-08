@@ -213,7 +213,8 @@ class Driver(Generic[G]):
         got = [e.candidate.id for e in results]
         if got != asked:
             raise EvaluatorError(
-                f"{who}.evaluate() must return one evaluation per candidate, in ask order: asked for {asked[:5]}..., got {got[:5]}... ({len(got)} of {len(asked)})"
+                f"{who}.evaluate() must return one evaluation per candidate, in ask order: "
+                f"asked for {asked[:5]}..., got {got[:5]}... ({len(got)} of {len(asked)})"
             )
 
     # --- recording ---

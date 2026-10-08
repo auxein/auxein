@@ -1,7 +1,7 @@
 [project]
 name = "auxein"
-version = "0.2.0"
-description = "Auxein is a Python framework for evolutionary algorithms."
+version = "0.3.0.dev0"
+description = "Auxein is a Python framework for evolving agents that act in environments."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -25,13 +25,6 @@ bench = [
     "cma>=3.3",
     "matplotlib>=3.9",
     "scipy>=1.11",
-]
-examples = [
-    "ipykernel>=6.29",
-    "matplotlib>=3.9",
-    "nbclient>=0.10",
-    "nbmake>=1.5",
-    "pytest>=8",
 ]
 
 [tool.uv]
@@ -61,28 +54,21 @@ packages = ["auxein"]
 [tool.ruff]
 target-version = "py311"
 line-length = 140
-extend-exclude = ["notebooks", "docs"]
+extend-exclude = ["docs"]  # ruff would format the code sketches of the design document
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "UP", "I"]
-# E501: the previous lint config ignored it too. B905: adding zip(strict=) would change behaviour; revisit in the redesign.
-ignore = ["E501", "B905"]
+
+[tool.ruff.lint.per-file-ignores]
+# the report is written as markdown prose in template strings, where a line is a paragraph: wrapping it would only move the text around
+"benchmarks/report.py" = ["E501"]
 
 [tool.pyright]
 include = ["auxein", "benchmarks"]
 exclude = ["benchmarks/results"]
 pythonVersion = "3.11"
-# the new core is checked in strict mode; the 0.x modules are removed in a later step
-strict = [
-    "auxein/backend",
-    "auxein/random",
-    "auxein/core",
-    "auxein/spaces",
-    "auxein/evaluators",
-    "auxein/strategies",
-    "auxein/driver",
-    "auxein/recording",
-]
+# the whole package is checked in strict mode; the benchmark harness is not part of it and stays at the standard level
+strict = ["auxein"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "benchmarks/tests"]

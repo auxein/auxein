@@ -11,11 +11,7 @@ TINY = {
     "problems": ["sphere", "rastrigin", "noisy_sphere"],
     "targets": [1e-1, 1e-3, 1e-6],
     "algorithms": [
-        {
-            "name": "auxein-default",
-            "adapter": "auxein_static",
-            "params": {"population_size": 20, "mutation": {"type": "self_adaptive", "tau": 0.1}, "distribution": "sigma_scaling"},
-        },
+        {"name": "auxein-core-ga", "adapter": "auxein_core_ga", "params": {"population_size": 20, "offspring_size": 10}},
         {"name": "random-search", "adapter": "random_search"},
         {"name": "cma-es", "adapter": "cmaes", "params": {"sigma0": 2.0}},
     ],

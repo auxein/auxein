@@ -17,8 +17,8 @@ from benchmarks import stats  # noqa: E402
 from benchmarks.runner import read_jsonl  # noqa: E402
 
 ERROR_FLOOR = 1e-10  # errors are clipped here in the plots, so that exact zeros fit on a log axis
-REFERENCE = "auxein-default"  # the default reference of the statistical comparison; a config can name others
 
+# the colours of the algorithms of the committed 0.2.0 results are kept, so that those reports can still be regenerated
 # categorical slots 1, 2, 3, 7, 5 of the reference palette (validated light-mode set), assigned by algorithm
 COLORS = {
     "auxein-default": "#2a78d6",
@@ -54,8 +54,9 @@ class Results:
         seen = list(dict.fromkeys(r["algorithm"] for r in self.runs))
         self.algorithms = [a for a in configured if a in seen] + [a for a in seen if a not in configured]
         self.targets: list[float] = [float(t) for t in self.metadata["config"]["targets"]]
-        configured_references = self.metadata["config"].get("report", {}).get("references", [REFERENCE])
-        self.references: list[str] = [r for r in configured_references if r in self.algorithms] or [REFERENCE]
+        # the algorithms the statistical comparison is made from: the config names them, or else the first algorithm of the config
+        configured_references = self.metadata["config"].get("report", {}).get("references", self.algorithms[:1])
+        self.references: list[str] = [r for r in configured_references if r in self.algorithms] or self.algorithms[:1]
         self.problems = list(dict.fromkeys(r["problem"] for r in self.runs))
         self.dims = sorted({r["dim"] for r in self.runs})
         groups: dict[tuple[str, int, str], list[dict[str, Any]]] = defaultdict(list)
@@ -171,7 +172,7 @@ def mean_rank_table(results: Results) -> str:
     return "\n".join(rows)
 
 
-def comparison_rows(cell: dict[str, list[dict[str, Any]]], reference_name: str = REFERENCE) -> list[dict[str, Any]]:
+def comparison_rows(cell: dict[str, list[dict[str, Any]]], reference_name: str) -> list[dict[str, Any]]:
     """The reference algorithm against every other, with Holm correction over the comparisons of this cell."""
     if reference_name not in cell:
         return []
@@ -190,13 +191,13 @@ def comparison_rows(cell: dict[str, list[dict[str, Any]]], reference_name: str =
                 "p": stats.mann_whitney_p(reference, other),
             }
         )
-    for row, adjusted in zip(rows, stats.holm([r["p"] for r in rows])):
+    for row, adjusted in zip(rows, stats.holm([r["p"] for r in rows]), strict=True):
         row["p_holm"] = adjusted
         row["reading"] = stats.reading(reference_name, row["algorithm"], row["a12"], adjusted)
     return rows
 
 
-def comparison_table(rows: list[dict[str, Any]], reference_name: str = REFERENCE) -> str:
+def comparison_table(rows: list[dict[str, Any]], reference_name: str) -> str:
     header = f"| {reference_name} vs | median error ({reference_name}) | median error (other) | A12 | p | p (Holm) | Reading |"
     lines = [header, "|---|---|---|---|---|---|---|"]
     for r in rows:
@@ -271,7 +272,7 @@ def overhead_plots(results: Results, out_dir: Path) -> list[str]:
 
     if sizes and with_population:
         fig, axes = plt.subplots(1, len(dims), figsize=(3.6 * len(dims), 3.6), dpi=110, facecolor="#fcfcfb", sharey=True, squeeze=False)
-        for ax, d in zip(axes[0], dims):
+        for ax, d in zip(axes[0], dims, strict=True):
             for a in with_population:
                 ys = [grouped.get((a, d, s)) for s in sizes]
                 ax.plot(sizes, ys, color=results.color(a), linewidth=2, marker="o", markersize=5, label=a)
@@ -299,7 +300,7 @@ def overhead_plots(results: Results, out_dir: Path) -> list[str]:
         points = [(d, grouped[(a, d, size)]) for d in dims if (a, d, size) in grouped]
         if points:
             label = f"{a} (population {size})" if size is not None else a
-            ax.plot(*zip(*points), color=results.color(a), linewidth=2, marker="o", markersize=5, label=label)
+            ax.plot(*zip(*points, strict=True), color=results.color(a), linewidth=2, marker="o", markersize=5, label=label)
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xticks(dims, [str(d) for d in dims])

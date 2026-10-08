@@ -56,8 +56,8 @@ def _check_bare_allowed(problem: ProblemSpec[G], origin: str, kind: str) -> str:
     """The name of the single objective a bare number stands for, or an error saying why there is none."""
     if len(problem.objectives) != 1:
         raise TypeError(
-            f"{origin} returned a bare number but the problem has {len(problem.objectives)} objectives ({_names(problem.objective_names)}): "
-            f"return a {kind} with a value for each of them"
+            f"{origin} returned a bare number but the problem has {len(problem.objectives)} objectives "
+            f"({_names(problem.objective_names)}): return a {kind} with a value for each of them"
         )
     if problem.constraints or problem.descriptors:
         declared = [f"constraints {_names(problem.constraints)}"] * bool(problem.constraints) + [
@@ -155,7 +155,8 @@ def evaluations_from_batch_return(
         elif array.ndim == 2:
             if array.shape[1] != len(problem.objectives):
                 raise ValueError(
-                    f"{origin} returned {array.shape[1]} columns but the problem has {len(problem.objectives)} objectives ({_names(problem.objective_names)})"
+                    f"{origin} returned {array.shape[1]} columns but the problem has {len(problem.objectives)} objectives "
+                    f"({_names(problem.objective_names)})"
                 )
             if problem.constraints or problem.descriptors:
                 _check_bare_allowed(
@@ -196,7 +197,10 @@ def _rows(columns: Mapping[str, npt.NDArray[np.float64]]) -> list[Mapping[str, f
     if not columns:
         return []
     names = tuple(columns)
-    return [MappingProxyType(dict(zip(names, values))) for values in zip(*(column.tolist() for column in columns.values()))]
+    return [
+        MappingProxyType(dict(zip(names, values, strict=True)))
+        for values in zip(*(column.tolist() for column in columns.values()), strict=True)
+    ]
 
 
 def _to_values(raw: Array) -> npt.NDArray[np.float64]:

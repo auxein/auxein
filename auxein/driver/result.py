@@ -36,7 +36,7 @@ class RunResult(Generic[G]):
 
 
 def _dominates(a: tuple[float, ...], b: tuple[float, ...]) -> bool:
-    return all(x <= y for x, y in zip(a, b)) and any(x < y for x, y in zip(a, b))
+    return all(x <= y for x, y in zip(a, b, strict=True)) and any(x < y for x, y in zip(a, b, strict=True))
 
 
 class ResultTracker(Generic[G]):
@@ -78,7 +78,7 @@ class ResultTracker(Generic[G]):
         for position, evaluation in enumerate(evaluations):
             if evaluation.status is not Status.OK:
                 continue
-            values = tuple(sign * evaluation.objectives[name] for sign, name in zip(self._signs, self._names))
+            values = tuple(sign * evaluation.objectives[name] for sign, name in zip(self._signs, self._names, strict=True))
             violation = sum(evaluation.constraints.values())
             if single:
                 key = (0 if violation == 0 else 1, violation, values[0], evaluation.candidate.id)
