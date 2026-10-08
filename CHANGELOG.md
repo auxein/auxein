@@ -12,7 +12,7 @@ What exists now:
 - **Strategies ask, evaluators evaluate, the driver runs the loop.** `auxein.run` / `auxein.arun`, budgets in evaluations (and wall time and cost units), results with `best`, a Pareto front and a trace.
 - **Evaluators:** `FunctionEvaluator` and `VectorisedEvaluator`; fitness functions return a number or an explicit `Result` / `BatchResult`.
 - **Strategies:** `RandomSearch`, and a composable `GeneticAlgorithm` (tournament and SUS selection, intermediate and uniform recombination, Gaussian and self-adaptive mutation, plus selection of survivors, constraints supported). It beats the 0.2.0 engine on every problem of the benchmark suite at a lower cost per evaluation: see the [comparison report](benchmarks/reports/core-ga-0.3.0-dev/report.md).
-- **Backends:** numpy and PyTorch (CPU, CUDA and Metal), float64 and float32, reproducible random streams derived from one seed.
+- **Backends:** numpy and PyTorch, float64 and float32, reproducible random streams derived from one seed. CPU runs are tested in CI; CUDA and Metal devices are supported by the configuration but have no automated tests yet.
 - **Search spaces:** `Box`, a bounded real vector with optional log scale.
 - **Recording:** an opt-in run directory (`run_dir`) with metadata and an SQLite event log of candidates, lineage and evaluations, and a reader (`auxein.open_run`).
 - **A benchmark harness** (`benchmarks/`), with the frozen 0.2.0 baseline.
