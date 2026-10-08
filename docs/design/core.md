@@ -159,7 +159,7 @@ The operator ideas from 0.x are re-implemented, not ported, and the limitations 
 - `GeneticAlgorithm`: composable, as above, supporting both tell modes (done in step 3a).
 - `PycmaStrategy`: a wrapper around pycma, as an optional extra. Its purpose is to prove that external algorithms fit the contract.
 
-More algorithms (native CMA-ES, NSGA-II, MAP-Elites and others) are added later on top of the same contract.
+A strategy for structured genomes comes in step 6b and a multi-objective one (NSGA-II) in step 8. More algorithms (native CMA-ES, MAP-Elites and others) are added later on top of the same contract.
 
 ---
 
@@ -202,7 +202,7 @@ class Batch(Protocol[G]):
 
 ### 4.4 Variable-length structure
 
-- **Numeric problems with structure** (e.g. polynomial degree, number of active rules or sensors) use a **fixed maximum size with structure genes**: binary switches or an integer gene that decides which components are active. The genome length stays constant, so the array fast path applies. A complexity objective (e.g. number of active terms, minimised) turns the problem into a trade-off between accuracy and complexity, which multi-objective strategies can explore.
+- **Numeric problems with structure** (e.g. polynomial degree, number of active rules or sensors) use a **fixed maximum size with structure genes**: binary switches or an integer gene that decides which components are active. The genome length stays constant, so the array fast path applies. A complexity objective (e.g. number of active terms, minimised) turns the problem into a trade-off between accuracy and complexity, which multi-objective strategies (step 8) can explore.
 - **Open-ended structure** (growing networks, program trees, rule lists without a natural maximum, prompts) uses **structured genomes** through the general (non-array) path, with operators that understand the structure.
 
 ### 4.5 Search spaces
@@ -216,7 +216,7 @@ class Space(Protocol[G]):
 Spaces return **genomes**, not batches. Building a batch requires candidate ids, which are issued through the strategy context, so strategies wrap sampled genomes into batches themselves. Array spaces such as `Box` return an `(n, d)` array.
 
 - **First implementation:** `Box`, a bounded real vector with lower and upper bounds per dimension and an optional log scale per dimension (log-scale dimensions are sampled log-uniformly and need a positive lower bound). Samples are guaranteed to lie within `[lower, upper]` in float32 as well as float64: float32 bounds are rounded *inward* (a bound that isn't a float32 number moves to the next float32 inside the box) and samples are clipped to them. A box too narrow or too wide for float32 to represent is an error when sampling in float32. `Box.contains` and `Box.clip` are the membership test and a vectorised repair helper for operators.
-- **Later:** integer, categorical, mixed and conditional spaces (e.g. hyperparameter spaces), plus structured spaces for text and trees, added when a use case needs them. The concept lives in the core from the start, so operators and strategies can rely on it.
+- **Later:** binary and integer spaces (step 8), then categorical, mixed and conditional spaces (e.g. hyperparameter spaces), plus structured spaces for text and trees (step 6b), added when a use case needs them. The concept lives in the core from the start, so operators and strategies can rely on it.
 
 ---
 
@@ -355,7 +355,7 @@ class EpisodeResult:
 ```
 
 - **The core contract is a whole episode**, plus an optional batched variant. Real simulators often own their own loop (external processes, co-simulation, ROS), LLM agents run their own multi-turn loops, and batched GPU simulators run a population in one call.
-- **Step-level environments** (`reset`/`step`) plug in through an adapter that runs the step loop. A Gymnasium adapter is provided as an optional extra; Gymnasium isn't a core dependency.
+- **Step-level environments** (`reset`/`step`) plug in through an adapter that runs the step loop. A Gymnasium adapter is provided later as an optional extra (step 9); Gymnasium isn't a core dependency.
 - **Environments return raw measurements, not scores.** What counts as good is decided by the aggregator, so runs can be re-judged without re-simulating.
 
 ### 6.3 Multiple agents and roles
@@ -574,7 +574,7 @@ runs/<name>/
   events.sqlite          # event log: candidates, lineage, evaluations, events, checkpoints
   checkpoints/           # ckpt-<event seq>/state.json + arrays.npz: snapshots of strategy, driver and random-generator state
   writer.lock            # the writer's process id, while a process is writing (§10.4)
-  # later: genomes/ (content-addressed genome store, step 7) and artifacts/ (heavy outputs: trajectories, transcripts, logs)
+  # later: genomes/ (content-addressed genome store, step 6b) and artifacts/ (heavy outputs: trajectories, transcripts, logs)
 ```
 
 ### 10.2 Event log (SQLite)
@@ -597,7 +597,7 @@ runs/<name>/
 ### 10.3 Genomes and artifacts
 
 - In the first implementation genomes are stored inline in `candidates`, without pickle: array genomes (numpy arrays, or torch tensors copied to the host) as raw C-order bytes plus dtype and shape, other genomes as JSON when they are JSON-serialisable. A genome that is neither is a clear error; structured genomes get proper storage in a later step.
-- Small genomes are stored inline. Large genomes (network weights, long prompts) will go into a **content-addressed store** (step 7): each distinct genome saved once under its hash. Until then every genome is inline in `events.sqlite`.
+- Small genomes are stored inline. Large genomes (network weights, long prompts) will go into a **content-addressed store** (step 6b): each distinct genome saved once under its hash. Until then every genome is inline in `events.sqlite`.
 - **Heavy artifacts** (trajectories, transcripts) are optional and stored by reference. **Default: kept for failed evaluations only.** Options keep them for the best candidates or a sample.
 
 ### 10.4 Checkpoints and resume
@@ -635,9 +635,18 @@ The recorder is pluggable. The SQLite run directory is the built-in implementati
 
 ## 11. Validation plan
 
-The design is validated against **two deliberately different toy domains**, plus function optimisation and regression problems.
+Features are validated by **small, purpose-built test fixtures** (tiny deterministic environments, short structured genomes, in `tests/`) plus the **benchmark harness** (`benchmarks/`), not by toy domains. A fixture exists to test a pipeline end to end and is as small as that allows; it is not an example for users. The two toy domains planned earlier are deferred (§11.2).
 
-### 11.1 Toy domain A: two-ship encounter (numeric, vectorised)
+### 11.1 Fixtures and the benchmark harness
+
+- **Test fixtures** live under `tests/` and are deterministic by construction: an environment with a few parameters that a genetic algorithm solves within a CI-friendly budget (the agent layer's is described with its tests, step 6a), structured genomes of a few fields (step 6b), scripted evaluators and strategies for the driver.
+- **The benchmark harness** compares strategies on function-optimisation problems and measures the engine's overhead (§11.4, criterion 2).
+
+### 11.2 Deferred: toy domains
+
+**Not planned.** The two toy domains below were meant to validate the design end to end. They were deferred to an unspecified later time, and their descriptions are kept only for reference.
+
+**Toy domain A: two-ship encounter (numeric, vectorised).**
 
 - **Dynamics:** own ship with first-order Nomoto yaw dynamics (`T·ṙ + r = K·δ`) at constant speed, steering towards a waypoint, with one target vessel on a crossing course.
 - **Genome:** a fixed-size controller (heading-controller gains plus avoidance parameters, or a small fixed-size network) in a `Box` space.
@@ -647,7 +656,7 @@ The design is validated against **two deliberately different toy domains**, plus
 - **Descriptor:** passing side, mean rudder angle.
 - **Implementation:** vectorised over candidates × scenarios. It exercises the array fast path, the batched episode interface, the PyTorch backend and float32.
 
-### 11.2 Toy domain B: prompt evolution with a mock LLM (structured, asynchronous)
+**Toy domain B: prompt evolution with a mock LLM (structured, asynchronous).**
 
 - **Genome:** a structured prompt configuration (instruction list, example slots, tool flags).
 - **Evaluation:** a deterministic mock "LLM" whose answer quality depends on genome features. It injects random latency, occasional failures and timeouts, so it exercises async evaluation, steady-state delivery, deterministic mode and failure policies, at no cost.
@@ -660,11 +669,11 @@ The design is validated against **two deliberately different toy domains**, plus
 - Linear and logistic regression.
 - Polynomial regression with a fixed maximum degree, structure genes and a complexity objective (§4.4).
 
-These are rewritten as notebooks and documentation for the new core.
+These are rewritten as four notebooks for the new core (step 9): Rastrigin, linear regression, logistic regression and polynomial regression.
 
 ### 11.4 Acceptance criteria
 
-1. **Generality:** both toy domains and all problems in §11.3 run on the same core, with no special cases in the core.
+1. **Generality:** *deferred* together with the toy domains (§11.2). It said that both toy domains and all problems in §11.3 run on the same core, with no special cases in the core. The agent layer (step 6a) and structured genomes (step 6b) are validated by test fixtures instead.
 2. **Benchmark:** with a harness adapter for the new core, the `GeneticAlgorithm` strategy at equal evaluation budgets is **not statistically worse than the `v0.2.0` baseline** on any problem and dimension of the benchmark suite. Its **overhead per evaluation is lower**.
    *Outcome (step 3a, [`benchmarks/reports/core-ga-0.3.0-dev/`](../../benchmarks/reports/core-ga-0.3.0-dev/report.md)):* **met.** The default `GeneticAlgorithm` is better than the 0.2.0 default on all 15 problem × dimension cells of the suite (large effect, Holm-adjusted p ≤ 10⁻⁷), and its time per evaluation is lower at every population size and dimension of the overhead benchmark (4.9 to 7.6 µs against 9.2 to 12.1 µs), after an optimisation of the driver and the strategy that the first run of the comparison called for.
 3. **Determinism:** in deterministic mode, the same seed produces an identical event log across synchronous and asynchronous evaluators and any worker count.
@@ -694,12 +703,12 @@ auxein/
     ga/            # GeneticAlgorithm and its operators (selection, recombination, mutation, bounds repair)
   evaluators/      # FunctionEvaluator, VectorisedEvaluator
   recording/       # Recorder protocol, SQLiteRecorder run directory, genome encoding, checkpoint files, the writer lock, replay, a reader
-  # later: strategies/external/ (PycmaStrategy), evaluators (EpisodeEvaluator), environments/, aggregators/,
-  #        recording (genome store, export)
+  # later: strategies/external/ (PycmaStrategy), a structured-genome strategy (6b), a multi-objective strategy (8),
+  #        recording (genome store, 6b; export)
 benchmarks/        # the benchmark harness, its configs, and the committed reports (frozen results are history)
 tests/             # tests of the package, parametrised over the available backends and precisions
 docs/design/core.md
-# later: examples/ (toy domains A and B, function optimisation, regression), rewritten notebooks
+# later: examples/ (the four rewritten notebooks, step 9)
 ```
 
 ---
@@ -723,11 +732,13 @@ Each step ends with passing tests and is a candidate for its own Claude Code pro
 4. **Asynchrony (done):**
    - **4a (done):** concurrent evaluation (`concurrency`, `executor`), steady-state delivery, deterministic mode and throughput mode, numpy-backed per-candidate streams.
    - **4b (done):** failure policies, the first-failure warning and the all-failures guard, timeouts (hard for `async def` and processes, soft for threads), Auxein's own process pool with crash handling, and failure-aware parent selection in the GA.
-5. **Checkpoints and resume (done):** checkpoints of strategy, driver and random-generator state (JSON and arrays, no pickle, written atomically), `resume` / `aresume` by replay (deterministic mode) or truncate-and-redo (throughput mode), extension of finished runs, the single-writer lock, recording schema 2. The content-addressed genome store moved to step 7, with the other genome storage.
-6. **Agents:** `EpisodeEvaluator`, `Environment` protocol, scenario sets, aggregators. Toy domain A.
-7. **Structured genomes:** structure-aware operators, toy domain B with the mock LLM, and the content-addressed genome store for large genomes (§10.3).
-8. **PyTorch everywhere:** extend numpy and PyTorch coverage in float64 and float32 to every numeric strategy, operator and evaluator, and add the GPU smoke suite.
-9. **External strategies and examples:** `PycmaStrategy`, step-level and Gymnasium adapters, rewritten function-optimisation and regression notebooks.
+5. **Checkpoints and resume (done):** checkpoints of strategy, driver and random-generator state (JSON and arrays, no pickle, written atomically), `resume` / `aresume` by replay (deterministic mode) or truncate-and-redo (throughput mode), extension of finished runs, the single-writer lock, recording schema 2. The content-addressed genome store moved to step 6b, with the other genome storage.
+6. **Agents and structured genomes:**
+   - **6a, agent layer:** environment interface, step-level adapter, decoders, episode evaluator, scenario sets with held-out splits, aggregators, recording of per-scenario measurements, held-out evaluation.
+   - **6b, structured genomes:** a strategy for non-numeric genomes with structure-aware operators, an interface slot for LLM-driven mutation operators, and the content-addressed genome store (moved from step 5).
+7. **PyTorch everywhere:** numpy and PyTorch coverage in float64 and float32 for every numeric strategy, operator, evaluator and aggregator, plus the GPU smoke suite (formerly step 8).
+8. **Multi-objective:** a multi-objective strategy (e.g. NSGA-II), plus binary and integer search spaces (new).
+9. **External strategies, adapters and examples:** `PycmaStrategy`, the Gymnasium adapter, and the four rewritten notebooks: Rastrigin, linear regression, logistic regression, polynomial regression (formerly step 9; the polynomial one depends on step 8).
 
 ---
 
