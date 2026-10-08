@@ -6,7 +6,16 @@ import pytest
 
 from auxein.backend import Backend
 from auxein.core import ArrayBatch, Candidate, CandidateId, EvaluationBatch, ListBatch, Objective, Result
-from auxein.driver import AllEvaluationsFailedError, Budget, EvaluatorError, RecordingDisabledWarning, StrategyError, arun, run
+from auxein.driver import (
+    AllEvaluationsFailedError,
+    Budget,
+    EvaluationFailureWarning,
+    EvaluatorError,
+    RecordingDisabledWarning,
+    StrategyError,
+    arun,
+    run,
+)
 from auxein.evaluators import EvaluationError, FunctionEvaluator, VectorisedEvaluator
 from auxein.spaces import Box
 from auxein.strategies import RandomSearch
@@ -376,7 +385,10 @@ def test_a_backend_reaches_the_strategy_and_the_arrays(backend: Backend):
 def test_invalid_returns_surface_with_their_own_error_types():
     with pytest.raises(TypeError, match="returned a dict"):
         go(evaluator=FunctionEvaluator(lambda g: {"value": g}))
-    with pytest.raises(AllEvaluationsFailedError, match="non-finite objective value: 'value' is nan"):
+    with (
+        pytest.warns(EvaluationFailureWarning),
+        pytest.raises(AllEvaluationsFailedError, match="non-finite objective value: 'value' is nan"),
+    ):
         go(evaluator=FunctionEvaluator(lambda g: float("nan")))  # a diverged simulation is a failure, and here it is all of them
 
 

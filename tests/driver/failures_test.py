@@ -66,7 +66,8 @@ def test_an_exception_becomes_a_failed_evaluation_with_its_type_message_and_trac
 
 
 def test_a_failed_candidate_never_becomes_the_best():
-    result = go(evaluator=FLAKY)
+    with pytest.warns(EvaluationFailureWarning):
+        result = go(evaluator=FLAKY)
     assert result.best is not None and result.best.status is Status.OK
     assert all(e.status is Status.OK for e in result.pareto_front)
 
