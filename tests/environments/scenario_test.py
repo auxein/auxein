@@ -42,7 +42,11 @@ def test_the_world_stream_depends_on_the_scenario_seed_alone():
 
 
 def test_generation_is_deterministic_per_seed():
-    a, b, other = ScenarioSet.generate(params, 12, seed=4), ScenarioSet.generate(params, 12, seed=4), ScenarioSet.generate(params, 12, seed=5)
+    a, b, other = (
+        ScenarioSet.generate(params, 12, seed=4),
+        ScenarioSet.generate(params, 12, seed=4),
+        ScenarioSet.generate(params, 12, seed=5),
+    )
     assert a == b and a.fingerprint == b.fingerprint and [s.seed for s in a] == [s.seed for s in b]
     assert a.fingerprint != other.fingerprint
     assert [s.index for s in a] == list(range(12)) and a[3].id == "s0003" and len(set(s.seed for s in a)) == 12

@@ -87,7 +87,12 @@ class Troubled(Probe):
     """Fails in the scenarios it is told to: by raising, by returning a failure, by taking too long, or by killing its process."""
 
     def __init__(
-        self, raises: tuple[str, ...] = (), returns: tuple[str, ...] = (), slow: tuple[str, ...] = (), seconds: float = 30.0, kills: tuple[str, ...] = ()
+        self,
+        raises: tuple[str, ...] = (),
+        returns: tuple[str, ...] = (),
+        slow: tuple[str, ...] = (),
+        seconds: float = 30.0,
+        kills: tuple[str, ...] = (),
     ) -> None:
         self.raises, self.returns, self.slow, self.seconds, self.kills = raises, returns, slow, seconds, kills
 
@@ -168,4 +173,3 @@ class BrokenDecoder:
 
     def __repr__(self) -> str:
         return "BrokenDecoder()"
-

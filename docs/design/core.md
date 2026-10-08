@@ -277,7 +277,7 @@ The evaluator interface is asynchronous, but users rarely implement it directly.
 
 - `FunctionEvaluator(f, uses_rng=False)`: `f(genome)`, or `f(genome, rng)` with `uses_rng=True`, called per candidate, where `rng` is the candidate's own evaluation stream (§8). `f` may be a plain function or an `async def`. Concurrency and executors are described below. Each candidate's wall time is recorded in its `Cost`.
 - `VectorisedEvaluator(f, uses_rng=False)`: `f(X)`, or `f(X, rng)`, once per batch with `X = batch.as_array()`; it needs an array-backed batch. This is the fast path for numeric problems, and runs on GPU when the arrays are on GPU. The batch's wall time is split equally across its candidates. With `uses_rng=True` it receives one stream per batch (§8). **`concurrency` and `executor` do not apply to it**: there is one call per batch, on the driver's thread, and the parallelism is inside the array operation. Under steady-state delivery (§9.2) it would be called with one candidate at a time, which works but defeats its purpose, so the driver emits a `SteadyStateVectorisationWarning` once per run.
-- `EpisodeEvaluator(decoder, environment, scenarios, aggregator)`: the agent evaluator (§6).
+- `EpisodeEvaluator(decoder, environment, scenarios, aggregator, role=None)`: the agent evaluator (§6). It has a per-episode path, which obeys `concurrency`, `executor` and `timeout` (one executor call per episode), and a batched path that, like `VectorisedEvaluator`, runs on the driver's thread, rejects a timeout at start-up and warns under steady-state delivery.
 
 **What a fitness function returns.** The rules are the same for every evaluator, and are implemented in one normalisation function:
 
@@ -312,7 +312,7 @@ The evaluator interface is asynchronous, but users rarely implement it directly.
 - `FunctionEvaluator` with `concurrency == 1`, the inline executor and no timeout keeps the sequential fast path. Otherwise the candidates of a batch are evaluated concurrently and returned **in ask order**, whatever order they finish in.
 - **For user-written evaluators**, `EvalContext` offers `await ctx.call(fn, *args)`, which runs a synchronous function where the run's executor says, and `ctx.concurrency`, the limit an evaluator must respect. `async def` code needs neither: it simply awaits.
 
-`EvalContext` carries the problem specification (so that what user code returns can be checked against it), the backend, the executor with `ctx.call` and `ctx.concurrency`, the failure policy and the timeout, and two factories that derive evaluation random streams from candidate ids: `rng_for(id)` for a candidate, and `batch_rng_for(first_id)` for a vectorised batch (§8). They are factories rather than lists of streams so that a batch of thousands of candidates doesn't create thousands of generators up front.
+`EvalContext` carries the problem specification (so that what user code returns can be checked against it), the backend, the executor with `ctx.call` and `ctx.concurrency`, the failure policy and the timeout, and factories that derive evaluation random streams from candidate ids: `rng_for(id)` for a candidate, `batch_rng_for(first_id)` for a vectorised batch, and for the agent layer `episode_rng_for(id, scenario_index)` and `episode_batch_rng_for(first_id)` (§8). They are factories rather than lists of streams so that a batch of thousands of candidates doesn't create thousands of generators up front.
 
 ### 5.4 Scalarisation
 
@@ -321,6 +321,8 @@ A single-objective strategy applied to a multi-objective problem requires an exp
 ---
 
 ## 6. Agents, environments and scenarios
+
+The agent layer (step 6a) lives in `auxein.environments` (scenarios, episode results, the environment, decoder and step-adapter interfaces), `auxein.aggregators` (reductions and the `Aggregator`) and `auxein.evaluators` (`EpisodeEvaluator`). From the top level: `EpisodeEvaluator`, `Scenario`, `ScenarioSet`, `Aggregator` and `EpisodeResult`.
 
 ### 6.1 Episode evaluator
 
@@ -331,6 +333,14 @@ To the core, an evaluator is anything that produces evaluation records. For agen
 3. a **scenario set**
 4. an **aggregator**: per-scenario measurements → objectives, constraints, descriptors
 
+```python
+evaluator = auxein.EpisodeEvaluator(decoder, environment, scenarios, aggregator, role=None)
+```
+
+`role` names the evolved role and can be omitted when the environment has one. **One evolved role per episode** is supported; the other participants are part of the scenario. Agents are handed to the environment as a mapping by role, so several evolved roles will need no change of interface.
+
+**Two paths, one aggregator.** The **batched path** applies when the environment has `run_batch`, the decoder has `decode_batch` and the batch is array-backed: the batch is decoded at once, `run_batch` is called once with all scenarios, and the `(n, s)` arrays it returns are aggregated. It runs on the driver's thread, on the backend's device. Otherwise the **per-episode path** decodes each candidate once and runs every scenario as one call of `run_episode`, through `ctx.call` for a synchronous environment (so `executor=` applies, and with processes the environment, the decoded agents and the scenarios must be picklable) and natively for an `async def` one, with **at most `ctx.concurrency` episodes in progress across the whole batch** (candidates times scenarios, not per candidate), returned in ask order. The per-episode results are stacked into the same `(n, s)` arrays, so one aggregator code path serves both. On the fixture environment the framework adds about 8 µs per episode inline and about 35 µs with four threads, against a per-episode cost of microseconds to seconds in a real simulator.
+
 ### 6.2 Environment interface: whole episodes
 
 ```python
@@ -339,59 +349,77 @@ class Environment(Protocol):
 
     def run_episode(
         self, agents: Mapping[str, Agent], scenario: Scenario, rng: RandomStream
-    ) -> EpisodeResult: ...
+    ) -> EpisodeResult | Awaitable[EpisodeResult]: ...      # plain or `async def`
 
-    # Optional, for simulators that batch many agents and scenarios in one call:
-    # def run_episodes(self, agents: Sequence[Mapping[str, Agent]], scenarios: Sequence[Scenario], rngs) -> Sequence[EpisodeResult]
-    # Async variants (`async def`) are accepted for environments that do I/O.
+
+class BatchedEnvironment(Protocol):                          # optional capability
+    def run_batch(self, agents: AgentBatch, scenarios: Sequence[Scenario], rng: RandomStream) -> EpisodeBatchResult: ...
+
+
+class Decoder(Protocol[G]):
+    def decode(self, genome: G) -> Agent: ...
+    # optional: def decode_batch(self, genomes: Array) -> AgentBatch    (opaque to Auxein; passed to run_batch)
 
 
 @dataclass(frozen=True)
 class EpisodeResult:
     measurements: Mapping[str, float]   # raw: fuel, time, closest approach, success, tokens...
-    status: Status
-    artifacts: ArtifactRef | None       # optional trajectory, transcript, log
-    error: str | None
+    status: Status = Status.OK
+    error: str | None = None
+    artifacts: ArtifactRef | None = None    # reserved: trajectories and transcripts are not stored yet
+
+
+@dataclass(frozen=True)
+class EpisodeBatchResult:
+    measurements: Mapping[str, Array]   # name -> array of shape (n_candidates, n_scenarios), on the backend
+    failures: Mapping[tuple[int, int], EpisodeFailure]   # sparse status/error grid: the episodes that did not succeed
 ```
 
-- **The core contract is a whole episode**, plus an optional batched variant. Real simulators often own their own loop (external processes, co-simulation, ROS), LLM agents run their own multi-turn loops, and batched GPU simulators run a population in one call.
-- **Step-level environments** (`reset`/`step`) plug in through an adapter that runs the step loop. A Gymnasium adapter is provided later as an optional extra (step 9); Gymnasium isn't a core dependency.
-- **Environments return raw measurements, not scores.** What counts as good is decided by the aggregator, so runs can be re-judged without re-simulating.
+- **The core contract is a whole episode**, plus an optional batched variant. Real simulators often own their own loop (external processes, co-simulation, ROS), LLM agents run their own multi-turn loops, and batched GPU simulators run a population in one call. `IdentityDecoder` is the decoder for environments that take the genome directly (a batch of agents is then the genome array).
+- **Environments return raw measurements, not scores.** What counts as good is decided by the aggregator, so runs can be re-judged without re-simulating. A failed or timed-out `EpisodeResult` has a status other than `OK` and an `error`; a measurement that is NaN in a successful episode shows up as a non-finite objective (a failed evaluation).
+- **Step-level environments** (`reset`/`step`) plug in through `StepEnvironment(world_factory, role=, max_steps=, last=)`. The world has `reset(scenario, rng) -> observation` and `step(action) -> (observation, measurement_updates, done)`; the agent has `act(observation) -> action` and optionally `reset(rng)` (called with its episode stream). The adapter builds a new world for every episode, loops until `done` or `max_steps`, **sums** the measurement updates over the episode (except the names listed in `last`, whose last value is kept) and adds two measurements itself, `steps` and `done`. It is small on purpose; the Gymnasium adapter (step 9) builds on it, and Gymnasium is not a core dependency.
+- **Which randomness is which.** `run_episode` receives the **agent's** stream for this candidate and scenario. The **world's** randomness must come from `scenario.rng()`, which depends on the scenario's seed alone (§6.4, §8).
 
 ### 6.3 Multiple agents and roles
 
 An episode receives agents **by role**. A single-agent problem has one role.
 
 - **Evolved agents among scripted ones** (e.g. other traffic around an evolved vessel) are part of the scenario.
-- **Several evolved agents in one episode** (competition, cooperation, co-evolution) are supported by the interface. Deciding who meets whom is the evaluator's responsibility. Full co-evolution support is future work, and needs no interface change.
+- **Several evolved agents in one episode** (competition, cooperation, co-evolution) are supported by the interface, which passes a mapping by role. `EpisodeEvaluator` evolves one role in this version; deciding who meets whom is the evaluator's responsibility, and matchmaking is future work that needs no interface change.
 
 ### 6.4 Scenarios
 
-- A **scenario** is an id plus parameters (initial geometry, sea state, traffic, task instance…).
-- A **scenario set** is a fixed list of seeded instances, generated once per run or loaded from a file.
-- Every candidate in a run is evaluated on the **same scenarios** (common random numbers), so differences in results reflect the agents, not luck.
-- Scenario sets are split into a **selection set** (used for evolution) and a **held-out set** (used only for reporting), to detect overfitting and reward hacking.
-- Per-scenario measurements are kept (§9), so results can be re-aggregated later.
+- A **`Scenario`** is frozen and hashed by id: an `id` (string), its `index` within its set, a `seed` (an int, for the world's randomness) and `params`, a read-only mapping of JSON values (initial geometry, sea state, traffic, a task instance...; a class of its own so that it pickles to worker processes). `scenario.rng(*keys)` is the world's stream, derived from the seed alone.
+- A **`ScenarioSet`** is an ordered, immutable collection with a `fingerprint`: a SHA-256 of the ids, seeds and params in order. Build one from a list of params (`from_params`), or generate it with a function `(index, rng) -> params` and a seed (`generate`); `split(n_selection, n_held_out)` partitions a set into two disjoint ones (re-indexed from 0, ids and seeds kept), and `generate_split` produces both from one seed without overlap. `save` / `load` use JSON and check the fingerprint on loading. The fingerprint is part of the `EpisodeEvaluator`'s description, so **resuming a run with another scenario set is refused** (§10.4).
+- Every candidate in a run is evaluated on the **same scenarios** (**common random numbers**), so differences in results reflect the agents, not luck: the world's randomness is derived from the scenario's own seed, the agent's from a per-(candidate, scenario) stream (§8).
+- Scenario sets are split into a **selection set** (used for evolution) and a **held-out set** (used only for reporting), to detect overfitting and reward hacking. **Held-out evaluation** is a helper that runs *after* a run: `auxein.driver.evaluate_held_out(run_dir_or_result, evaluator, scenarios, candidates="best")` (and `aevaluate_held_out`) evaluates the chosen candidates (the run's best, its Pareto front, or a list of ids) with the same machinery but **outside** the run: no strategy, no budget, nothing added to the event log, and agent streams from a seed derived from the run's so that they are independent of the ones used in evolution. It returns a `HeldOutReport` with the per-scenario measurements and the aggregated values of each candidate, and writes it to `held_out.json` in the run directory unless `write=False`. The strategy never sees the held-out scenarios during evolution.
+- **Per-scenario measurements are recorded** with the evaluation (§10.2), so results can be re-aggregated later without re-simulating (`RunReader.reaggregate`).
 
 ### 6.5 Aggregators
 
-An aggregator maps the per-scenario `EpisodeResult`s of one candidate to objectives, constraints and descriptors. It's declarative and swappable. Built-in reductions include mean, worst case, quantile and CVaR (mean of the worst α fraction). For example:
+An aggregator maps the measurements of every candidate on every scenario to objectives, constraints and descriptors (and optionally user-defined cost units). It is declarative and swappable: each name maps to a **reduction**, a source (a measurement name, or a function of the dict of measurement arrays) plus a reducer applied **across scenarios**. For example:
 
 ```python
 aggregator = Aggregator(
     objectives={"fuel": mean("fuel_used"), "time": mean("time_to_waypoint")},
-    constraints={"cpa": worst(lambda m: max(0.0, 0.5 - m["closest_approach_nm"]))},
+    constraints={"cpa": maximum(lambda m: relu(0.5 - m["closest_approach_nm"]))},
     descriptors={"mean_speed": mean("mean_speed")},
 )
 ```
 
+- **It always works on arrays of shape `(n, s)`** (`n` candidates, `s` scenarios) in the backend's array namespace: the per-episode path stacks its results into the same shape, so one vectorised, backend-generic code path serves both paths and the reader's re-aggregation.
+- **Reducers** (`auxein.aggregators`): `mean`, `minimum`, `maximum`, `total` (sum), `quantile(source, q)` (linear interpolation of the sorted values, as numpy's default) and the two tails of CVaR. `cvar_upper(source, alpha)` is the mean of the largest `ceil(alpha * s)` values, the "worst α fraction" of something where **higher is worse** (fuel, time, a violation); `cvar_lower(source, alpha)` is the mean of the smallest, the worst fraction where **lower is worse** (a reward, a success rate). `alpha = 1` is the mean for both.
+- **Its output must match the `ProblemSpec` exactly**: every declared objective, constraint and descriptor present and no unknown name, so a typo is caught like a typo in a `Result`. A constraint value that is negative is an error (violation amounts are at least 0); a non-finite objective, constraint, descriptor or cost value fails the candidate.
+
 ### 6.6 Failures
 
 - A failed or timed-out episode or evaluation is **a result, not a crash**. It's recorded with its status and error (§5.1), and the run continues.
+- **A candidate fails if any of its episodes fails.** If an episode returns a failure or raises, the candidate's evaluation is `FAILED` (or `TIMEOUT`, if every failing episode timed out), and its `error` lists the failing scenarios and their errors (the first three in full, the rest named). The run's `failure_policy` then applies as for any evaluator. The measurements of the episodes that succeeded are still recorded. A genome that cannot be decoded fails only its candidate.
 - **`failure_policy`** (a `run` argument):
-  - **`"infeasible"` (the default).** An exception in user code, a timeout or a worker crash produces an `Evaluation` with status `FAILED` or `TIMEOUT` and an informative `error`. Strategies receive it in `tell`; it ranks below every feasible candidate (NaN objectives, infinite violation), is kept in the lineage for inspection, and is **never retried** (there are no retries of any kind).
-  - **`"fail_fast"`** stops the run at the first `FAILED` or `TIMEOUT`, with an error that names the candidate and chains the original exception (useful when developing an environment). Custom policies are possible later.
-- **Misconfiguration always fails the run, whatever the policy**, because it is not a result and means nothing will work: executor errors (a function or arguments that cannot be pickled, results that cannot be sent back, workers that cannot start), return-value contract violations (wrong type, a plain dict, missing or unknown names), driver validation errors (`StrategyError`, `EvaluatorError`), and `KeyboardInterrupt` and other `BaseException`s that are not `Exception`s.
+  - **`"infeasible"` (the default).** An exception in user code, a timeout or a worker crash produces an `Evaluation` with status `FAILED` or `TIMEOUT` and an informative `error`. Strategies receive it in `tell`; it ranks below every feasible candidate (NaN objectives, infinite violation), is kept in the lineage for inspection, and is **never retried** (there are no retries of any kind). For an episode evaluator, an exception in the environment is a failed episode and so a failed candidate.
+  - **`"fail_fast"`** stops the run at the first `FAILED` or `TIMEOUT`, with an error that names the candidate and chains the original exception (useful when developing an environment). For an exception in the environment the evaluator raises at once, cancelling the other episodes; for a failure that the environment *returned*, the evaluator returns the `FAILED` evaluation and the driver's backstop stops the run.
+- **Timeouts apply per episode** on the per-episode path, each episode being one executor call (§5.3): a timed-out episode makes the candidate `TIMEOUT`, and an episode timeout's wall time is the limit. The batched path runs on the driver's thread and cannot time out; a `timeout` with it is an error at start-up, as for `VectorisedEvaluator`.
+- **Misconfiguration always fails the run, whatever the policy**, because it is not a result and means nothing will work: executor errors (a function or arguments that cannot be pickled, results that cannot be sent back, workers that cannot start), return-value contract violations (wrong type, a plain dict, missing or unknown names; an environment returning something that is not an `EpisodeResult`; episodes of one batch reporting different measurement names; an aggregator that does not match the problem or reads an unknown measurement), driver validation errors (`StrategyError`, `EvaluatorError`), and `KeyboardInterrupt` and other `BaseException`s that are not `Exception`s.
 - **A non-finite objective value** is an evaluation failure (`FAILED`, with a message saying which objective), not misconfiguration.
 - **Safety net, under `infeasible`.** A policy that swallows errors needs a guard against hiding a bug:
   - **The first failure is shown at once**: an `EvaluationFailureWarning` (a `UserWarning`), once per run, with the candidate id, the status and the full traceback of the original exception (or the timeout or crash details). It is emitted by the driver, so it covers every evaluator.
@@ -444,10 +472,13 @@ class Backend:
   - one for the strategy (`"strategy"`)
   - one for scenario generation (`"scenarios"`)
   - one per candidate evaluation, derived from the candidate's (deterministic) id (`"evaluation", candidate_id`); **always numpy-backed**, whatever the run's backend (see below)
+  - for the agent layer (§6): the agent's stream per episode, `("episode", candidate_id, scenario_index)`, numpy-backed like the per-candidate stream, and one stream per batch for a batched environment, `("episode-batch", first_candidate_id)`, on the run's backend
+  - for scenarios: the scenario set's own seed gives each scenario its `seed` (`("scenario-seed", index)`) and the parameters generator its stream (`("scenarios", index)`); a scenario's **world** stream is `("world", *keys)` derived from the scenario's seed alone; a held-out evaluation uses a seed derived from the run's (`"held-out"`)
 - **Stable names.** A stream name is mapped to an integer with CRC-32 of its UTF-8 bytes, never with Python's `hash()` (randomised per process), so the same seed, name and keys give the same stream in any process on any machine. Keys are integers in `[0, 2**32)`. Two names could in principle collide in CRC-32 (about one chance in four billion); a test pins the names Auxein uses.
 - **Evaluation randomness follows the candidate**, not the worker or the time of evaluation. Evaluations are reproducible in any parallel or distributed setup.
 - **Exception for vectorised evaluators.** A vectorised function draws its randomness for the whole batch at once, so per-candidate streams would be unusable. It receives **one stream per batch**, derived from the id of the batch's first candidate (`SeedSequence` key `("evaluation-batch", first_id)`). That is deterministic because the composition of a batch is. Per-candidate streams remain the rule for per-candidate evaluators.
 - **Backend-native generation.** The random layer (`RandomStream`) wraps numpy's `Generator(PCG64)` on CPU and `torch.Generator` on the target device, seeded from the derived streams. Random numbers are produced where the arrays live. Streams offer `uniform`, `normal`, `integers`, `permutation` and `choice`, returning arrays in the backend's namespace, device and dtype (integers as int64).
+- **Common random numbers (§6.4).** *World* randomness (disturbances, noise) comes from the scenario's seed, so every candidate faces the identical realisation; *agent* randomness (a stochastic policy, later LLM sampling) comes from the per-(candidate, scenario) stream, so it follows the candidate and the scenario, never the worker or the time. The batched path's one stream per batch is the same kind of exception as the vectorised evaluator's (derived from the first candidate's id). A test pins all the stream names.
 - **Per-candidate evaluation streams are numpy-backed.** `ctx.rng_for(id)` returns a numpy stream (with the run's float precision) on every backend. Evaluating one candidate is host-side Python anyway, and these are the only streams a run creates by the tens of thousands. numpy streams use the full 128 bits of the derived seed, which settles the limit of torch CPU generators, an MT19937 that accepts only 32 bits of seed and would make two derived streams collide around 65,000 of them (decided in step 4a). numpy streams are also picklable, so a candidate's stream can be sent to a worker process. The strategy stream and the vectorised per-batch stream (`batch_rng_for`) stay backend-native: a run creates only a few, and they feed array operations on the target device.
 - **Scope of reproducibility:** identical results for the same seed, backend and precision. Different backends or precisions give different (equally valid) runs.
 - **No global random state** anywhere in the package, enforced by a test that forbids numpy's legacy global functions.
@@ -574,23 +605,25 @@ runs/<name>/
   events.sqlite          # event log: candidates, lineage, evaluations, events, checkpoints
   checkpoints/           # ckpt-<event seq>/state.json + arrays.npz: snapshots of strategy, driver and random-generator state
   writer.lock            # the writer's process id, while a process is writing (§10.4)
+  held_out.json          # optional: the report of a held-out evaluation (§6.4)
   # later: genomes/ (content-addressed genome store, step 6b) and artifacts/ (heavy outputs: trajectories, transcripts, logs)
 ```
 
 ### 10.2 Event log (SQLite)
 
 - **Append-only.** Written by the driver, which is the single writer, one transaction per batch (per told candidate in steady-state delivery), so it's safe against crashes. The database is in WAL mode and is checkpointed when the run ends.
-- **Schema (version 2)**, as implemented; a `schema_version` table holds the version number. Version 2 (step 5) added `candidates.event_seq` and the `checkpoints` table; **a run recorded with version 1 cannot be resumed** (there is nothing to migrate: no one has such runs), and the reader refuses it too.
+- **Schema (version 3)**, as implemented; a `schema_version` table holds the version number. Version 2 (step 5) added `candidates.event_seq` and the `checkpoints` table, version 3 (step 6a) the `episodes` table. **A run recorded with an earlier version cannot be resumed, and the reader refuses it** (there is nothing to migrate: no one has such runs).
   - `candidates`: `id` (primary key), `step`, `origin`, `genome_kind` (`array` or `json`), `genome` (raw bytes or JSON text), `genome_dtype` and `genome_shape` (arrays only), `created_at`, and **`event_seq`**: the sequence number of the `ask` event whose transaction recorded the candidate together with its evaluation. It tells exactly what was recorded after a given point, which truncation and replay need
   - `lineage`: `parent_id`, `child_id`, both indexed
   - `evaluations`: `candidate_id` (primary key), `status`, `objectives`, `constraints`, `descriptors` and `cost_units` (JSON objects of name to value), `wall_time`, `error`, `finished_at`
   - `events`: `seq`, `kind` (`ask`, `tell`, `stop` or `resume`), `step`, a JSON `payload`. A candidate's tell is its `ask` event's successor; an `ask` without a following `tell` was recorded but never told (a final batch cut by the budget, or a process killed between the two writes)
   - `checkpoints`: `id`, `event_seq` (the checkpoint is consistent with the events up to this one), `evaluations_used`, `path` (relative to the run directory), `created_at`
-  - the raw-measurement references of §6.4 arrive with the episode evaluator.
+  - `episodes`: `candidate_id`, `scenario_index`, `scenario_id`, `status`, `measurements` (a JSON object of name to value; empty for an episode that did not succeed) and `error`; primary key (`candidate_id`, `scenario_index`). They are written **in the same transaction as the candidate's evaluation**, at tell time, in batched inserts (thousands of candidates by tens of scenarios record without a measurable slowdown beyond the rows themselves), and `Evaluation.raw` is a `RawRef` with the key `episodes/<candidate id>`. Evaluators other than the episode evaluator write none.
 - **A `resume` event** is written for each resume. Its payload holds the `mode` (`replay` or `truncate`), the `checkpoint` used (its event sequence, or null when the run restarts from the beginning), the number of evaluations `replayed` or `truncated`, and the old and new budget. A run has **one `stop` event, at its end**: a resume deletes the `stop` of the earlier session (the session history in `metadata.json` keeps what it said).
 - **Candidates are recorded when they are told**, together with their evaluation, and a candidate that is never told has no row: one dropped by the budget truncation or by a wall-time stop (§9.3) was never evaluated. In generation delivery that is once per batch, in ask order. In steady-state delivery it is once per candidate, so the `ask` and `tell` events come per candidate (with a count of 1), in ask order in deterministic mode and in completion order in throughput mode. The tables are keyed by candidate id; the order of telling is in the `events` table.
 - **`metadata.json`** records, besides the seed, backend, budget and components, how the run was scheduled: `batch_size`, `in_flight_window`, `concurrency`, `executor` (as resolved, never `auto`), `delivery` (as resolved), `deterministic`, `failure_policy`, `timeout` and `initial_failure_guard`. **`metadata.json` also holds `sessions`**, oldest first: the first start and each resume, with `mode` (`start`, `replay` or `truncate`), the `budget` of that session, the `versions` and `git` state it ran with, and, once it ended, `ended_at`, `status`, `stop_reason`, `evaluations_used` and the cumulative `wall_time`. A session that was killed has `status: running` and no end. The configuration at the top (seed, budget, components...) is the original and never changes; the top-level `status`, `stop_reason` and `summary` describe the latest session. The **summary** written when the run ends holds the totals (`evaluations_used`, `wall_time`, the best candidate), the **failure counts** `status_counts` (`ok`, `failed`, `timeout`) and `abandoned_evaluations` (timed-out thread evaluations still running when the run ended).
 - **Determinism:** the contents of `events.sqlite` are identical for the same seed, backend, precision and `batch_size`, apart from `created_at`, `finished_at` and `wall_time`, which are timestamps and measured times, apart from the `resume` events and `checkpoints` rows of a run that was resumed (§10.4), **whatever `concurrency`, the executor and sync or async user code** (in generation delivery, and in steady-state delivery with `deterministic=True`; §8.1).
+- **Re-aggregation.** `RunReader.episodes(candidate_id)` returns a candidate's recorded episodes, and `RunReader.reaggregate(aggregator)` recomputes objectives, constraints, descriptors and cost units for every recorded candidate from the stored measurements, without re-simulating: the same run seen through another aggregator (a worst case instead of a mean). It returns the candidates in id order; one with a failed episode is reported with that status and no values.
 - **Lineage queries** ("all descendants of X", "the ancestry of the best agent") are single recursive SQL queries; `auxein.recording.open_run(path)` offers `ancestry(id)` and `descendants(id)`, and iterates over the evaluations with their genomes decoded.
 - **Export** to JSONL or Parquet with one command comes later.
 
@@ -618,7 +651,7 @@ runs/<name>/
 - **What can be resumed.** Runs recorded with the current schema whose status is `completed`, `interrupted` or `failed`, and runs that were killed (status still `running`). Two processes never write to one run: the recorder takes a lock file (`writer.lock`, with the writer's process id) for as long as it writes. A live writer makes a second one refuse with a message naming the process; the lock of a process that was killed is recognised and taken over.
 - **Only the budget may change.** Everything else must equal the recorded run: the problem (space, objectives and directions, constraints, descriptors), seed, backend and precision, `batch_size`, `delivery`, `deterministic`, `concurrency`, `executor` (as resolved), `timeout`, `failure_policy`, the guard, and the strategy's and evaluator's class and `repr`. Any difference raises `ConfigurationMismatchError` listing every mismatching setting with its recorded and its given value, before anything is written. The checkpoint options and the `clock` are not part of the run. **Auxein cannot check that the evaluator's *code* is unchanged**: replay does not run it, so keeping it the same is the user's responsibility. The evaluation budget cannot go below what is already recorded.
 - **The mode comes from the recorded `deterministic` setting.**
-  - **Deterministic mode replays.** The strategy and driver are restored from the latest checkpoint (or built afresh if there is none) and asked again. The driver rebuilds the result tracker from the recording, then re-runs the same loop with the *same decisions as a live run*: the same ask sizes, window refills, truncation rules and stop checks, under the new budget. For each candidate it regenerates for which the recording holds an evaluation, it checks that the candidate is exactly the recorded one (same id, origin, step and parents, **byte-identical genome**), and tells the strategy the **recorded evaluation instead of evaluating it again**. **No recorded evaluation is ever repeated**, with one exception: a `VectorisedEvaluator` draws its randomness once per batch, so a final batch that a larger budget has made longer is evaluated whole again (it was cut at the old limit, never told) to give what the longer run gives. Once the recorded evaluations are used up, the run goes on live. Any difference stops the resume with a `ReplayMismatchError` that names the first candidate that differs and the likely cause (the strategy's configuration or code changed, a different seed, an edited recording), and records nothing: the session is written only when the resume first writes something.
+  - **Deterministic mode replays.** The strategy and driver are restored from the latest checkpoint (or built afresh if there is none) and asked again. The driver rebuilds the result tracker from the recording, then re-runs the same loop with the *same decisions as a live run*: the same ask sizes, window refills, truncation rules and stop checks, under the new budget. For each candidate it regenerates for which the recording holds an evaluation, it checks that the candidate is exactly the recorded one (same id, origin, step and parents, **byte-identical genome**), and tells the strategy the **recorded evaluation instead of evaluating it again**. **No recorded evaluation is ever repeated**, with one exception: an evaluator that draws its randomness once per batch (a `VectorisedEvaluator`, or an `EpisodeEvaluator` on its batched path; they say so with `batch_sensitive`) evaluates a final batch that a larger budget has made longer whole again (it was cut at the old limit, never told) to give what the longer run gives, and the recording replaces the shorter batch, episodes included. For any other evaluator the recorded candidates of that batch stay as they are, with their episodes, and the batch grows by the new ones. Replayed evaluations keep their recorded episodes: replay writes none twice. Once the recorded evaluations are used up, the run goes on live. Any difference stops the resume with a `ReplayMismatchError` that names the first candidate that differs and the likely cause (the strategy's configuration or code changed, a different seed, an edited recording), and records nothing: the session is written only when the resume first writes something.
   - **Throughput mode truncates and redoes.** The run restarts from the latest checkpoint; everything recorded after it (candidates, lineage, evaluations, events) is deleted in one transaction and that work is redone live. Candidates in flight at the checkpoint are re-issued with the same ids and genomes. With no checkpoint, everything recorded is deleted and the run restarts from the beginning.
 - **Extending a finished run** with a larger evaluation budget gives, in deterministic mode, **the same event log and result as one uninterrupted run with the larger budget**, for both delivery modes. It follows from the hard-budget rule (§9.3): the candidates asked but dropped, or cut, at the old limit are regenerated by replay and now evaluated and told. A candidate that the old run evaluated but never told (the cut part of a final batch) is used from the recording and re-recorded as part of the longer batch. This needs the strategy to propose the same first candidates when asked for fewer (`ask(16)` is a prefix of `ask(64)`), which `RandomSearch` and the default `GeneticAlgorithm` do. A strategy that does not, such as a `GeneticAlgorithm` with `offspring_size=None` (it breeds exactly `n` children, drawing its random numbers per array) in generation delivery with a budget that is not a multiple of `batch_size`, cannot be extended: the first candidate to differ raises the replay mismatch. Steady-state delivery is not affected, because it asks one candidate at a time.
 - **Resuming a complete run** with exactly the budget it finished with returns its result from the recording without evaluating anything, and warns (`ResumeWarning`); it does not even add a session. A run that was killed with its budget already used up replays its tail and then stops.
@@ -639,7 +672,7 @@ Features are validated by **small, purpose-built test fixtures** (tiny determini
 
 ### 11.1 Fixtures and the benchmark harness
 
-- **Test fixtures** live under `tests/` and are deterministic by construction: an environment with a few parameters that a genetic algorithm solves within a CI-friendly budget (the agent layer's is described with its tests, step 6a), structured genomes of a few fields (step 6b), scripted evaluators and strategies for the driver.
+- **Test fixtures** live under `tests/` and are deterministic by construction. The agent layer's (step 6a, `tests/support/pointmass.py`) is a point mass on a line that a three-gain controller must bring to a target under a constant drift: drift and target come from the scenario's params, a little noise on the force from its seed. It reports raw measurements (final distance, steps, control effort, success, maximum overshoot) and is implemented three ways with the same maths, per episode, batched (in the run's array namespace) and step by step through the adapter; a test checks that they agree (exactly in float64 numpy, within tolerance in float32 and torch). A genetic algorithm solves it in a few hundred evaluations. Other fixtures: structured genomes of a few fields (step 6b), and scripted evaluators and strategies for the driver.
 - **The benchmark harness** compares strategies on function-optimisation problems and measures the engine's overhead (§11.4, criterion 2).
 
 ### 11.2 Deferred: toy domains
@@ -687,7 +720,7 @@ These are rewritten as four notebooks for the new core (step 9): Rastrigin, line
 
 ## 12. Package layout
 
-What exists after step 5 (the packages marked "later" are planned):
+What exists after step 6a (the packages marked "later" are planned):
 
 ```
 auxein/
@@ -697,11 +730,13 @@ auxein/
   spaces/          # Space protocol, Box
   backend/         # Backend, array-API helpers, precision, device validation
   random/          # RunSeed, backend-native RandomStream
-  driver/          # run/arun, Budget, RunResult and its tracking, driver errors and warnings
+  driver/          # run/arun, resume/aresume, Budget, RunResult and its tracking, held-out evaluation, driver errors and warnings
   strategies/
     random_search.py
     ga/            # GeneticAlgorithm and its operators (selection, recombination, mutation, bounds repair)
-  evaluators/      # FunctionEvaluator, VectorisedEvaluator
+  environments/    # Scenario, ScenarioSet, EpisodeResult, the Environment/BatchedEnvironment/Decoder interfaces, StepEnvironment
+  aggregators/     # Aggregator and its reductions (mean, minimum, maximum, total, quantile, cvar_upper, cvar_lower)
+  evaluators/      # FunctionEvaluator, VectorisedEvaluator, EpisodeEvaluator
   recording/       # Recorder protocol, SQLiteRecorder run directory, genome encoding, checkpoint files, the writer lock, replay, a reader
   # later: strategies/external/ (PycmaStrategy), a structured-genome strategy (6b), a multi-objective strategy (8),
   #        recording (genome store, 6b; export)
@@ -734,7 +769,7 @@ Each step ends with passing tests and is a candidate for its own Claude Code pro
    - **4b (done):** failure policies, the first-failure warning and the all-failures guard, timeouts (hard for `async def` and processes, soft for threads), Auxein's own process pool with crash handling, and failure-aware parent selection in the GA.
 5. **Checkpoints and resume (done):** checkpoints of strategy, driver and random-generator state (JSON and arrays, no pickle, written atomically), `resume` / `aresume` by replay (deterministic mode) or truncate-and-redo (throughput mode), extension of finished runs, the single-writer lock, recording schema 2. The content-addressed genome store moved to step 6b, with the other genome storage.
 6. **Agents and structured genomes:**
-   - **6a, agent layer:** environment interface, step-level adapter, decoders, episode evaluator, scenario sets with held-out splits, aggregators, recording of per-scenario measurements, held-out evaluation.
+   - **6a, agent layer (done):** environment interface, step-level adapter, decoders, episode evaluator, scenario sets with held-out splits, aggregators, recording of per-scenario measurements (schema 3), held-out evaluation, and a point-mass test fixture implemented three ways.
    - **6b, structured genomes:** a strategy for non-numeric genomes with structure-aware operators, an interface slot for LLM-driven mutation operators, and the content-addressed genome store (moved from step 5).
 7. **PyTorch everywhere:** numpy and PyTorch coverage in float64 and float32 for every numeric strategy, operator, evaluator and aggregator, plus the GPU smoke suite (formerly step 8).
 8. **Multi-objective:** a multi-objective strategy (e.g. NSGA-II), plus binary and integer search spaces (new).

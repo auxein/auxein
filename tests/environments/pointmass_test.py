@@ -34,7 +34,9 @@ def test_the_three_implementations_agree_exactly_in_float64_numpy():
     assert set(common) == set(batched.names) == {"final_distance", "steps", "effort", "success", "max_overshoot"}
     np.testing.assert_array_equal(single.values, batched.values)
     for name in common:
-        np.testing.assert_array_equal(stepped.values[:, :, stepped.names.index(name)], batched.values[:, :, batched.names.index(name)], err_msg=name)
+        np.testing.assert_array_equal(
+            stepped.values[:, :, stepped.names.index(name)], batched.values[:, :, batched.names.index(name)], err_msg=name
+        )
 
 
 def test_the_fixture_really_exercises_the_world():
@@ -58,7 +60,10 @@ def test_the_three_implementations_agree_on_numpy_float32_and_torch(backend: Bac
     for other in (batched, single, stepped):
         for name in ("final_distance", "effort", "max_overshoot"):
             np.testing.assert_allclose(
-                other.values[:, :, other.names.index(name)], reference.values[:, :, reference.names.index(name)], atol=atol, rtol=0.05 if not exact else 0
+                other.values[:, :, other.names.index(name)],
+                reference.values[:, :, reference.names.index(name)],
+                atol=atol,
+                rtol=0.05 if not exact else 0,
             )
     # torch float64 is as exact as numpy float64, up to rounding of identical operations
     if backend.precision == "float64":
@@ -145,4 +150,7 @@ def test_reserved_names_and_bad_arguments_are_rejected():
 
 def test_the_step_environment_describes_itself_stably():
     text = repr(pm.step_environment())
-    assert text == "StepEnvironment(world=PointMassWorld, role='controller', max_steps=60, last=['final_distance', 'max_overshoot', 'success'])"
+    assert (
+        text
+        == "StepEnvironment(world=PointMassWorld, role='controller', max_steps=60, last=['final_distance', 'max_overshoot', 'success'])"
+    )

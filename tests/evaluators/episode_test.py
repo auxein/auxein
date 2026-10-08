@@ -7,14 +7,16 @@ import pytest
 from auxein.aggregators import Aggregator, mean
 from auxein.backend import Backend
 from auxein.core import Status
-from auxein.environments import IdentityDecoder, ScenarioSet
+from auxein.environments import ScenarioSet
 from auxein.evaluators import EpisodeEvaluator, EvaluationError
 from auxein.execution import make_executor
 from tests.support import episodes as ep
 from tests.support import pointmass as pm
 from tests.support.helpers import array_batch, eval_context, problem
 
-pytestmark = pytest.mark.filterwarnings("ignore::auxein.execution.AbandonedEvaluationWarning")  # the thread timeouts abandon threads on purpose
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::auxein.execution.AbandonedEvaluationWarning"
+)  # the thread timeouts abandon threads on purpose
 
 SCENARIOS = ScenarioSet.from_params([{}, {}, {}, {}], seed=1)  # ids s0000 .. s0003
 
@@ -31,7 +33,9 @@ def evaluate(evaluator, batch, *, backend=None, concurrency=1, kind="inline", po
     backend = backend or Backend()
     executor = make_executor(kind, concurrency)
     try:
-        ctx = eval_context(spec or problem(), backend, seed, concurrency=concurrency, executor=executor, failure_policy=policy, timeout=timeout)
+        ctx = eval_context(
+            spec or problem(), backend, seed, concurrency=concurrency, executor=executor, failure_policy=policy, timeout=timeout
+        )
         return asyncio.run(evaluator.evaluate(batch, ctx))
     finally:
         executor.shutdown()
@@ -57,7 +61,11 @@ def test_the_episodes_of_every_candidate_and_scenario_travel_with_the_evaluation
     results = evaluate(make(), batch_of(3))
     episodes = results.episodes
     assert episodes is not None
-    assert episodes.candidate_ids == (0, 1, 2) and episodes.scenario_ids == SCENARIOS.ids and episodes.names == ("agent", "gene", "scenario", "world")
+    assert (
+        episodes.candidate_ids == (0, 1, 2)
+        and episodes.scenario_ids == SCENARIOS.ids
+        and episodes.names == ("agent", "gene", "scenario", "world")
+    )
     assert episodes.values.shape == (3, 4, 4) and not episodes.failures
     np.testing.assert_array_equal(episodes.values[:, :, episodes.names.index("scenario")], [[0, 1, 2, 3]] * 3)
 
@@ -146,7 +154,9 @@ def test_the_streams_are_the_same_whatever_the_executor(kind: str):
 # --- failures ---
 
 
-@pytest.mark.parametrize("environment", [ep.Troubled(raises=("s0002",)), ep.Troubled(returns=("s0002",)), ep.AsyncTroubled(raises=("s0002",))])
+@pytest.mark.parametrize(
+    "environment", [ep.Troubled(raises=("s0002",)), ep.Troubled(returns=("s0002",)), ep.AsyncTroubled(raises=("s0002",))]
+)
 def test_one_failing_scenario_fails_the_candidate_and_the_error_lists_it(environment):
     results = evaluate(make(environment), batch_of(2))
     for evaluation in results:
@@ -158,7 +168,11 @@ def test_one_failing_scenario_fails_the_candidate_and_the_error_lists_it(environ
 def test_the_error_lists_every_failing_scenario_and_counts_the_rest():
     results = evaluate(make(ep.Troubled(raises=("s0000", "s0001", "s0002", "s0003"))), batch_of(1))
     error = results[0].error or ""
-    assert "4 of 4 episodes" in error and all(f"'s000{i}'" in error for i in range(4)) and error.count("ValueError: the simulator diverged") == 3
+    assert (
+        "4 of 4 episodes" in error
+        and all(f"'s000{i}'" in error for i in range(4))
+        and error.count("ValueError: the simulator diverged") == 3
+    )
     assert "and in scenario(s) 's0003'" in error  # the first three are described, the rest named
 
 
@@ -346,7 +360,11 @@ def test_the_batched_path_reports_a_failed_episode_per_candidate_and_scenario():
     evaluator = EpisodeEvaluator(pm.GainsDecoder(), Failing(), pm.scenario_set(6), pm.aggregator())
     results = evaluate(evaluator, _gains_batch(Backend(), 3), spec=pm.problem())
     assert [e.status for e in results] == [Status.OK, Status.TIMEOUT, Status.OK]
-    assert "the simulator timed out" in (results[1].error or "") and results.episodes is not None and set(results.episodes.failures) == {(1, 2)}
+    assert (
+        "the simulator timed out" in (results[1].error or "")
+        and results.episodes is not None
+        and set(results.episodes.failures) == {(1, 2)}
+    )
 
 
 def test_an_exception_in_run_batch_fails_every_candidate_or_stops_the_run():
@@ -370,7 +388,9 @@ def test_run_batch_must_return_the_right_shape():
             return EpisodeBatchResult({k: v[:, :2] for k, v in out.measurements.items()})
 
     with pytest.raises(ValueError, match="shape"):
-        evaluate(EpisodeEvaluator(pm.GainsDecoder(), Short(), pm.scenario_set(6), pm.aggregator()), _gains_batch(Backend(), 3), spec=pm.problem())
+        evaluate(
+            EpisodeEvaluator(pm.GainsDecoder(), Short(), pm.scenario_set(6), pm.aggregator()), _gains_batch(Backend(), 3), spec=pm.problem()
+        )
 
 
 def test_the_batched_world_noise_is_the_same_for_every_candidate_and_the_stream_is_per_batch():
@@ -432,5 +452,7 @@ def test_a_worker_that_dies_fails_the_candidate_with_the_cause_in_its_error():
 
 
 def test_a_candidate_is_a_timeout_only_if_every_failing_episode_timed_out():
-    results = evaluate(make(ep.Troubled(slow=("s0001",), raises=("s0002",), seconds=5.0)), batch_of(1), concurrency=4, kind="thread", timeout=0.3)
+    results = evaluate(
+        make(ep.Troubled(slow=("s0001",), raises=("s0002",), seconds=5.0)), batch_of(1), concurrency=4, kind="thread", timeout=0.3
+    )
     assert results[0].status is Status.FAILED  # a mix of a timeout and an exception is a failure

@@ -61,7 +61,11 @@ def test_the_tails_of_cvar_are_the_worst_for_opposite_directions():
     reward = {"r": backend.asarray(np.array([[1.0, 2.0, 9.0, 10.0]]))}
     assert float(cvar_upper("c", 0.5).reduce(cost, backend.xp)[0]) == 9.5
     assert float(cvar_lower("r", 0.5).reduce(reward, backend.xp)[0]) == 1.5
-    assert float(cvar_lower("c", 0.5).reduce(cost, backend.xp)[0]) < float(mean("c").reduce(cost, backend.xp)[0]) < float(cvar_upper("c", 0.5).reduce(cost, backend.xp)[0])
+    assert (
+        float(cvar_lower("c", 0.5).reduce(cost, backend.xp)[0])
+        < float(mean("c").reduce(cost, backend.xp)[0])
+        < float(cvar_upper("c", 0.5).reduce(cost, backend.xp)[0])
+    )
 
 
 def test_function_sources_get_the_dict_of_arrays(backend: Backend):
@@ -146,4 +150,8 @@ def test_construction_is_validated():
 
 def test_the_description_names_every_part():
     text = Aggregator({"fuel": mean("f")}, {"cpa": maximum("c")}, {"d": minimum("d")}, {"tokens": total("t")}).describe()
-    assert text == "Aggregator(objectives={'fuel': mean('f')}, constraints={'cpa': maximum('c')}, descriptors={'d': minimum('d')}, cost={'tokens': total('t')})"
+    expected = (
+        "Aggregator(objectives={'fuel': mean('f')}, constraints={'cpa': maximum('c')}, "
+        "descriptors={'d': minimum('d')}, cost={'tokens': total('t')})"
+    )
+    assert text == expected

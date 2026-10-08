@@ -40,7 +40,9 @@ SELECTION, HELD_OUT = ScenarioSet.generate_split(pm.scenario_params, 8, 8, seed=
 pytestmark = pytest.mark.filterwarnings("ignore::auxein.driver.errors.EvaluationFailureWarning")
 
 
-def evaluator(scenarios: ScenarioSet = SELECTION, *, batched: bool = True, aggregator: Aggregator | None = None) -> auxein.EpisodeEvaluator[Any]:
+def evaluator(
+    scenarios: ScenarioSet = SELECTION, *, batched: bool = True, aggregator: Aggregator | None = None
+) -> auxein.EpisodeEvaluator[Any]:
     decoder = pm.GainsDecoder() if batched else pm.PerEpisodeDecoder()
     return auxein.EpisodeEvaluator(decoder, pm.PointMassEnvironment(), scenarios, aggregator or pm.aggregator())
 
@@ -75,7 +77,9 @@ def test_a_genetic_algorithm_evolves_a_controller_better_than_random_search_and_
     ga, rs = [], []
     for seed in range(4):
         found = auxein.run(budget=auxein.Budget(evaluations=300), **arguments(genetic(), seed=seed, evaluator=evaluator(batched=batched)))
-        random = auxein.run(budget=auxein.Budget(evaluations=300), **arguments(auxein.RandomSearch(), seed=seed, evaluator=evaluator(batched=batched)))
+        random = auxein.run(
+            budget=auxein.Budget(evaluations=300), **arguments(auxein.RandomSearch(), seed=seed, evaluator=evaluator(batched=batched))
+        )
         assert found.best is not None and found.best.constraints["overshoot"] == 0.0  # feasible on the selection set
         ga.append(found.best.objectives["error"])
         rs.append(random.best.objectives["error"])  # type: ignore[union-attr]
@@ -101,7 +105,9 @@ def test_the_run_is_the_same_with_every_executor(executor: str, concurrency: int
 def test_a_timeout_with_a_batched_evaluator_is_an_error_at_start_up():
     with pytest.raises(ValueError, match="timeout cannot be combined with a batched EpisodeEvaluator"):
         auxein.run(budget=auxein.Budget(evaluations=20), timeout=5.0, **arguments(genetic()))
-    auxein.run(budget=auxein.Budget(evaluations=20), timeout=5.0, **arguments(genetic(), evaluator=evaluator(batched=False)))  # per episode: fine
+    auxein.run(
+        budget=auxein.Budget(evaluations=20), timeout=5.0, **arguments(genetic(), evaluator=evaluator(batched=False))
+    )  # per episode: fine
 
 
 def test_steady_state_delivery_warns_about_a_batched_evaluator_once():
@@ -110,7 +116,9 @@ def test_steady_state_delivery_warns_about_a_batched_evaluator_once():
     assert len([w for w in caught if issubclass(w.category, SteadyStateVectorisationWarning)]) == 1
     with warnings.catch_warnings():
         warnings.simplefilter("error", SteadyStateVectorisationWarning)
-        auxein.run(budget=auxein.Budget(evaluations=30), delivery="steady_state", **arguments(genetic(), evaluator=evaluator(batched=False)))
+        auxein.run(
+            budget=auxein.Budget(evaluations=30), delivery="steady_state", **arguments(genetic(), evaluator=evaluator(batched=False))
+        )
 
 
 # --- failures through the driver ---
@@ -122,7 +130,9 @@ def troubled(environment: Any) -> auxein.EpisodeEvaluator[Any]:
 
 
 def trouble_arguments(environment: Any, run_dir: Path | None = None, **over: Any) -> dict[str, Any]:
-    return arguments(auxein.RandomSearch(), run_dir, evaluator=troubled(environment), constraints=[], descriptors=[], space=pm.SPACE, **over)
+    return arguments(
+        auxein.RandomSearch(), run_dir, evaluator=troubled(environment), constraints=[], descriptors=[], space=pm.SPACE, **over
+    )
 
 
 def test_a_failing_scenario_fails_the_candidate_and_is_counted_under_infeasible():
@@ -198,7 +208,9 @@ def test_re_aggregating_a_recorded_run_matches_a_fresh_evaluation_with_that_aggr
         descriptors={"success_rate": mean("success")},
     )
     auxein.run(budget=auxein.Budget(evaluations=80), **arguments(auxein.RandomSearch(), tmp_path / "a"))
-    auxein.run(budget=auxein.Budget(evaluations=80), **arguments(auxein.RandomSearch(), tmp_path / "b", evaluator=evaluator(aggregator=other)))
+    auxein.run(
+        budget=auxein.Budget(evaluations=80), **arguments(auxein.RandomSearch(), tmp_path / "b", evaluator=evaluator(aggregator=other))
+    )
     with open_run(tmp_path / "a") as first, open_run(tmp_path / "b") as second:
         rejudged = first.reaggregate(other)
         fresh = list(second.evaluations())
@@ -253,7 +265,11 @@ def test_held_out_evaluation_judges_the_best_candidate_on_scenarios_the_run_neve
     (candidate,) = report.candidates
     assert result.best is not None and candidate.candidate_id == result.best.candidate.id and candidate.status is Status.OK
     assert [s.scenario_id for s in candidate.scenarios] == list(HELD_OUT.ids) and not set(HELD_OUT.ids) & set(SELECTION.ids)
-    assert set(candidate.objectives) == {"error"} and set(candidate.constraints) == {"overshoot"} and set(candidate.descriptors) == {"success_rate"}
+    assert (
+        set(candidate.objectives) == {"error"}
+        and set(candidate.constraints) == {"overshoot"}
+        and set(candidate.descriptors) == {"success_rate"}
+    )
     assert all(s.status is Status.OK and "final_distance" in s.measurements for s in candidate.scenarios)
     assert 0.0 < candidate.objectives["error"] < 1.0  # a sensible number, near what the selection set gave
     assert abs(candidate.objectives["error"] - result.best.objectives["error"]) < 0.2
@@ -277,7 +293,10 @@ def test_held_out_candidates_can_be_the_front_a_result_or_chosen_ids(tmp_path: P
     front = evaluate_held_out(tmp_path / "r", evaluator(HELD_OUT), HELD_OUT, candidates="pareto", write=False)
     assert [c.candidate_id for c in front.candidates] == [e.candidate.id for e in result.pareto_front]
     from_result = evaluate_held_out(result, evaluator(HELD_OUT), HELD_OUT, write=False)
-    assert from_result.candidates[0].objectives == evaluate_held_out(tmp_path / "r", evaluator(HELD_OUT), HELD_OUT, write=False).candidates[0].objectives
+    assert (
+        from_result.candidates[0].objectives
+        == evaluate_held_out(tmp_path / "r", evaluator(HELD_OUT), HELD_OUT, write=False).candidates[0].objectives
+    )
     with pytest.raises(ValueError, match="did not record candidates \\[9999\\]"):
         evaluate_held_out(tmp_path / "r", evaluator(HELD_OUT), HELD_OUT, candidates=[9999])
 
@@ -302,7 +321,10 @@ def test_held_out_evaluation_is_the_same_with_the_per_episode_path_and_works_ins
         return await aevaluate_held_out(tmp_path / "r", evaluator(HELD_OUT), HELD_OUT, write=False)
 
     assert asyncio.run(inside()).candidates[0].objectives == batched.candidates[0].objectives
-    assert evaluate_held_out(tmp_path / "r", evaluator(HELD_OUT), HELD_OUT, write=False).candidates[0].objectives == batched.candidates[0].objectives
+    assert (
+        evaluate_held_out(tmp_path / "r", evaluator(HELD_OUT), HELD_OUT, write=False).candidates[0].objectives
+        == batched.candidates[0].objectives
+    )
 
 
 # --- resuming ---
@@ -314,7 +336,10 @@ def resumed_equals_uninterrupted(tmp_path: Path, delivery: str, batched: bool, s
     extended = auxein.resume(budget=auxein.Budget(evaluations=long), **arguments(genetic(), tmp_path / "a", **kwargs))
     reference = auxein.run(budget=auxein.Budget(evaluations=long), **arguments(genetic(), tmp_path / "b", **kwargs))
     assert comparable(tmp_path / "a") == comparable(tmp_path / "b")  # events, candidates, evaluations and the episodes table
-    assert event_log(tmp_path / "a")["episodes"] == event_log(tmp_path / "b")["episodes"] and len(event_log(tmp_path / "a")["episodes"]) == long * 8
+    assert (
+        event_log(tmp_path / "a")["episodes"] == event_log(tmp_path / "b")["episodes"]
+        and len(event_log(tmp_path / "a")["episodes"]) == long * 8
+    )
     same_result(extended, reference)
 
 
@@ -333,9 +358,13 @@ def test_a_changed_scenario_set_is_refused_on_resume(tmp_path: Path):
     with pytest.raises(ConfigurationMismatchError, match="evaluator: recorded") as raised:
         auxein.resume(budget=auxein.Budget(evaluations=120), **arguments(genetic(), tmp_path / "r", evaluator=evaluator(changed)))
     assert "scenarios=8:" in str(raised.value) and comparable(tmp_path / "r") == before
-    other_aggregator = Aggregator({"error": mean("final_distance")}, {"overshoot": maximum("max_overshoot")}, {"success_rate": mean("success")})
+    other_aggregator = Aggregator(
+        {"error": mean("final_distance")}, {"overshoot": maximum("max_overshoot")}, {"success_rate": mean("success")}
+    )
     with pytest.raises(ConfigurationMismatchError, match="evaluator: recorded"):
-        auxein.resume(budget=auxein.Budget(evaluations=120), **arguments(genetic(), tmp_path / "r", evaluator=evaluator(aggregator=other_aggregator)))
+        auxein.resume(
+            budget=auxein.Budget(evaluations=120), **arguments(genetic(), tmp_path / "r", evaluator=evaluator(aggregator=other_aggregator))
+        )
 
 
 # --- killing an episode run and resuming it ---
@@ -359,12 +388,18 @@ def recorded(run_dir: Path) -> int:
 
 
 @pytest.mark.parametrize(("config", "kill_after"), KILLS)
-def test_a_killed_episode_run_resumes_to_the_same_log_and_episodes_without_duplicates(tmp_path: Path, config: dict[str, Any], kill_after: int):
+def test_a_killed_episode_run_resumes_to_the_same_log_and_episodes_without_duplicates(
+    tmp_path: Path, config: dict[str, Any], kill_after: int
+):
     total = 200
     run_dir = tmp_path / "run"
     full = {"strategy": "ga", "evaluator": "episode", "run_dir": str(run_dir), "evaluations": total, "scenarios": 4, **config}
     victim = subprocess.Popen(
-        [sys.executable, "-m", "tests.support.resume_cli", json.dumps(full)], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        [sys.executable, "-m", "tests.support.resume_cli", json.dumps(full)],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     deadline = time.monotonic() + 120
     try:
