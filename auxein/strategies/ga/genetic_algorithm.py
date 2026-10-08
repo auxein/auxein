@@ -137,6 +137,7 @@ class GeneticAlgorithm:
         # the ranking of the population, kept up to date by tell so that ask doesn't sort it again
         self._order: Array | None = None  # member indices, best first
         self._rank: Array | None = None  # the rank of each member: the inverse permutation of the order
+        self._ever_failed = False  # whether any evaluation told so far failed: only then do selections need to look for it
 
     def _bound(self) -> tuple[ProblemSpec[Array], StrategyContext, Box]:
         if self._problem is None or self._ctx is None or self._box is None:
@@ -189,8 +190,8 @@ class GeneticAlgorithm:
             genomes, parents = self._sample(box, ctx, count), [()] * count
             steps = self.mutation.initial_steps(count, box.dim, backend)
             origins = [origin] * count
-        elif self.size < 2:
-            # nothing to breed from yet (the initial candidates are still being evaluated): sample more at random
+        elif self._breedable() < 2:
+            # nothing to breed from yet (the initial candidates are still being evaluated, or all but one failed): sample at random
             count = n if self.offspring_size is None else self.offspring_size
             genomes, parents = self._sample(box, ctx, count), [()] * count
             steps = self.mutation.initial_steps(count, box.dim, backend)
@@ -208,6 +209,15 @@ class GeneticAlgorithm:
         parent_ids = [tuple(CandidateId(p) for p in ps) for ps in parents]
         return cast("Batch[Array]", ArrayBatch(genomes, [CandidateId(i) for i in ids], step, origins, parent_ids))
 
+    def _breedable(self) -> int:
+        """How many members can be parents: those that did not fail. Failed members rank last, so they are never chosen
+        while there is an alternative; this only costs anything once an evaluation has failed."""
+        if not self._ever_failed:
+            return self.size
+        assert self._ctx is not None and self._violation is not None
+        xp = self._ctx.backend.xp
+        return int(xp.sum(xp.astype(xp.isfinite(self._violation), self._ctx.backend.int_dtype)))
+
     def _sample(self, box: Box, ctx: StrategyContext, count: int) -> Array:
         return box.sample_genomes(count, ctx.rng, ctx.backend)
 
@@ -216,7 +226,9 @@ class GeneticAlgorithm:
         xp = backend.xp
         assert self._genomes is not None and self._values is not None and self._violation is not None and self._ids_array is not None
         assert self._order is not None and self._rank is not None
-        view = PopulationView(self._values, self._violation, self._order, self._rank, backend)
+        view = PopulationView(
+            self._values, self._violation, self._order, self._rank, backend, self._breedable() if self._ever_failed else None
+        )
 
         first, second = self.selection.select(view, count, rng)
         parents_a, parents_b = xp.take(self._genomes, first, axis=0), xp.take(self._genomes, second, axis=0)
@@ -266,6 +278,8 @@ class GeneticAlgorithm:
         genomes, steps, positions = self._take_pending(told, backend)
         values = results.minimisation_matrix(problem.objectives, backend)[:, 0]
         violation = results.total_violation(backend)
+        if not self._ever_failed and bool(xp.any(xp.isinf(violation))):
+            self._ever_failed = True
         if positions is not None:  # the children came from several blocks: put the values in the order of the genomes
             index = backend.asarray(positions, dtype=backend.int_dtype)
             values, violation = xp.take(values, index, axis=0), xp.take(violation, index, axis=0)
@@ -340,7 +354,12 @@ class GeneticAlgorithm:
         backend = self._ctx.backend
         xp = backend.xp
         assert self._values is not None
-        if float(xp.max(self._values) - xp.min(self._values)) >= self.convergence_tolerance:
+        assert self._violation is not None
+        valid = xp.isfinite(self._violation)  # members that failed have no objective value: they say nothing about convergence
+        if not bool(xp.any(valid)):
+            return False
+        spread = xp.max(xp.where(valid, self._values, -xp.inf)) - xp.min(xp.where(valid, self._values, xp.inf))
+        if float(spread) >= self.convergence_tolerance:
             return False
         if self.mutation.adaptive and self.mutation.min_step is not None:
             assert self._steps is not None
@@ -394,6 +413,7 @@ class GeneticAlgorithm:
         self._steps = None if state["steps"] is None else backend.asarray(state["steps"])
         self._order = rank_order(self._values, self._violation, self._ids_array, backend)
         self._rank = backend.xp.argsort(self._order)
+        self._ever_failed = bool(backend.xp.any(backend.xp.isinf(self._violation)))
         self._blocks, self._pending, self._next_block = {}, {}, 0
         for saved in cast("list[dict[str, object]]", state["pending"]):
             ids = [int(i) for i in cast("list[int]", saved["ids"])]
