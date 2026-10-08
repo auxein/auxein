@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TypeVar, cast
 
 from auxein.backend import Backend
-from auxein.core import Candidate, CandidateId, Cost, Evaluation, Status
+from auxein.core import Candidate, CandidateId, Cost, Evaluation, RawRef, Status
 from auxein.recording.genomes import EncodedGenome, decode_genome
 
 _CHUNK = 2048
@@ -23,7 +23,8 @@ G = TypeVar("G")
 
 _SELECT = """
 SELECT c.id, c.step, c.origin, c.genome_kind, c.genome, c.genome_dtype, c.genome_shape,
-       e.status, e.objectives, e.constraints, e.descriptors, e.cost_units, e.wall_time, e.error
+       e.status, e.objectives, e.constraints, e.descriptors, e.cost_units, e.wall_time, e.error,
+       EXISTS (SELECT 1 FROM episodes p WHERE p.candidate_id = c.id)
 FROM candidates c JOIN evaluations e ON e.candidate_id = c.id
 """
 
@@ -44,11 +45,14 @@ class ReplayRecord:
     cost_units: Mapping[str, float]
     wall_time: float
     error: str | None
+    has_episodes: bool = False
+    """Whether the recording holds per-scenario episodes for the candidate (the evaluation then references them)."""
 
     def evaluation(self, candidate: Candidate[G]) -> Evaluation[G]:
         """The recorded evaluation, attached to `candidate` (the regenerated one, which replay has checked to be the same)."""
         cost = Cost(self.wall_time, self.cost_units)
-        return Evaluation(candidate, self.status, self.objectives, self.constraints, self.descriptors, cost, error=self.error)
+        raw = RawRef(f"episodes/{self.candidate_id}") if self.has_episodes else None
+        return Evaluation(candidate, self.status, self.objectives, self.constraints, self.descriptors, cost, raw, self.error)
 
     def decoded_candidate(self, backend: Backend) -> Candidate[object]:
         """The candidate with its genome decoded: array genomes on the run's backend, JSON genomes as plain values."""
@@ -83,6 +87,7 @@ def _records(db: sqlite3.Connection, rows: list[tuple[object, ...]]) -> list[Rep
                 cost_units=json.loads(cast("str", row[11])),
                 wall_time=cast("float", row[12]),
                 error=cast("str | None", row[13]),
+                has_episodes=bool(row[14]),
             )
         )
     return records

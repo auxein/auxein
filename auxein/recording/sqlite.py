@@ -19,14 +19,14 @@ from pathlib import Path
 from typing import TypeVar, cast
 
 from auxein.backend import Backend
-from auxein.core import Batch, EvaluationBatch, StateDict
+from auxein.core import Batch, EpisodeRecords, EvaluationBatch, StateDict, Status
 from auxein.recording import checkpoints, environment
 from auxein.recording.genomes import EncodedGenome, encode_batch
 from auxein.recording.lock import RunLock, RunLockedError
 
 G = TypeVar("G")
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE schema_version (version INTEGER NOT NULL);
@@ -64,6 +64,15 @@ CREATE TABLE events (
     step INTEGER,
     payload TEXT NOT NULL           -- JSON
 );
+CREATE TABLE episodes (
+    candidate_id INTEGER NOT NULL REFERENCES candidates (id),
+    scenario_index INTEGER NOT NULL,
+    scenario_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    measurements TEXT NOT NULL,     -- JSON object: measurement name -> value (empty for an episode that did not succeed)
+    error TEXT,
+    PRIMARY KEY (candidate_id, scenario_index)
+) WITHOUT ROWID;
 CREATE TABLE checkpoints (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_seq INTEGER NOT NULL,     -- the checkpoint is consistent with the events up to this one
@@ -102,6 +111,30 @@ class ExistingRun:
     """Newest first."""
     last_seq: int
     evaluations_recorded: int
+
+
+def _episode_rows(episodes: EpisodeRecords) -> list[tuple[int, int, str, str, str, str | None]]:
+    """The rows of the `episodes` table for the episodes of a batch: one per candidate and scenario, in that order."""
+    rows: list[tuple[int, int, str, str, str, str | None]] = []
+    names = episodes.names
+    for row, candidate_id in enumerate(episodes.candidate_ids):
+        values = episodes.values[row].tolist()
+        for scenario, scenario_id in enumerate(episodes.scenario_ids):
+            failure = episodes.failures.get((row, scenario))
+            if failure is None:
+                rows.append(
+                    (
+                        candidate_id,
+                        scenario,
+                        scenario_id,
+                        Status.OK.value,
+                        json.dumps(dict(zip(names, values[scenario], strict=True))),
+                        None,
+                    )
+                )
+            else:
+                rows.append((candidate_id, scenario, scenario_id, failure[0].value, "{}", failure[1]))
+    return rows
 
 
 def _now() -> str:
@@ -251,6 +284,7 @@ class SQLiteRecorder:
             doomed = "SELECT id FROM candidates WHERE event_seq > ?"
             db.execute(f"DELETE FROM lineage WHERE child_id IN ({doomed})", (event_seq,))
             db.execute(f"DELETE FROM evaluations WHERE candidate_id IN ({doomed})", (event_seq,))
+            db.execute(f"DELETE FROM episodes WHERE candidate_id IN ({doomed})", (event_seq,))
             db.execute("DELETE FROM candidates WHERE event_seq > ?", (event_seq,))
             db.execute("DELETE FROM events WHERE seq > ? AND kind != 'resume'", (event_seq,))
             db.execute("DELETE FROM checkpoints WHERE event_seq > ?", (event_seq,))
@@ -298,16 +332,20 @@ class SQLiteRecorder:
         doomed = "SELECT id FROM candidates WHERE event_seq = ?"
         db.execute(f"DELETE FROM lineage WHERE child_id IN ({doomed})", (ask_seq,))
         db.execute(f"DELETE FROM evaluations WHERE candidate_id IN ({doomed})", (ask_seq,))
+        db.execute(f"DELETE FROM episodes WHERE candidate_id IN ({doomed})", (ask_seq,))
         db.execute("DELETE FROM candidates WHERE event_seq = ?", (ask_seq,))
         following = self._first_event_after(ask_seq, "'ask', 'tell'")
         db.execute("DELETE FROM events WHERE seq = ?", (ask_seq,))
         if following is not None and following[1] == "tell":
             db.execute("DELETE FROM events WHERE seq = ?", (following[0],))
 
-    def on_batch(self, step: int, batch: Batch[G], results: EvaluationBatch[G], recorded: int = 0) -> None:
-        """Record a batch. `recorded` is how many of its first candidates replay took from the recording: all of them (the
-        batch is already there, so nothing is written), none (the usual case), or some (a batch that a larger budget has
-        made larger, which replaces the shorter one)."""
+    def on_batch(self, step: int, batch: Batch[G], results: EvaluationBatch[G], recorded: int = 0, rerecord: bool = False) -> None:
+        """Record a batch, its evaluations and the episodes behind them, in one transaction.
+
+        `recorded` is how many of its first candidates replay took from the recording: all of them (the batch is already
+        there, so nothing is written), none (the usual case), or some (a final batch that a larger budget has made longer).
+        In the last case the recorded candidates stay as they are and the batch grows by the new ones, unless `rerecord`:
+        the evaluator draws randomness per batch, so the whole batch was evaluated again and replaces the recorded one."""
         db = self._connection()
         candidates = list(batch.candidates)  # an array batch builds its candidates on access: do it once
         first_id, last_id = candidates[0].id, candidates[-1].id
@@ -318,9 +356,11 @@ class SQLiteRecorder:
             self._replayed_ask = self._last_seq = int(row[0])
             return
         self._flush_session()
+        grow = 0 < recorded and not rerecord
+        skip = recorded if grow else 0  # candidates that are in the recording already and stay there
         encoded: list[EncodedGenome] = encode_batch(batch)
         now = time.time()
-        lineage_rows = [(parent, c.id) for c in candidates for parent in c.parents]
+        lineage_rows = [(parent, c.id) for c in candidates[skip:] for parent in c.parents]
         evaluation_rows = [
             (
                 e.candidate.id,
@@ -333,20 +373,32 @@ class SQLiteRecorder:
                 e.error,
                 now,
             )
-            for e in results
+            for e in list(results)[skip:]
         ]
         payload = json.dumps({"count": len(candidates), "first_id": first_id, "last_id": last_id})
+        seq = 0
         with db:
             if recorded > 0:
                 row = db.execute("SELECT event_seq FROM candidates WHERE id = ?", (first_id,)).fetchone()
-                self._delete_group(db, int(row[0]))
-            seq = int(db.execute("INSERT INTO events (kind, step, payload) VALUES ('ask', ?, ?)", (step, payload)).lastrowid or 0)
+                if grow:
+                    seq = int(row[0])
+                    following = self._first_event_after(seq, "'ask', 'tell'")
+                    if following is not None and following[1] == "tell":
+                        db.execute("DELETE FROM events WHERE seq = ?", (following[0],))
+                    db.execute("UPDATE events SET payload = ? WHERE seq = ?", (payload, seq))
+                else:
+                    self._delete_group(db, int(row[0]))
+            if not grow:
+                seq = int(db.execute("INSERT INTO events (kind, step, payload) VALUES ('ask', ?, ?)", (step, payload)).lastrowid or 0)
             candidate_rows = [
-                (c.id, c.step, c.origin, e.kind, e.data, e.dtype, e.shape, now, seq) for c, e in zip(candidates, encoded, strict=True)
+                (c.id, c.step, c.origin, e.kind, e.data, e.dtype, e.shape, now, seq)
+                for c, e in zip(candidates[skip:], encoded[skip:], strict=True)
             ]
             db.executemany("INSERT INTO candidates VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", candidate_rows)
             db.executemany("INSERT INTO lineage VALUES (?, ?)", lineage_rows)
             db.executemany("INSERT INTO evaluations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", evaluation_rows)
+            if results.episodes is not None:
+                db.executemany("INSERT INTO episodes VALUES (?, ?, ?, ?, ?, ?)", _episode_rows(results.episodes))
         self._last_seq = seq
 
     def on_tell(self, step: int, count: int, recorded: bool = False) -> None:

@@ -19,7 +19,7 @@ class Recorder(Protocol):
         """The run begins. `metadata` describes its configuration; the recorder adds the environment (versions, git)."""
         ...
 
-    def on_batch(self, step: int, batch: Batch[G], results: EvaluationBatch[G], recorded: int = 0) -> None:
+    def on_batch(self, step: int, batch: Batch[G], results: EvaluationBatch[G], recorded: int = 0, rerecord: bool = False) -> None:
         """A batch was asked for and evaluated: its candidates, their lineage and their evaluations, in ask order.
 
         `recorded` is nonzero only when a resumed run replays: how many of the batch's first candidates came from the
@@ -45,7 +45,7 @@ class NoopRecorder:
     def on_start(self, metadata: Mapping[str, object]) -> None:
         pass
 
-    def on_batch(self, step: int, batch: Batch[G], results: EvaluationBatch[G], recorded: int = 0) -> None:
+    def on_batch(self, step: int, batch: Batch[G], results: EvaluationBatch[G], recorded: int = 0, rerecord: bool = False) -> None:
         pass
 
     def on_tell(self, step: int, count: int, recorded: bool = False) -> None:

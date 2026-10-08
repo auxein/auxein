@@ -39,6 +39,9 @@ class VectorisedEvaluator:
     the whole batch at once, so per-candidate streams would be unusable.
     """
 
+    batch_sensitive = True
+    """Its randomness is drawn per batch, so a batch that is evaluated again is evaluated whole (design doc §10.4)."""
+
     @overload
     def __init__(self, fn: Callable[[Array], object], *, uses_rng: Literal[False] = False) -> None: ...
     @overload

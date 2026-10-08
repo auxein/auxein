@@ -216,6 +216,8 @@ class Driver(Generic[G]):
             backend,
             lambda cid: run_seed.stream("evaluation", cid, backend=host_backend),  # always numpy: see EvalContext.rng_for
             lambda cid: run_seed.stream("evaluation-batch", cid, backend=backend),
+            lambda cid, scenario: run_seed.stream("episode", cid, scenario, backend=host_backend),
+            lambda cid: run_seed.stream("episode-batch", cid, backend=backend),
             concurrency=concurrency,
             timeout=timeout,
             failure_policy=failure_policy,
@@ -361,9 +363,11 @@ class Driver(Generic[G]):
             batch = take(batch, remaining)  # the budget is a hard limit: evaluate only what remains, in ask order
             self._shaped = True
 
-        results, recorded = await self._evaluate(batch)
+        results, recorded, rerecord = await self._evaluate(batch)
         self._validate_results(batch, results)
-        self._account(step, batch, results, recorded)  # records, and applies the failure policy and the guard before anyone is told
+        self._account(
+            step, batch, results, recorded, rerecord
+        )  # records, and applies the failure policy and the guard before anyone is told
 
         if truncated:
             self._consistent = True
@@ -375,30 +379,31 @@ class Driver(Generic[G]):
             await asyncio.sleep(0)  # replaying has nothing to wait for: let the event loop breathe
         return False
 
-    async def _evaluate(self, batch: Batch[G]) -> tuple[EvaluationBatch[G], int]:
-        """The evaluations of a batch, and how many of its first candidates came from the recording (a resumed run replaying).
+    async def _evaluate(self, batch: Batch[G]) -> tuple[EvaluationBatch[G], int, bool]:
+        """The evaluations of a batch, how many of its first candidates came from the recording (a resumed run replaying),
+        and whether the whole batch was evaluated again, replacing what was recorded.
 
         Replayed candidates are checked against the recorded ones and never evaluated again; if the recording holds only
         the first of them (a final batch that a larger budget has made longer), the others are evaluated now. A vectorised
         function draws its randomness for the whole batch, so it evaluates the whole batch again to give what a longer run
-        would have given."""
+        would have given (design doc §10.4); so does any evaluator that says it is `batch_sensitive`."""
         replay = self._replay
         if replay is None or replay.remaining == 0:
-            return await self._evaluator.evaluate(batch, self._eval_context), 0
+            return await self._evaluator.evaluate(batch, self._eval_context), 0, False
         candidates = batch.candidates
         records = replay.take(len(candidates))
         self._verify(candidates, encode_batch(take(batch, len(records))), records)
         done = [record.evaluation(candidate) for record, candidate in zip(records, candidates, strict=False)]
         if len(records) == len(candidates):
-            return EvaluationBatch(done), len(records)
-        if isinstance(self._evaluator, VectorisedEvaluator):
-            return await self._evaluator.evaluate(batch, self._eval_context), len(records)
+            return EvaluationBatch(done), len(records), False
+        if getattr(self._evaluator, "batch_sensitive", False):
+            return await self._evaluator.evaluate(batch, self._eval_context), len(records), True
         rest = _after(batch, len(records))
         live = await self._evaluator.evaluate(rest, self._eval_context)
         self._validate_results(rest, live)
-        return EvaluationBatch([*done, *live]), len(records)
+        return EvaluationBatch([*done, *live], live.episodes), len(records), False
 
-    def _account(self, step: int, batch: Batch[G], results: EvaluationBatch[G], recorded: int = 0) -> None:
+    def _account(self, step: int, batch: Batch[G], results: EvaluationBatch[G], recorded: int = 0, rerecord: bool = False) -> None:
         """Count, track and record evaluations that are about to be told (or, for a truncated batch, dropped)."""
         self._tracker.add(results.evaluations, self._used)
         self._used += len(results)
@@ -411,7 +416,7 @@ class Driver(Generic[G]):
                     self._costs[unit] += amount
         if failed:
             self._count_failures(failed)  # under fail_fast this raises, before the evaluation is recorded: it is evaluated again on resume
-        self._recorder.on_batch(step, batch, results, recorded)
+        self._recorder.on_batch(step, batch, results, recorded, rerecord)
         if failed or self._guard_open:
             self._apply_failure_rules(results, failed, quiet=recorded > 0)
 
