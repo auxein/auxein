@@ -109,6 +109,12 @@ class _Resumption:
     """Active seconds of earlier sessions, up to the point the run continues from."""
 
 
+_COMPLETE = (
+    "the run is already complete with this budget, so resume returns its result without evaluating anything; "
+    "give a larger budget to extend it"
+)
+
+
 def _normalised(value: object) -> object:
     """A value as it reads back from JSON (tuples are lists, keys are strings), so that metadata compares equal after a round trip."""
     return json.loads(json.dumps(value, default=str))
@@ -239,7 +245,8 @@ class Driver(Generic[G]):
         self._window: Window[G] | None = None
         self._restored_window: Window[G] | None = None
         self._replay: ReplayStream | None = None
-        self._carried = 0.0
+        self.already_complete = False
+        """Set by a resume that found the run complete with this budget and returned its result without running."""
 
     # --- the run ---
 
@@ -655,6 +662,7 @@ class Driver(Generic[G]):
     def _restore(self, resumption: _Resumption) -> None:
         """Put the strategy and the driver back as the checkpoint had them (a fresh bound strategy if there is none)."""
         self._replay = resumption.replay
+        self._last_checkpoint_time = self._elapsed()  # the next periodic checkpoint is one interval from here, not from time zero
         if resumption.loaded is None:
             return
         _, state = resumption.loaded
@@ -678,6 +686,7 @@ class Driver(Generic[G]):
             self._first_failure = _FailureNote(
                 cast("int", first["candidate_id"]), Status(cast("str", first["status"])), cast("str | None", first["error"])
             )
+        self._last_checkpoint_used = self._used
         self._ask_high = max(self._batch_size, cast("int", driver["ask_high"]))
         window = cast("StateDict | None", driver["window"])
         if window is not None:
@@ -694,6 +703,7 @@ class Driver(Generic[G]):
         if not isinstance(recorder, SQLiteRecorder):  # pragma: no cover - resume() always builds one
             raise ResumeError("only a recorded run can be resumed")
         existing = recorder.open_existing()  # takes the lock
+        replay: ReplayStream | None = None
         try:
             self._check_configuration(existing.metadata)
             budget = self._budget
@@ -717,7 +727,6 @@ class Driver(Generic[G]):
                         f"the checkpoint at event {seq} says {recorded_used} evaluations were used, but the recording holds "
                         f"{used_at_checkpoint} up to that event: the run directory was modified after the run"
                     )
-            replay: ReplayStream | None = None
             if self._deterministic:
                 replay = ReplayStream(database, seq)
                 mode: Literal["replay", "truncate"] = "replay"
@@ -741,6 +750,8 @@ class Driver(Generic[G]):
             recorder.prepare_session(mode, budget.describe(), event, seq)
             return _Resumption(mode, loaded, replay, wall)
         except BaseException:
+            if replay is not None:
+                replay.close()
             recorder.abandon()
             raise
 
@@ -780,12 +791,7 @@ class Driver(Generic[G]):
         recorder.abandon()
         metadata = existing.metadata
         summary = cast("dict[str, object]", metadata.get("summary", {}))
-        warnings.warn(
-            "the run is already complete with this budget, so resume returns its result without evaluating anything; "
-            "give a larger budget to extend it",
-            ResumeWarning,
-            stacklevel=4,
-        )
+        self.already_complete = True
         counts = cast("dict[str, int]", summary.get("status_counts", {}))
         return RunResult(
             stop_reason=cast("str", metadata["stop_reason"]),
@@ -1227,7 +1233,10 @@ def resume(
         checkpoint_every_evaluations=checkpoint_every_evaluations, keep_checkpoints=keep_checkpoints, run_dir=run_dir, name=name,
         clock=clock, resume=True,
     )  # fmt: skip
-    return _execute(driver)
+    result = _execute(driver)
+    if driver.already_complete:
+        warnings.warn(_COMPLETE, ResumeWarning, stacklevel=2)
+    return result
 
 
 async def aresume(
@@ -1265,4 +1274,7 @@ async def aresume(
         checkpoint_every_evaluations=checkpoint_every_evaluations, keep_checkpoints=keep_checkpoints, run_dir=run_dir, name=name,
         clock=clock, resume=True,
     )  # fmt: skip
-    return await driver.execute()
+    result = await driver.execute()
+    if driver.already_complete:
+        warnings.warn(_COMPLETE, ResumeWarning, stacklevel=2)
+    return result

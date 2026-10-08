@@ -1,8 +1,8 @@
 """State dicts: how strategies, the driver and the random streams save their state (design doc §10.4).
 
 A state dict is a dictionary with string keys whose values are JSON scalars, lists, dictionaries, or arrays of a
-supported backend. There is no pickle. Arrays are saved in a standard array format and everything else as JSON; writing
-state to disk arrives with the recorder.
+supported backend. There is no pickle. A checkpoint (design doc §10.4) saves arrays in a standard array format and everything
+else as JSON, and loads the arrays with pickling disabled; see `auxein.recording.checkpoints`.
 """
 
 from typing import Any, TypeAlias, cast

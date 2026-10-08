@@ -6,6 +6,7 @@ longer exists) and taken over; one held by a live process makes the other refuse
 """
 
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -21,6 +22,15 @@ class RunLockedError(RuntimeError):
 
 def _process_exists(pid: int) -> bool:
     if pid <= 0:
+        return False
+    if sys.platform == "win32":  # os.kill(pid, 0) would terminate the process there: ask for a handle to it instead
+        import ctypes
+
+        kernel = ctypes.windll.kernel32
+        handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if handle:
+            kernel.CloseHandle(handle)
+            return True
         return False
     try:
         os.kill(pid, 0)  # signal 0 only checks that the process exists

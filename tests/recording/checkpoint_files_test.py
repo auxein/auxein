@@ -11,8 +11,9 @@ import pytest
 from auxein.backend import Backend
 from auxein.backend.devices import torch_installed
 from auxein.core import StateDict, StateDictError
-from auxein.recording import SQLiteRecorder, checkpoints, open_run
+from auxein.recording import SQLiteRecorder, checkpoints
 from auxein.recording.checkpoints import CheckpointError
+from tests.support.reading import peek
 
 
 def state_with_arrays() -> StateDict:
@@ -133,7 +134,7 @@ def test_the_recorder_registers_checkpoints_and_keeps_only_the_newest(tmp_path: 
         recorder.on_tell(0, used)  # moves the event sequence on, so that each checkpoint has its own
         recorder.checkpoint({"used": used}, used, keep=2)
     recorder.on_end("completed", "budget:evaluations", {})
-    rows = open_run(tmp_path / "r").checkpoints()
+    rows = peek(tmp_path / "r").checkpoints()
     assert [c.evaluations_used for c in rows] == [30, 40]
     assert sorted(p.name for p in (tmp_path / "r" / "checkpoints").iterdir()) == sorted(Path(c.path).name for c in rows)
     assert all(c.event_seq > 0 and c.created_at > 0 for c in rows)
@@ -146,7 +147,7 @@ def test_two_checkpoints_at_the_same_moment_are_one(tmp_path: Path):
     recorder.checkpoint({"a": 1}, 1, keep=2)
     recorder.checkpoint({"a": 1}, 1, keep=2)
     recorder.on_end("completed", "x", {})
-    assert len(open_run(tmp_path / "r").checkpoints()) == 1
+    assert len(peek(tmp_path / "r").checkpoints()) == 1
 
 
 def test_the_checkpoints_table_records_what_the_prompt_asks(tmp_path: Path):

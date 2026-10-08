@@ -13,9 +13,9 @@ import pytest
 import auxein
 from auxein.core import Objective
 from auxein.driver import ConfigurationMismatchError, ReplayMismatchError, ResumeError, ResumeWarning
-from auxein.recording import open_run
 from auxein.strategies.ga import GeneticAlgorithm
 from tests.support.eventlog import event_log
+from tests.support.reading import peek
 
 pytestmark = pytest.mark.filterwarnings("ignore::auxein.driver.errors.EvaluationFailureWarning")
 
@@ -95,7 +95,7 @@ def test_extending_works_whatever_checkpoints_exist(tmp_path: Path, delivery: st
             db.commit()
             db.close()
         elif name == "none":
-            assert open_run(run_dir).checkpoints() == []
+            assert peek(run_dir).checkpoints() == []
         resumed = auxein.resume(budget=auxein.Budget(evaluations=700), keep_checkpoints=keep, **arguments("ga", delivery, run_dir))
         assert comparable(run_dir) == comparable(tmp_path / "ref"), name
         same_result(resumed, reference)
@@ -144,7 +144,7 @@ def test_an_interrupted_run_resumes_to_the_uninterrupted_run_and_repeats_no_eval
             checkpoint_every_evaluations=50,
             **arguments(strategy, delivery, tmp_path / "a", evaluator),
         )
-    recorded = open_run(tmp_path / "a").metadata["status"], len(list(open_run(tmp_path / "a").evaluations()))
+    recorded = peek(tmp_path / "a").metadata["status"], len(list(peek(tmp_path / "a").evaluations()))
     assert recorded[0] == "interrupted" and 0 < recorded[1] < 150
     calls.clear()
     resumed = auxein.resume(
@@ -168,7 +168,7 @@ def test_interrupting_a_steady_state_run_writes_a_checkpoint_and_a_generation_ru
                 checkpoint_every=10_000,  # no periodic checkpoint: any that exists is the interrupt's
                 **arguments("ga", delivery, run_dir, auxein.FunctionEvaluator(interrupting(100, calls))),
             )
-        assert bool(open_run(run_dir).checkpoints()) is expect
+        assert bool(peek(run_dir).checkpoints()) is expect
 
 
 # --- a crash between recording a batch and telling it ---
@@ -235,6 +235,7 @@ def recorded_state(run_dir: Path) -> tuple[object, str]:
         ("space", auxein.Box(-4.0, 5.0, dim=3)),
         ("objectives", [Objective("value", "maximise")]),
         ("constraints", ["c"]),
+        ("descriptors", ["d"]),
         ("backend", auxein.Backend("numpy", "cpu", "float32")),
     ],
 )
@@ -248,6 +249,7 @@ def test_each_setting_that_is_not_the_budget_is_refused_by_name_and_nothing_is_r
         "precision" if setting == "backend" else setting.replace("space", "problem.space").replace("objectives", "problem.objectives")
     )
     expected = expected.replace("constraints", "problem.constraints") if setting == "constraints" else expected
+    expected = "problem.descriptors" if setting == "descriptors" else expected
     with pytest.raises(ConfigurationMismatchError, match=f"{expected}: recorded") as raised:
         auxein.resume(budget=auxein.Budget(evaluations=120), **changed)
     assert "only the budget may change" in str(raised.value)
@@ -334,6 +336,7 @@ def test_a_run_directory_that_is_not_a_run_or_has_an_old_schema_cannot_be_resume
     assert not (run_dir / "writer.lock").exists()
 
 
+@pytest.mark.filterwarnings("ignore::auxein.RecordingDisabledWarning")
 def test_checkpoint_options_need_a_run_directory():
     for option in ({"checkpoint_every": 10.0}, {"checkpoint_every_evaluations": 10}, {"keep_checkpoints": 3}):
         with pytest.raises(ValueError, match="need run_dir"):
@@ -366,7 +369,7 @@ def test_sessions_and_resume_events_are_recorded_and_the_original_configuration_
     auxein.run(budget=auxein.Budget(evaluations=100), **arguments("ga", "generation", run_dir))
     original = json.loads((run_dir / "metadata.json").read_text())
     auxein.resume(budget=auxein.Budget(evaluations=250), **arguments("ga", "generation", run_dir))
-    run = open_run(run_dir)
+    run = peek(run_dir)
     metadata = run.metadata
     for key in ("seed", "budget", "batch_size", "strategy", "evaluator", "problem", "started_at", "versions", "git"):
         assert metadata[key] == original[key]
@@ -437,7 +440,7 @@ def test_resume_works_inside_a_running_event_loop_and_asynchronously(tmp_path: P
 
 def test_checkpoints_are_written_on_the_evaluation_count_at_the_end_and_only_the_last_two_are_kept(tmp_path: Path):
     auxein.run(budget=auxein.Budget(evaluations=320), checkpoint_every_evaluations=64, **arguments("ga", "generation", tmp_path / "r"))
-    checkpoints = open_run(tmp_path / "r").checkpoints()
+    checkpoints = peek(tmp_path / "r").checkpoints()
     assert len(checkpoints) == 2
     assert [c.evaluations_used for c in checkpoints][-1] == 320  # the end of the run, after the one taken when the budget came close
     for info in checkpoints:
@@ -452,9 +455,9 @@ def test_keep_checkpoints_sets_how_many_stay_and_zero_writes_none(tmp_path: Path
         keep_checkpoints=4,
         **arguments("ga", "generation", tmp_path / "a"),
     )
-    assert len(open_run(tmp_path / "a").checkpoints()) == 4
+    assert len(peek(tmp_path / "a").checkpoints()) == 4
     auxein.run(budget=auxein.Budget(evaluations=100), keep_checkpoints=0, **arguments("ga", "generation", tmp_path / "b"))
-    assert open_run(tmp_path / "b").checkpoints() == [] and not (tmp_path / "b" / "checkpoints").exists()
+    assert peek(tmp_path / "b").checkpoints() == [] and not (tmp_path / "b" / "checkpoints").exists()
 
 
 def test_time_based_checkpoints_follow_the_injected_clock(tmp_path: Path):
@@ -471,14 +474,14 @@ def test_time_based_checkpoints_follow_the_injected_clock(tmp_path: Path):
         keep_checkpoints=50,
         **arguments("ga", "generation", tmp_path / "r"),
     )
-    assert len(open_run(tmp_path / "r").checkpoints()) >= 2
+    assert len(peek(tmp_path / "r").checkpoints()) >= 2
 
 
 def test_a_run_that_ends_exactly_on_its_budget_checkpoints_at_the_end_and_can_be_extended_from_it(tmp_path: Path):
     auxein.run(
         budget=auxein.Budget(evaluations=160), checkpoint_every=10_000, **arguments("ga", "generation", tmp_path / "a")
     )  # 10 full batches
-    ends = open_run(tmp_path / "a").checkpoints()
+    ends = peek(tmp_path / "a").checkpoints()
     assert [c.evaluations_used for c in ends][-1] == 160
     resumed = auxein.resume(budget=auxein.Budget(evaluations=330), checkpoint_every=10_000, **arguments("ga", "generation", tmp_path / "a"))
     reference = auxein.run(budget=auxein.Budget(evaluations=330), checkpoint_every=10_000, **arguments("ga", "generation", tmp_path / "b"))
@@ -494,7 +497,7 @@ def test_a_damaged_newest_checkpoint_falls_back_to_the_one_before(tmp_path: Path
         keep_checkpoints=3,
         **arguments("ga", "steady_state", run_dir),
     )
-    newest = max(open_run(run_dir).checkpoints(), key=lambda c: c.id)
+    newest = max(peek(run_dir).checkpoints(), key=lambda c: c.id)
     (run_dir / newest.path / "state.json").write_text("not json")
     with pytest.warns(RuntimeWarning, match="unreadable checkpoint"):
         resumed = auxein.resume(budget=auxein.Budget(evaluations=300), **arguments("ga", "steady_state", run_dir))
@@ -531,3 +534,24 @@ def test_extension_gives_the_same_run_on_every_backend_and_precision(
     reference = auxein.run(budget=auxein.Budget(evaluations=300), **arguments(strategy, delivery, tmp_path / "b", evaluator, **kwargs))
     assert comparable(tmp_path / "a") == comparable(tmp_path / "b")
     same_result(extended, reference)
+
+
+def test_a_strategy_whose_ask_depends_on_the_size_asked_cannot_be_extended_in_generation_delivery_but_can_in_steady_state(tmp_path: Path):
+    """`offspring_size=None` breeds exactly n children, so the cut final batch of the short run is not a prefix of the longer run's."""
+
+    def args(delivery: str, run_dir: Path) -> dict[str, Any]:
+        settings = arguments("ga", delivery, run_dir)
+        settings["strategy"] = GeneticAlgorithm(population_size=16, offspring_size=None)
+        return settings
+
+    auxein.run(budget=auxein.Budget(evaluations=100), **args("generation", tmp_path / "g"))
+    with pytest.raises(ReplayMismatchError, match="differently"):
+        auxein.resume(budget=auxein.Budget(evaluations=300), **args("generation", tmp_path / "g"))
+    auxein.run(budget=auxein.Budget(evaluations=96), **args("generation", tmp_path / "m"))  # a multiple of batch_size: nothing was cut
+    auxein.resume(budget=auxein.Budget(evaluations=300), **args("generation", tmp_path / "m"))
+    auxein.run(budget=auxein.Budget(evaluations=300), **args("generation", tmp_path / "ref"))
+    assert comparable(tmp_path / "m") == comparable(tmp_path / "ref")
+    auxein.run(budget=auxein.Budget(evaluations=100), **args("steady_state", tmp_path / "s"))
+    auxein.resume(budget=auxein.Budget(evaluations=300), **args("steady_state", tmp_path / "s"))
+    auxein.run(budget=auxein.Budget(evaluations=300), **args("steady_state", tmp_path / "sref"))
+    assert comparable(tmp_path / "s") == comparable(tmp_path / "sref")

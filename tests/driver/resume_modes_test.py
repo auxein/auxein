@@ -16,12 +16,12 @@ import pytest
 
 import auxein
 from auxein.core import Batch, EvalContext, Evaluation, EvaluationBatch, Result, Status
-from auxein.driver import AllEvaluationsFailedError, EvaluationFailureWarning, ResumeError
+from auxein.driver import AllEvaluationsFailedError, EvaluationFailureWarning, ResumeError, ResumeWarning
 from auxein.evaluators import EvaluationError
-from auxein.recording import open_run
 from tests.driver.resume_test import arguments, comparable, pretend_killed, same_result, sphere
 from tests.support import workers
 from tests.support.eventlog import event_log
+from tests.support.reading import peek
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -153,7 +153,7 @@ def test_throughput_resume_reissues_the_candidates_that_were_in_flight_with_thei
             checkpoint_every=10_000,
             **arguments("random", "steady_state", run_dir, Interrupt(40), **extra),
         )
-    (checkpoint,) = open_run(run_dir).checkpoints()
+    (checkpoint,) = peek(run_dir).checkpoints()
     state_file = json.loads((run_dir / checkpoint.path / "state.json").read_text())
     window = state_file["state"]["driver"]["window"]
     assert len(window["ids"]) == 16  # batch_size candidates were asked and not told
@@ -197,9 +197,9 @@ def test_a_fail_fast_run_resumed_after_the_evaluator_is_fixed_evaluates_the_fail
         auxein.run(
             budget=auxein.Budget(evaluations=120), failure_policy="fail_fast", **arguments("ga", delivery, run_dir, Scripted(fail_at=50))
         )
-    recorded = {e.candidate_id for e in open_run(run_dir).evaluations()}
+    recorded = {e.candidate_id for e in peek(run_dir).evaluations()}
     assert 50 not in recorded and len(recorded) < 50 + 16  # the failed evaluation was never recorded
-    assert open_run(run_dir).metadata["status"] == "failed"
+    assert peek(run_dir).metadata["status"] == "failed"
 
     fixed = auxein.resume(
         budget=auxein.Budget(evaluations=120), failure_policy="fail_fast", **arguments("ga", delivery, run_dir, Scripted())
@@ -210,7 +210,7 @@ def test_a_fail_fast_run_resumed_after_the_evaluator_is_fixed_evaluates_the_fail
     )
     assert comparable(run_dir) == comparable(tmp_path / "ref")
     same_result(fixed, reference)
-    assert [s["status"] for s in open_run(run_dir).sessions] == ["failed", "completed"]
+    assert [s["status"] for s in peek(run_dir).sessions] == ["failed", "completed"]
 
 
 def test_the_failure_guard_and_its_count_survive_a_resume(tmp_path: Path):
@@ -223,7 +223,7 @@ def test_the_failure_guard_and_its_count_survive_a_resume(tmp_path: Path):
             checkpoint_every=10_000,
             **arguments("random", "steady_state", run_dir, Scripted(fail_below=12, interrupt_at=7)),
         )
-    (checkpoint,) = open_run(run_dir).checkpoints()
+    (checkpoint,) = peek(run_dir).checkpoints()
     driver = json.loads((run_dir / checkpoint.path / "state.json").read_text())["state"]["driver"]
     assert driver["guard_told"] == 7 and driver["guard_open"] is True and driver["failures"]["failed"] == 7
     assert driver["first_failure"]["candidate_id"] == 0 and "scripted failure" in driver["first_failure"]["error"]
@@ -233,7 +233,7 @@ def test_the_failure_guard_and_its_count_survive_a_resume(tmp_path: Path):
             initial_failure_guard=10,
             **arguments("random", "steady_state", run_dir, Scripted(fail_below=12)),
         )
-    assert open_run(run_dir).metadata["status"] == "failed"
+    assert peek(run_dir).metadata["status"] == "failed"
 
 
 @pytest.mark.parametrize("delivery", ["generation", "steady_state"])
@@ -274,12 +274,13 @@ def test_wall_time_is_the_cumulative_active_time_of_all_sessions(tmp_path: Path)
         budget=auxein.Budget(wall_time=80.0), clock=clock, **arguments("random", "generation", tmp_path / "r", evaluator, batch_size=10)
     )
     assert second.stop_reason == "budget:wall_time" and second.evaluations_used == 80 and second.wall_time == 80.0
-    metadata = open_run(tmp_path / "r").metadata
+    metadata = peek(tmp_path / "r").metadata
     assert metadata["summary"]["wall_time"] == 80.0  # type: ignore[index]
-    assert [s["wall_time"] for s in open_run(tmp_path / "r").sessions] == [50.0, 80.0]
-    exhausted = auxein.resume(
-        budget=auxein.Budget(wall_time=80.0), clock=clock, **arguments("random", "generation", tmp_path / "r", evaluator, batch_size=10)
-    )
+    assert [s["wall_time"] for s in peek(tmp_path / "r").sessions] == [50.0, 80.0]
+    with pytest.warns(ResumeWarning):
+        exhausted = auxein.resume(
+            budget=auxein.Budget(wall_time=80.0), clock=clock, **arguments("random", "generation", tmp_path / "r", evaluator, batch_size=10)
+        )
     assert exhausted.evaluations_used == 80  # nothing more to do, and nothing evaluated
 
 
@@ -375,7 +376,7 @@ def test_a_second_process_cannot_resume_a_run_that_is_being_written_and_takes_ov
             writer.kill()
             writer.wait()
     assert (run_dir / "writer.lock").exists()  # the dead writer left its lock behind
-    killed_at = len(list(open_run(run_dir).evaluations()))
+    killed_at = len(list(peek(run_dir).evaluations()))
     from tests.support.resumable import settings
 
     result = auxein.resume(
