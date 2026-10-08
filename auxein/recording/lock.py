@@ -23,15 +23,6 @@ class RunLockedError(RuntimeError):
 def _process_exists(pid: int) -> bool:
     if pid <= 0:
         return False
-    if sys.platform == "win32":  # os.kill(pid, 0) would terminate the process there: ask for a handle to it instead
-        import ctypes
-
-        kernel = ctypes.windll.kernel32
-        handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if handle:
-            kernel.CloseHandle(handle)
-            return True
-        return False
     try:
         os.kill(pid, 0)  # signal 0 only checks that the process exists
     except ProcessLookupError:
@@ -66,6 +57,8 @@ class RunLock:
     def acquire(self) -> None:
         if self._locked:
             return
+        if sys.platform == "win32":  # os.kill(pid, 0), which tells whether a process exists, would terminate it there
+            raise RunLockedError("the single-writer lock of a run is not supported on Windows; use macOS or Linux")
         for _ in range(5):
             try:
                 descriptor = os.open(self._path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)

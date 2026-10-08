@@ -625,7 +625,7 @@ runs/<name>/
 - **`fail_fast` runs.** The evaluation that stopped a `fail_fast` run was never recorded (the failure is raised before anything is written), so a resume evaluates it again: that is how to continue after fixing a bug in the evaluator. A run stopped by the all-failures guard replays the same recorded failures and stops again, because the guard is part of the configuration that cannot change.
 - **Budgets and the result.** Evaluations used, cost totals and failure counts are cumulative, and **wall time is cumulative active time** (§9.3). The `RunResult` of a resumed run covers the whole run: `best`, `pareto_front`, `trace`, `status_counts` and `evaluations_used` are those of all sessions.
 - **The record of a resume.** Each resume writes a `resume` event and adds a session to `metadata.json` (§10.2). A run killed twice has two sessions without an end.
-- **Platforms.** The lock checks whether the writer's process exists with `os.kill(pid, 0)` on POSIX and `OpenProcess` on Windows (where `os.kill` would terminate it). Only macOS and Linux are tested: the kill-and-resume tests use `SIGKILL`.
+- **Platforms.** The lock checks whether the writer's process exists with `os.kill(pid, 0)`, which terminates the process on Windows, so recording a run is refused there with a clear error. Only macOS and Linux are supported and tested (the kill-and-resume tests use `SIGKILL`).
 
 ### 10.5 Recorder interface
 
