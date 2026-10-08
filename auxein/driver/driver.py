@@ -81,10 +81,11 @@ class Driver(Generic[G]):
         run_seed = RunSeed(seed)
         self._issuer = IdIssuer()
         self._strategy_context = StrategyContext(run_seed.stream("strategy", backend=backend), backend, self._issuer.next)
+        host_backend = Backend("numpy", "cpu", backend.precision)
         self._eval_context: EvalContext[G] = EvalContext(
             problem,
             backend,
-            lambda cid: run_seed.stream("evaluation", cid, backend=backend),
+            lambda cid: run_seed.stream("evaluation", cid, backend=host_backend),  # always numpy: see EvalContext.rng_for
             lambda cid: run_seed.stream("evaluation-batch", cid, backend=backend),
         )
         self._tracker: ResultTracker[G] = ResultTracker(problem.objectives, constrained=bool(problem.constraints))

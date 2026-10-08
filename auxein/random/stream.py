@@ -1,7 +1,7 @@
 """Backend-native random streams (design doc §8)."""
 
 import base64
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import numpy as np
@@ -15,6 +15,12 @@ Scalar = float | Array  # a float, or an array broadcastable to the shape being 
 StreamState = dict[str, Any]
 # the state of a stream is JSON data (numpy: a dict of ints and strings, torch: a base64 string); `Any` is the honest
 # value type of a JSON document.
+
+
+def _restore(seed_sequence: np.random.SeedSequence, backend: Backend, state: StreamState) -> "RandomStream":
+    stream = RandomStream(seed_sequence, backend)
+    stream.load_state_dict(state)
+    return stream
 
 
 def _shape(shape: Shape) -> tuple[int, ...]:
@@ -49,6 +55,10 @@ class RandomStream:
         else:
             self._torch = devices.import_torch().Generator(device=self.backend.device)
             self._torch.manual_seed(int(seed_sequence.generate_state(1, dtype=np.uint64)[0]))
+
+    def __reduce__(self) -> tuple[Callable[..., "RandomStream"], tuple[np.random.SeedSequence, Backend, StreamState]]:
+        """Pickle through the state, so that a stream (e.g. a candidate's) can be sent to a worker process and continue there."""
+        return (_restore, (self.seed_sequence, self.backend, self.state_dict()))
 
     @property
     def _generator(self) -> np.random.Generator:

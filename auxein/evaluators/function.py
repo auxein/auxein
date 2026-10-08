@@ -18,7 +18,8 @@ class FunctionEvaluator(Generic[G]):
     exactly one objective) or a `Result`; plain dicts are rejected (see `auxein.core.Result`).
 
     With `uses_rng=True` the function receives `ctx.rng_for(candidate.id)`: the evaluation stream of that candidate,
-    which depends only on the run seed and the candidate's id, not on the order or the worker (design doc §8).
+    which depends only on the run seed and the candidate's id, not on the order or the worker (design doc §8). The stream
+    is always numpy-backed, whatever the run's backend.
 
     Candidates are evaluated sequentially, in batch order. A synchronous function is called directly, with no thread
     hand-off, to keep the overhead per evaluation low. Each candidate's wall time is recorded in its `Cost`, next to

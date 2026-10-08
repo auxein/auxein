@@ -70,6 +70,10 @@ class Backend:
     def __post_init__(self) -> None:
         _validate(self.name, self.device, self.precision)
 
+    def __reduce__(self) -> tuple[type["Backend"], tuple[str, str, str]]:
+        """Pickle by configuration: the cached array namespace is a module, which cannot be pickled."""
+        return (Backend, (self.name, self.device, self.precision))
+
     @classmethod
     def for_device(cls, name: BackendName = "numpy", device: str = "cpu", precision: Precision | None = None) -> "Backend":
         """Build a backend, choosing float32 for GPU devices and float64 for the CPU unless `precision` is given."""

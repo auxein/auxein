@@ -59,7 +59,10 @@ class EvalContext(Generic[G]):
     rng_for: Callable[[CandidateId], RandomStream]
     """Derives the evaluation stream of a candidate from its id, so that randomness follows the candidate, not the
     worker or the time of evaluation (§8). It is a factory rather than a list of streams, so that a batch of
-    thousands of candidates does not create thousands of generators up front."""
+    thousands of candidates does not create thousands of generators up front. **The stream is always numpy-backed,
+    whatever the run's backend**: evaluating one candidate is host-side Python, per-candidate streams are the only
+    kind a run creates by the tens of thousands (a torch CPU generator has only 32 bits of seed, which would make
+    collisions likely), and a numpy stream can be pickled to a worker process."""
     batch_rng_for: Callable[[CandidateId], RandomStream]
     """Derives the one stream a vectorised evaluator receives per batch, from the id of the batch's first candidate
     (§8). It is deterministic because the composition of a batch is."""

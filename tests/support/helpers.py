@@ -22,7 +22,7 @@ def eval_context(spec: ProblemSpec, backend: Backend, seed: int = 0) -> EvalCont
     return EvalContext(
         spec,
         backend,
-        lambda cid: run_seed.stream("evaluation", cid, backend=backend),
+        lambda cid: run_seed.stream("evaluation", cid, backend=Backend("numpy", "cpu", backend.precision)),  # as the driver does
         lambda cid: run_seed.stream("evaluation-batch", cid, backend=backend),
     )
 

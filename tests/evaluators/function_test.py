@@ -74,19 +74,21 @@ def test_uses_rng_passes_the_candidates_own_stream(backend: Backend):
 
     def fn(genome, rng):
         value = rng.uniform(3)
-        draws[len(draws)] = backend.to_numpy(value)
-        return float(backend.to_numpy(value).sum())
+        draws[len(draws)] = np.asarray(value)
+        return float(np.asarray(value).sum())
 
     results = evaluate(FunctionEvaluator(fn, uses_rng=True), array_batch(backend, 3, 2, first_id=40), backend=backend, seed=9)
     for i, cid in enumerate((40, 41, 42)):
-        expected = backend.to_numpy(RunSeed(9).stream("evaluation", cid, backend=backend).uniform(3))
+        expected = (
+            RunSeed(9).stream("evaluation", cid, backend=Backend("numpy", "cpu", backend.precision)).uniform(3)
+        )  # numpy whatever the backend
         np.testing.assert_array_equal(draws[i], expected)
         assert results[i].objectives["value"] == pytest.approx(float(expected.sum()))
 
 
 def test_evaluation_randomness_follows_the_candidate_not_the_batch(backend: Backend):
     def fn(genome, rng):
-        return float(backend.to_numpy(rng.uniform(1))[0])
+        return float(np.asarray(rng.uniform(1))[0])
 
     evaluator = FunctionEvaluator(fn, uses_rng=True)
     together = evaluate(evaluator, array_batch(backend, 4, 2, first_id=10), backend=backend)
@@ -151,3 +153,14 @@ def test_repr_names_the_function():
         return 0.0
 
     assert "my_fitness" in repr(FunctionEvaluator(my_fitness)) and "uses_rng=False" in repr(FunctionEvaluator(my_fitness))
+
+
+def test_evaluation_streams_are_numpy_on_every_backend(backend: Backend):
+    seen = []
+
+    def fn(genome, rng):
+        seen.append(rng.backend.name)
+        return 0.0
+
+    evaluate(FunctionEvaluator(fn, uses_rng=True), array_batch(backend, 2, 2), backend=backend)
+    assert seen == ["numpy", "numpy"]
