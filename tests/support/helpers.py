@@ -4,6 +4,7 @@ import numpy as np
 
 from auxein.backend import Backend
 from auxein.core import ArrayBatch, CandidateId, EvalContext, Objective, ProblemSpec
+from auxein.execution import Executor, InlineExecutor
 from auxein.random import RunSeed
 from auxein.spaces import Box
 
@@ -17,13 +18,17 @@ def problem(
     return ProblemSpec(Box(-5.0, 5.0, dim=dim), objectives, constraints, descriptors)  # type: ignore[arg-type]
 
 
-def eval_context(spec: ProblemSpec, backend: Backend, seed: int = 0) -> EvalContext:
+def eval_context(
+    spec: ProblemSpec, backend: Backend, seed: int = 0, *, concurrency: int = 1, executor: Executor | None = None
+) -> EvalContext:
     run_seed = RunSeed(seed)
     return EvalContext(
         spec,
         backend,
         lambda cid: run_seed.stream("evaluation", cid, backend=Backend("numpy", "cpu", backend.precision)),  # as the driver does
         lambda cid: run_seed.stream("evaluation-batch", cid, backend=backend),
+        executor=InlineExecutor() if executor is None else executor,
+        concurrency=concurrency,
     )
 
 
