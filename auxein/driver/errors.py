@@ -25,6 +25,18 @@ class EvaluatorError(DriverError):
     """An evaluator returned results that do not match the batch: not one evaluation per candidate, in ask order."""
 
 
+class AllEvaluationsFailedError(DriverError):
+    """The first evaluations of the run all failed, which almost certainly means the evaluation function is broken: a bug,
+    not a result. The run stops (the recording is finalised as `failed`) instead of spending its whole budget on failures.
+    Pass `initial_failure_guard=None` to `run` to turn this check off."""
+
+
+class EvaluationFailureWarning(UserWarning):
+    """The first evaluation of a run that did not succeed: raised once per run, with the candidate, the status and the full
+    traceback, so that a bug in the evaluation function is seen at once and not found in the recording afterwards.
+    Later failures are counted (`RunResult.status_counts`) and recorded, not warned about."""
+
+
 class SteadyStateVectorisationWarning(UserWarning):
     """A `VectorisedEvaluator` is used with steady-state delivery, which calls it with one candidate at a time.
 

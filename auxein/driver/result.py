@@ -1,7 +1,7 @@
 """Tracking results as they arrive, and the final `RunResult` (design doc §9.5)."""
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Generic
 
@@ -23,6 +23,9 @@ class RunResult(Generic[G]):
     `trace` (single objective only) lists `(evaluations_used, best_value)` each time `best` changed, with the value in
     natural units, for quick plots. It follows `best`, so with constraints it can get worse when the first feasible
     candidate replaces an infeasible one with a better value.
+
+    Failed and timed-out evaluations (design doc §6.6) never become `best` or enter the front; they are counted in
+    `status_counts`.
     """
 
     stop_reason: str
@@ -33,6 +36,8 @@ class RunResult(Generic[G]):
     best: Evaluation[G] | None
     pareto_front: tuple[Evaluation[G], ...]
     trace: tuple[tuple[int, float], ...]
+    status_counts: Mapping[str, int] = field(default_factory=dict[str, int])
+    """How many evaluations ended in each status (`ok`, `failed`, `timeout`), counting only those that were told."""
 
 
 def _dominates(a: tuple[float, ...], b: tuple[float, ...]) -> bool:

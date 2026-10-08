@@ -7,7 +7,7 @@ from typing import Literal, overload
 
 from auxein.backend import Array
 from auxein.core import Batch, EvalContext, EvaluationBatch, evaluations_from_batch_return
-from auxein.evaluators.errors import EvaluationError
+from auxein.evaluators.failures import failures_of
 from auxein.random import RandomStream
 
 
@@ -23,6 +23,10 @@ class VectorisedEvaluator:
 
     Shapes and finiteness are validated. The batch's wall time is measured once and **split equally** across its
     candidates, since a vectorised call has no per-candidate time.
+
+    **Failures.** An exception in `fn` fails **every candidate of the batch**, each with the same error, under the default
+    `infeasible` policy (a non-finite objective fails only its own row); under `fail_fast` it raises an `EvaluationError`
+    naming the batch. Timeouts are not supported: setting one is an error (see below).
 
     **Concurrency does not apply.** There is exactly one call per batch, made on the driver's thread (or awaited there if
     `fn` is an `async def`), so `concurrency` and `executor` have no effect on it: the parallelism is inside the array
@@ -57,6 +61,11 @@ class VectorisedEvaluator:
         candidates = batch.candidates
         if len(candidates) == 0:
             return EvaluationBatch([])
+        if ctx.timeout is not None:
+            raise ValueError(
+                "VectorisedEvaluator does not support a timeout: it makes one call per batch on the driver's thread, which "
+                "nothing can interrupt, and a vectorised call is normally cheap. Use FunctionEvaluator to time evaluations out"
+            )
 
         start = time.perf_counter()
         try:
@@ -64,6 +73,6 @@ class VectorisedEvaluator:
             if inspect.isawaitable(value):
                 value = await value
         except Exception as error:
-            raise EvaluationError([c.id for c in candidates], error) from error
+            return EvaluationBatch(failures_of(list(candidates), error, time.perf_counter() - start, ctx))
         wall_time = time.perf_counter() - start
         return EvaluationBatch(evaluations_from_batch_return(value, candidates, ctx.problem, wall_time))
