@@ -309,12 +309,12 @@ class SQLiteRecorder:
         batch is already there, so nothing is written), none (the usual case), or some (a batch that a larger budget has
         made larger, which replaces the shorter one)."""
         db = self._connection()
-        candidates = batch.candidates
-        ids = [c.id for c in candidates]
-        if recorded >= len(ids):
-            row = db.execute("SELECT event_seq FROM candidates WHERE id = ?", (ids[0],)).fetchone()
+        candidates = list(batch.candidates)  # an array batch builds its candidates on access: do it once
+        first_id, last_id = candidates[0].id, candidates[-1].id
+        if recorded >= len(candidates):
+            row = db.execute("SELECT event_seq FROM candidates WHERE id = ?", (first_id,)).fetchone()
             if row is None:
-                raise RuntimeError(f"replay matched candidate {ids[0]} but the recording does not hold it")
+                raise RuntimeError(f"replay matched candidate {first_id} but the recording does not hold it")
             self._replayed_ask = self._last_seq = int(row[0])
             return
         self._flush_session()
@@ -335,10 +335,10 @@ class SQLiteRecorder:
             )
             for e in results
         ]
-        payload = json.dumps({"count": len(candidates), "first_id": ids[0], "last_id": ids[-1]})
+        payload = json.dumps({"count": len(candidates), "first_id": first_id, "last_id": last_id})
         with db:
             if recorded > 0:
-                row = db.execute("SELECT event_seq FROM candidates WHERE id = ?", (ids[0],)).fetchone()
+                row = db.execute("SELECT event_seq FROM candidates WHERE id = ?", (first_id,)).fetchone()
                 self._delete_group(db, int(row[0]))
             seq = int(db.execute("INSERT INTO events (kind, step, payload) VALUES ('ask', ?, ?)", (step, payload)).lastrowid or 0)
             candidate_rows = [

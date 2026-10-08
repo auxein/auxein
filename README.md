@@ -41,7 +41,7 @@ result = auxein.run(
 print(result.best.objectives["value"], result.best.candidate.genome)
 ```
 
-`result.best` is the best evaluation found. The same seed gives the same run. Pass `run_dir` to record the run, and read it back with `auxein.open_run`.
+`result.best` is the best evaluation found. The same seed gives the same run. Pass `run_dir` to record the run, and read it back with `auxein.open_run`. A recorded run keeps checkpoints, so if it is interrupted, killed or finishes with too little budget, run the same script with `auxein.resume` (and a larger `Budget` to extend it) and it carries on as if it had never stopped.
 
 ## Links
 

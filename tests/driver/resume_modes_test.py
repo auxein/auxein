@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 import auxein
-from auxein.core import Batch, Evaluation, EvaluationBatch, EvalContext, Result, Status
+from auxein.core import Batch, EvalContext, Evaluation, EvaluationBatch, Result, Status
 from auxein.driver import AllEvaluationsFailedError, EvaluationFailureWarning, ResumeError
 from auxein.evaluators import EvaluationError
 from auxein.recording import open_run
@@ -75,7 +75,12 @@ def test_throughput_resume_deletes_what_was_recorded_after_the_checkpoint_and_re
     run_dir = tmp_path / f"{delivery}-run"
     extra = {"deterministic": False, "concurrency": 4, "executor": "thread"}
     evaluator = auxein.FunctionEvaluator(workers.jittery_sphere, uses_rng=True)
-    first = auxein.run(budget=auxein.Budget(evaluations=300), checkpoint_every_evaluations=40, keep_checkpoints=20, **arguments("random", delivery, run_dir, evaluator, **extra))
+    first = auxein.run(
+        budget=auxein.Budget(evaluations=300),
+        checkpoint_every_evaluations=40,
+        keep_checkpoints=20,
+        **arguments("random", delivery, run_dir, evaluator, **extra),
+    )
     assert first.evaluations_used == 300
     before_genomes = rows_after(run_dir, 0)
     seq = forget_checkpoints_after(run_dir, 3)  # killed after its third checkpoint
@@ -111,7 +116,9 @@ def test_throughput_resume_without_a_checkpoint_starts_again_after_deleting_ever
     evaluator = auxein.FunctionEvaluator(workers.jittery_sphere, uses_rng=True)
     auxein.run(budget=auxein.Budget(evaluations=120), keep_checkpoints=0, **arguments("ga", "steady_state", run_dir, evaluator, **extra))
     pretend_killed(run_dir)
-    resumed = auxein.resume(budget=auxein.Budget(evaluations=150), keep_checkpoints=0, **arguments("ga", "steady_state", run_dir, evaluator, **extra))
+    resumed = auxein.resume(
+        budget=auxein.Budget(evaluations=150), keep_checkpoints=0, **arguments("ga", "steady_state", run_dir, evaluator, **extra)
+    )
     assert resumed.evaluations_used == 150
     consistent(run_dir, 150)
     db = sqlite3.connect(run_dir / "events.sqlite")
@@ -136,10 +143,16 @@ def test_throughput_resume_reissues_the_candidates_that_were_in_flight_with_thei
             self.seen += 1
             if self.at is not None and self.seen == self.at:
                 raise KeyboardInterrupt
-            return EvaluationBatch([Evaluation(c, Status.OK, {"value": float(np.sum(np.asarray(c.genome) ** 2))}) for c in batch.candidates])
+            return EvaluationBatch(
+                [Evaluation(c, Status.OK, {"value": float(np.sum(np.asarray(c.genome) ** 2))}) for c in batch.candidates]
+            )
 
     with pytest.raises(KeyboardInterrupt):
-        auxein.run(budget=auxein.Budget(evaluations=100), checkpoint_every=10_000, **arguments("random", "steady_state", run_dir, Interrupt(40), **extra))
+        auxein.run(
+            budget=auxein.Budget(evaluations=100),
+            checkpoint_every=10_000,
+            **arguments("random", "steady_state", run_dir, Interrupt(40), **extra),
+        )
     (checkpoint,) = open_run(run_dir).checkpoints()
     state_file = json.loads((run_dir / checkpoint.path / "state.json").read_text())
     window = state_file["state"]["driver"]["window"]
@@ -181,14 +194,20 @@ class Scripted:
 def test_a_fail_fast_run_resumed_after_the_evaluator_is_fixed_evaluates_the_failed_candidate_again(tmp_path: Path, delivery: str):
     run_dir = tmp_path / "r"
     with pytest.raises(EvaluationError):
-        auxein.run(budget=auxein.Budget(evaluations=120), failure_policy="fail_fast", **arguments("ga", delivery, run_dir, Scripted(fail_at=50)))
+        auxein.run(
+            budget=auxein.Budget(evaluations=120), failure_policy="fail_fast", **arguments("ga", delivery, run_dir, Scripted(fail_at=50))
+        )
     recorded = {e.candidate_id for e in open_run(run_dir).evaluations()}
     assert 50 not in recorded and len(recorded) < 50 + 16  # the failed evaluation was never recorded
     assert open_run(run_dir).metadata["status"] == "failed"
 
-    fixed = auxein.resume(budget=auxein.Budget(evaluations=120), failure_policy="fail_fast", **arguments("ga", delivery, run_dir, Scripted()))
+    fixed = auxein.resume(
+        budget=auxein.Budget(evaluations=120), failure_policy="fail_fast", **arguments("ga", delivery, run_dir, Scripted())
+    )
     assert fixed.evaluations_used == 120 and dict(fixed.status_counts) == {"ok": 120, "failed": 0, "timeout": 0}
-    reference = auxein.run(budget=auxein.Budget(evaluations=120), failure_policy="fail_fast", **arguments("ga", delivery, tmp_path / "ref", Scripted()))
+    reference = auxein.run(
+        budget=auxein.Budget(evaluations=120), failure_policy="fail_fast", **arguments("ga", delivery, tmp_path / "ref", Scripted())
+    )
     assert comparable(run_dir) == comparable(tmp_path / "ref")
     same_result(fixed, reference)
     assert [s["status"] for s in open_run(run_dir).sessions] == ["failed", "completed"]
@@ -209,7 +228,11 @@ def test_the_failure_guard_and_its_count_survive_a_resume(tmp_path: Path):
     assert driver["guard_told"] == 7 and driver["guard_open"] is True and driver["failures"]["failed"] == 7
     assert driver["first_failure"]["candidate_id"] == 0 and "scripted failure" in driver["first_failure"]["error"]
     with pytest.raises(AllEvaluationsFailedError, match="first 10 evaluation"):
-        auxein.resume(budget=auxein.Budget(evaluations=100), initial_failure_guard=10, **arguments("random", "steady_state", run_dir, Scripted(fail_below=12)))
+        auxein.resume(
+            budget=auxein.Budget(evaluations=100),
+            initial_failure_guard=10,
+            **arguments("random", "steady_state", run_dir, Scripted(fail_below=12)),
+        )
     assert open_run(run_dir).metadata["status"] == "failed"
 
 
@@ -242,15 +265,21 @@ def test_wall_time_is_the_cumulative_active_time_of_all_sessions(tmp_path: Path)
         return sphere(genome)
 
     evaluator = auxein.FunctionEvaluator(tick)
-    first = auxein.run(budget=auxein.Budget(wall_time=50.0), clock=clock, **arguments("random", "generation", tmp_path / "r", evaluator, batch_size=10))
+    first = auxein.run(
+        budget=auxein.Budget(wall_time=50.0), clock=clock, **arguments("random", "generation", tmp_path / "r", evaluator, batch_size=10)
+    )
     assert first.stop_reason == "budget:wall_time" and first.evaluations_used == 50 and first.wall_time == 50.0
     now[0] += 10_000.0  # a day passes between the sessions: it does not count
-    second = auxein.resume(budget=auxein.Budget(wall_time=80.0), clock=clock, **arguments("random", "generation", tmp_path / "r", evaluator, batch_size=10))
+    second = auxein.resume(
+        budget=auxein.Budget(wall_time=80.0), clock=clock, **arguments("random", "generation", tmp_path / "r", evaluator, batch_size=10)
+    )
     assert second.stop_reason == "budget:wall_time" and second.evaluations_used == 80 and second.wall_time == 80.0
     metadata = open_run(tmp_path / "r").metadata
     assert metadata["summary"]["wall_time"] == 80.0  # type: ignore[index]
     assert [s["wall_time"] for s in open_run(tmp_path / "r").sessions] == [50.0, 80.0]
-    exhausted = auxein.resume(budget=auxein.Budget(wall_time=80.0), clock=clock, **arguments("random", "generation", tmp_path / "r", evaluator, batch_size=10))
+    exhausted = auxein.resume(
+        budget=auxein.Budget(wall_time=80.0), clock=clock, **arguments("random", "generation", tmp_path / "r", evaluator, batch_size=10)
+    )
     assert exhausted.evaluations_used == 80  # nothing more to do, and nothing evaluated
 
 
@@ -264,12 +293,20 @@ def test_a_wall_time_budget_that_is_already_used_up_evaluates_nothing_on_resume(
         return sphere(genome)
 
     evaluator = auxein.FunctionEvaluator(tick)
-    auxein.run(budget=auxein.Budget(wall_time=30.0, evaluations=1000), clock=lambda: now[0], **arguments("random", "generation", tmp_path / "r", evaluator, batch_size=10))
+    auxein.run(
+        budget=auxein.Budget(wall_time=30.0, evaluations=1000),
+        clock=lambda: now[0],
+        **arguments("random", "generation", tmp_path / "r", evaluator, batch_size=10),
+    )
     pretend_killed(tmp_path / "r")  # killed before it could say it was finished, with the budget used up
     calls.clear()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        again = auxein.resume(budget=auxein.Budget(wall_time=30.0, evaluations=1000), clock=lambda: now[0], **arguments("random", "generation", tmp_path / "r", evaluator, batch_size=10))
+        again = auxein.resume(
+            budget=auxein.Budget(wall_time=30.0, evaluations=1000),
+            clock=lambda: now[0],
+            **arguments("random", "generation", tmp_path / "r", evaluator, batch_size=10),
+        )
     assert calls == [] and again.stop_reason == "budget:wall_time" and again.evaluations_used == 30
 
 
@@ -326,7 +363,9 @@ def test_a_second_process_cannot_resume_a_run_that_is_being_written_and_takes_ov
         wait_for_progress(run_dir, writer)
         before = comparable(run_dir)["candidates"][:3]
         with pytest.raises(ResumeError, match=rf"being written by process {writer.pid}"):
-            auxein.resume(budget=auxein.Budget(evaluations=30_000), **arguments("random", "generation", run_dir, batch_size=10, executor="inline"))
+            auxein.resume(
+                budget=auxein.Budget(evaluations=30_000), **arguments("random", "generation", run_dir, batch_size=10, executor="inline")
+            )
         assert (run_dir / "writer.lock").read_text() == str(writer.pid)
         assert comparable(run_dir)["candidates"][:3] == before
         writer.send_signal(signal.SIGKILL)
@@ -340,7 +379,8 @@ def test_a_second_process_cannot_resume_a_run_that_is_being_written_and_takes_ov
     from tests.support.resumable import settings
 
     result = auxein.resume(
-        budget=auxein.Budget(evaluations=killed_at + 20), **{**settings({"strategy": "random", "run_dir": str(run_dir), "executor": "inline"})}
+        budget=auxein.Budget(evaluations=killed_at + 20),
+        **{**settings({"strategy": "random", "run_dir": str(run_dir), "executor": "inline"})},
     )
     assert result.evaluations_used == killed_at + 20
     assert not (run_dir / "writer.lock").exists()
@@ -350,7 +390,11 @@ def test_the_lock_is_released_when_a_run_ends_fails_or_is_interrupted(tmp_path: 
     auxein.run(budget=auxein.Budget(evaluations=20), **arguments("random", "generation", tmp_path / "a"))
     assert not (tmp_path / "a" / "writer.lock").exists()
     with pytest.raises(EvaluationError):
-        auxein.run(budget=auxein.Budget(evaluations=20), failure_policy="fail_fast", **arguments("random", "generation", tmp_path / "b", Scripted(fail_at=3)))
+        auxein.run(
+            budget=auxein.Budget(evaluations=20),
+            failure_policy="fail_fast",
+            **arguments("random", "generation", tmp_path / "b", Scripted(fail_at=3)),
+        )
     assert not (tmp_path / "b" / "writer.lock").exists()
     with pytest.raises(KeyboardInterrupt):
         auxein.run(budget=auxein.Budget(evaluations=20), **arguments("random", "steady_state", tmp_path / "c", Scripted(interrupt_at=3)))

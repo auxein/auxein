@@ -139,12 +139,17 @@ def test_an_interrupted_run_resumes_to_the_uninterrupted_run_and_repeats_no_eval
     calls: list[int] = []
     evaluator = auxein.FunctionEvaluator(interrupting(150, calls))
     with pytest.raises(KeyboardInterrupt):
-        auxein.run(budget=auxein.Budget(evaluations=400), checkpoint_every_evaluations=50, **arguments(strategy, delivery, tmp_path / "a", evaluator))
+        auxein.run(
+            budget=auxein.Budget(evaluations=400),
+            checkpoint_every_evaluations=50,
+            **arguments(strategy, delivery, tmp_path / "a", evaluator),
+        )
     recorded = open_run(tmp_path / "a").metadata["status"], len(list(open_run(tmp_path / "a").evaluations()))
     assert recorded[0] == "interrupted" and 0 < recorded[1] < 150
     calls.clear()
     resumed = auxein.resume(
-        budget=auxein.Budget(evaluations=400), **arguments(strategy, delivery, tmp_path / "a", auxein.FunctionEvaluator(interrupting(10**9, calls)))
+        budget=auxein.Budget(evaluations=400),
+        **arguments(strategy, delivery, tmp_path / "a", auxein.FunctionEvaluator(interrupting(10**9, calls))),
     )
     assert len(calls) == 400 - recorded[1]  # exactly the evaluations that were not recorded
     reference = auxein.run(budget=auxein.Budget(evaluations=400), **arguments(strategy, delivery, tmp_path / "b"))
@@ -184,7 +189,12 @@ def pretend_killed(run_dir: Path) -> None:
 
 @pytest.mark.parametrize("delivery", DELIVERIES)
 def test_a_run_killed_between_recording_a_candidate_and_telling_it_resumes_to_the_same_log(tmp_path: Path, delivery: str):
-    auxein.run(budget=auxein.Budget(evaluations=200), checkpoint_every_evaluations=48, keep_checkpoints=10, **arguments("ga", delivery, tmp_path / "a"))
+    auxein.run(
+        budget=auxein.Budget(evaluations=200),
+        checkpoint_every_evaluations=48,
+        keep_checkpoints=10,
+        **arguments("ga", delivery, tmp_path / "a"),
+    )
     reference = comparable(tmp_path / "a")
     db = sqlite3.connect(tmp_path / "a" / "events.sqlite")
     (last_tell,) = db.execute("SELECT MAX(seq) FROM events WHERE kind = 'tell'").fetchone()
@@ -234,7 +244,9 @@ def test_each_setting_that_is_not_the_budget_is_refused_by_name_and_nothing_is_r
     before = recorded_state(run_dir)
     changed = arguments("ga", "steady_state", run_dir)
     changed[setting] = value
-    expected = "precision" if setting == "backend" else setting.replace("space", "problem.space").replace("objectives", "problem.objectives")
+    expected = (
+        "precision" if setting == "backend" else setting.replace("space", "problem.space").replace("objectives", "problem.objectives")
+    )
     expected = expected.replace("constraints", "problem.constraints") if setting == "constraints" else expected
     with pytest.raises(ConfigurationMismatchError, match=f"{expected}: recorded") as raised:
         auxein.resume(budget=auxein.Budget(evaluations=120), **changed)
@@ -434,7 +446,12 @@ def test_checkpoints_are_written_on_the_evaluation_count_at_the_end_and_only_the
 
 
 def test_keep_checkpoints_sets_how_many_stay_and_zero_writes_none(tmp_path: Path):
-    auxein.run(budget=auxein.Budget(evaluations=320), checkpoint_every_evaluations=32, keep_checkpoints=4, **arguments("ga", "generation", tmp_path / "a"))
+    auxein.run(
+        budget=auxein.Budget(evaluations=320),
+        checkpoint_every_evaluations=32,
+        keep_checkpoints=4,
+        **arguments("ga", "generation", tmp_path / "a"),
+    )
     assert len(open_run(tmp_path / "a").checkpoints()) == 4
     auxein.run(budget=auxein.Budget(evaluations=100), keep_checkpoints=0, **arguments("ga", "generation", tmp_path / "b"))
     assert open_run(tmp_path / "b").checkpoints() == [] and not (tmp_path / "b" / "checkpoints").exists()
@@ -447,12 +464,20 @@ def test_time_based_checkpoints_follow_the_injected_clock(tmp_path: Path):
         now[0] += 1.0  # every look at the clock is a second
         return now[0]
 
-    auxein.run(budget=auxein.Budget(evaluations=160), checkpoint_every=3.0, clock=clock, keep_checkpoints=50, **arguments("ga", "generation", tmp_path / "r"))
+    auxein.run(
+        budget=auxein.Budget(evaluations=160),
+        checkpoint_every=3.0,
+        clock=clock,
+        keep_checkpoints=50,
+        **arguments("ga", "generation", tmp_path / "r"),
+    )
     assert len(open_run(tmp_path / "r").checkpoints()) >= 2
 
 
 def test_a_run_that_ends_exactly_on_its_budget_checkpoints_at_the_end_and_can_be_extended_from_it(tmp_path: Path):
-    auxein.run(budget=auxein.Budget(evaluations=160), checkpoint_every=10_000, **arguments("ga", "generation", tmp_path / "a"))  # 10 full batches
+    auxein.run(
+        budget=auxein.Budget(evaluations=160), checkpoint_every=10_000, **arguments("ga", "generation", tmp_path / "a")
+    )  # 10 full batches
     ends = open_run(tmp_path / "a").checkpoints()
     assert [c.evaluations_used for c in ends][-1] == 160
     resumed = auxein.resume(budget=auxein.Budget(evaluations=330), checkpoint_every=10_000, **arguments("ga", "generation", tmp_path / "a"))
@@ -463,7 +488,12 @@ def test_a_run_that_ends_exactly_on_its_budget_checkpoints_at_the_end_and_can_be
 
 def test_a_damaged_newest_checkpoint_falls_back_to_the_one_before(tmp_path: Path):
     run_dir = tmp_path / "r"
-    auxein.run(budget=auxein.Budget(evaluations=200), checkpoint_every_evaluations=64, keep_checkpoints=3, **arguments("ga", "steady_state", run_dir))
+    auxein.run(
+        budget=auxein.Budget(evaluations=200),
+        checkpoint_every_evaluations=64,
+        keep_checkpoints=3,
+        **arguments("ga", "steady_state", run_dir),
+    )
     newest = max(open_run(run_dir).checkpoints(), key=lambda c: c.id)
     (run_dir / newest.path / "state.json").write_text("not json")
     with pytest.warns(RuntimeWarning, match="unreadable checkpoint"):
@@ -478,3 +508,26 @@ def test_warnings_stay_quiet_for_a_plain_resume(tmp_path: Path):
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         auxein.resume(budget=auxein.Budget(evaluations=80), **arguments("random", "generation", tmp_path / "r"))
+
+
+# --- backends ---
+
+BACKENDS = [("numpy", "float32"), ("torch", "float64"), ("torch", "float32")]
+
+
+@pytest.mark.parametrize("delivery", DELIVERIES)
+@pytest.mark.parametrize("strategy", STRATEGIES)
+@pytest.mark.parametrize(("name", "precision"), BACKENDS)
+def test_extension_gives_the_same_run_on_every_backend_and_precision(
+    tmp_path: Path, name: str, precision: str, strategy: str, delivery: str
+):
+    if name == "torch":
+        pytest.importorskip("torch")
+    backend = auxein.Backend(name, "cpu", precision)  # type: ignore[arg-type]
+    kwargs: dict[str, Any] = {"backend": backend}
+    evaluator = auxein.FunctionEvaluator(sphere)
+    auxein.run(budget=auxein.Budget(evaluations=130), **arguments(strategy, delivery, tmp_path / "a", evaluator, **kwargs))
+    extended = auxein.resume(budget=auxein.Budget(evaluations=300), **arguments(strategy, delivery, tmp_path / "a", evaluator, **kwargs))
+    reference = auxein.run(budget=auxein.Budget(evaluations=300), **arguments(strategy, delivery, tmp_path / "b", evaluator, **kwargs))
+    assert comparable(tmp_path / "a") == comparable(tmp_path / "b")
+    same_result(extended, reference)

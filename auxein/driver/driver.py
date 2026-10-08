@@ -9,6 +9,12 @@ evaluations can be in progress at once, and delivers results in one of two ways:
 
 `batch_size` (the window) is an algorithmic setting; `concurrency` is a resource setting. In deterministic mode the sequence
 of asks and tells depends only on the seed and `batch_size`, never on `concurrency`, the executor or timing (design doc §8.1).
+
+A recorded run also writes checkpoints, and `resume` continues one (design doc §10.4). In deterministic mode it **replays**:
+the strategy is restored and asked again, and each candidate that the recording holds an evaluation for is checked against the
+recorded one and told that evaluation instead of being evaluated; in throughput mode it deletes what was recorded after the
+latest checkpoint and redoes it. The decisions of a replay are those of a live run, which is why a resumed run has the log of one
+that was never stopped.
 """
 
 import asyncio
@@ -719,10 +725,11 @@ class Driver(Generic[G]):
             else:
                 mode = "truncate"
                 count = recorder.truncate_after(seq)
-            wall = cast("float", cast("dict[str, object]", loaded[1]["driver"])["wall_time"]) if loaded is not None else 0.0
-            if loaded is None:
-                ended = [cast("float", s["wall_time"]) for s in sessions if s.get("wall_time") is not None]
-                wall = ended[-1] if ended else 0.0
+            # active time so far: what the checkpoint says, or what a session that ended says, whichever is more. A session
+            # that was killed after its last checkpoint loses the time since, which nothing recorded
+            ended = [cast("float", s["wall_time"]) for s in sessions if s.get("wall_time") is not None]
+            at_checkpoint = cast("float", cast("dict[str, object]", loaded[1]["driver"])["wall_time"]) if loaded is not None else 0.0
+            wall = max([at_checkpoint, *ended])
             self._started -= wall
             event = {
                 "mode": mode,
