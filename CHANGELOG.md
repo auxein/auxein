@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+Auxein is rewritten around a new core, designed as a framework for evolving agents that act in environments (see the
+[design document](docs/design/core.md)). **There is no backward compatibility with 0.x**: the old engine, its API and its
+notebooks are gone from the repository, and remain available at the git tag [`v0.2.0`](https://github.com/auxein/auxein/tree/v0.2.0).
+Nothing is published to PyPI yet, and the release workflow was removed.
+
+What exists now:
+
+- **Strategies ask, evaluators evaluate, the driver runs the loop.** `auxein.run` / `auxein.arun`, budgets in evaluations (and wall time and cost units), results with `best`, a Pareto front and a trace.
+- **Evaluators:** `FunctionEvaluator` and `VectorisedEvaluator`; fitness functions return a number or an explicit `Result` / `BatchResult`.
+- **Strategies:** `RandomSearch`, and a composable `GeneticAlgorithm` (tournament and SUS selection, intermediate and uniform recombination, Gaussian and self-adaptive mutation, plus selection of survivors, constraints supported). It beats the 0.2.0 engine on every problem of the benchmark suite at a lower cost per evaluation: see the [comparison report](benchmarks/reports/core-ga-0.3.0-dev/report.md).
+- **Backends:** numpy and PyTorch (CPU, CUDA and Metal), float64 and float32, reproducible random streams derived from one seed.
+- **Search spaces:** `Box`, a bounded real vector with optional log scale.
+- **Recording:** an opt-in run directory (`run_dir`) with metadata and an SQLite event log of candidates, lineage and evaluations, and a reader (`auxein.open_run`).
+- **A benchmark harness** (`benchmarks/`), with the frozen 0.2.0 baseline.
+- Version `0.3.0.dev0`, strict typing across the package, and a global-random-state ban enforced by a test.
+
 ## 0.2.0
 
 ### Behaviour changes
