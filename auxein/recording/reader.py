@@ -2,12 +2,17 @@
 
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import cast
 
+import numpy as np
+import numpy.typing as npt
+
+from auxein.aggregators import Aggregator
+from auxein.backend import Backend
 from auxein.core import CandidateId, Status
 from auxein.recording.genomes import decode_genome
 from auxein.recording.sqlite import SCHEMA_VERSION, CheckpointInfo
@@ -29,6 +34,34 @@ class RecordedEvaluation:
     cost_units: dict[str, float]
     wall_time: float
     error: str | None
+
+
+@dataclass(frozen=True)
+class RecordedEpisode:
+    """One recorded episode: a candidate in a scenario, with the raw measurements it produced."""
+
+    candidate_id: CandidateId
+    scenario_index: int
+    scenario_id: str
+    status: Status
+    measurements: dict[str, float]
+    error: str | None
+
+
+@dataclass(frozen=True)
+class Reaggregated:
+    """A candidate re-judged by another aggregator from its recorded measurements.
+
+    A candidate with an episode that did not succeed has the status of that failure and no values, as in the run itself.
+    """
+
+    candidate_id: CandidateId
+    status: Status
+    objectives: dict[str, float]
+    constraints: dict[str, float]
+    descriptors: dict[str, float]
+    cost: dict[str, float]
+    error: str | None = None
 
 
 _EVALUATIONS = """
@@ -55,6 +88,10 @@ WITH RECURSIVE walk (id, depth) AS (
 )
 SELECT id FROM walk GROUP BY id ORDER BY MIN(depth), id
 """
+
+
+def _row(columns: Mapping[str, npt.NDArray[np.float64]], row: int) -> dict[str, float]:
+    return {name: float(column[row]) for name, column in columns.items()}
 
 
 class RunReader:
@@ -113,6 +150,63 @@ class RunReader:
                 wall_time=row[12],
                 error=row[13],
             )
+
+    def episodes(self, candidate_id: int) -> list[RecordedEpisode]:
+        """The recorded episodes of a candidate, one per scenario in scenario order (empty if it ran none)."""
+        rows = self._db.execute(
+            "SELECT scenario_index, scenario_id, status, measurements, error FROM episodes WHERE candidate_id = ? ORDER BY scenario_index",
+            (candidate_id,),
+        ).fetchall()
+        return [RecordedEpisode(CandidateId(candidate_id), r[0], r[1], Status(r[2]), json.loads(r[3]), r[4]) for r in rows]
+
+    def reaggregate(self, aggregator: Aggregator, backend: Backend | None = None) -> list[Reaggregated]:
+        """Re-judge every recorded candidate with `aggregator`, from the stored measurements and without re-simulating.
+
+        This is what recording the raw per-scenario measurements is for (design doc §6.4): the same run, seen through another
+        aggregator (a worst case instead of a mean, a different constraint). The result is what an evaluation with that
+        aggregator would have had. The aggregator is not checked against the run's problem, since re-judging may use new
+        names. Candidates are in id order; those that ran no episodes are left out, and those with a failed episode are
+        reported with that status and no values.
+        """
+        backend = Backend() if backend is None else backend
+        grouped: dict[int, list[tuple[int, Status, dict[str, float], str | None]]] = {}
+        for candidate, index, status, measurements, error in self._db.execute(
+            "SELECT candidate_id, scenario_index, status, measurements, error FROM episodes ORDER BY candidate_id, scenario_index"
+        ):
+            grouped.setdefault(candidate, []).append((index, Status(status), json.loads(measurements), error))
+        results: dict[int, Reaggregated] = {}
+        ok: list[int] = []
+        for candidate, episodes in grouped.items():
+            failed = [e for e in episodes if e[1] is not Status.OK]
+            if failed:
+                status = Status.TIMEOUT if all(e[1] is Status.TIMEOUT for e in failed) else Status.FAILED
+                results[candidate] = Reaggregated(
+                    CandidateId(candidate), status, {}, {}, {}, {}, f"{len(failed)} of {len(episodes)} episodes did not succeed"
+                )
+            else:
+                ok.append(candidate)
+        if ok:
+            names = sorted(grouped[ok[0]][0][2])
+            arrays = {name: backend.asarray(np.array([[e[2][name] for e in grouped[c]] for c in ok], dtype=np.float64)) for name in names}
+            try:
+                aggregated = aggregator.aggregate(arrays, backend)
+            except KeyError as error:
+                raise ValueError(str(error.args[0])) from None
+            for row, candidate in enumerate(ok):
+                if row in aggregated.invalid:
+                    results[candidate] = Reaggregated(
+                        CandidateId(candidate), Status.FAILED, {}, {}, {}, {}, f"non-finite value: {aggregated.invalid[row]}"
+                    )
+                    continue
+                results[candidate] = Reaggregated(
+                    CandidateId(candidate),
+                    Status.OK,
+                    _row(aggregated.objectives, row),
+                    _row(aggregated.constraints, row),
+                    _row(aggregated.descriptors, row),
+                    _row(aggregated.cost, row),
+                )
+        return [results[c] for c in sorted(results)]
 
     def ancestry(self, candidate_id: int) -> list[int]:
         """The ancestors of a candidate (parents, grandparents, ...), nearest first, then by id. One recursive query."""

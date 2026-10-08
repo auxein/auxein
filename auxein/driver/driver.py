@@ -188,6 +188,11 @@ class Driver(Generic[G]):
             raise ValueError(f"checkpoint_every_evaluations must be at least 1 or None, got {checkpoint_every_evaluations}")
         if keep_checkpoints < 0:
             raise ValueError(f"keep_checkpoints must be at least 0 (0 writes no checkpoints), got {keep_checkpoints}")
+        if timeout is not None and getattr(evaluator, "batched", False):
+            raise ValueError(
+                "a timeout cannot be combined with a batched EpisodeEvaluator: it makes one call per batch on the driver's thread, "
+                "which nothing can interrupt. Use an environment without run_batch to time episodes out"
+            )
         if timeout is not None and isinstance(evaluator, VectorisedEvaluator):
             raise ValueError(
                 "a timeout cannot be combined with a VectorisedEvaluator: it makes one call per batch on the driver's thread, "
@@ -478,10 +483,10 @@ class Driver(Generic[G]):
     # --- steady-state delivery ---
 
     def _warn_if_vectorised(self) -> None:
-        if isinstance(self._evaluator, VectorisedEvaluator):
+        if isinstance(self._evaluator, VectorisedEvaluator) or getattr(self._evaluator, "batched", False):
             warnings.warn(
-                "steady-state delivery calls a VectorisedEvaluator with one candidate at a time, which defeats the purpose "
-                "of vectorising: use delivery='generation' (the default for strategies that support it)",
+                "steady-state delivery calls a vectorised or batched evaluator with one candidate at a time, which defeats the "
+                "purpose of batching: use delivery='generation' (the default for strategies that support it)",
                 SteadyStateVectorisationWarning,
                 stacklevel=2,
             )

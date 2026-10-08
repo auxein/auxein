@@ -14,6 +14,7 @@ from auxein.driver.errors import (
     SteadyStateVectorisationWarning,
     StrategyError,
 )
+from auxein.driver.held_out import HeldOutCandidate, HeldOutReport, HeldOutScenario, aevaluate_held_out, evaluate_held_out
 from auxein.driver.result import RunResult
 from auxein.recording import ResumeError
 
@@ -23,6 +24,9 @@ __all__ = [
     "ConfigurationMismatchError",
     "DriverError",
     "EvaluationFailureWarning",
+    "HeldOutCandidate",
+    "HeldOutReport",
+    "HeldOutScenario",
     "EvaluatorError",
     "RecordingDisabledWarning",
     "ReplayMismatchError",
@@ -31,8 +35,10 @@ __all__ = [
     "RunResult",
     "StrategyError",
     "SteadyStateVectorisationWarning",
+    "aevaluate_held_out",
     "aresume",
     "arun",
+    "evaluate_held_out",
     "resume",
     "run",
 ]

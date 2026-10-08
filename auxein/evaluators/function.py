@@ -8,8 +8,7 @@ from typing import Generic, Literal, cast, overload
 
 from auxein.core import Batch, Candidate, EvalContext, Evaluation, EvaluationBatch, evaluation_from_return
 from auxein.core._typing import G
-from auxein.evaluators.failures import failure_of
-from auxein.execution import EvaluationTimeout
+from auxein.evaluators.failures import await_with_timeout, failure_of
 from auxein.random import RandomStream
 
 
@@ -93,7 +92,7 @@ class FunctionEvaluator(Generic[G]):
                     args = (candidate.genome, ctx.rng_for(candidate.id)) if self._uses_rng else (candidate.genome,)
                     value: object
                     if self._is_async:
-                        value = await self._await_with_timeout(cast("Awaitable[object]", self._fn(*args)), ctx.timeout)
+                        value = await await_with_timeout(cast("Awaitable[object]", self._fn(*args)), ctx.timeout)
                     else:
                         value = await ctx.call(self._fn, *args)
                         if inspect.isawaitable(value):  # a synchronous callable that hands back an awaitable
@@ -119,17 +118,3 @@ class FunctionEvaluator(Generic[G]):
                 for candidate, outcome in zip(candidates, returned, strict=True)
             ]
         )
-
-    @staticmethod
-    async def _await_with_timeout(awaitable: Awaitable[object], timeout: float | None) -> object:
-        """Await a native coroutine, cancelling it if it outlives `timeout`: the one hard timeout that needs no process."""
-        if timeout is None:
-            return await awaitable
-        scope = asyncio.timeout(timeout)
-        try:
-            async with scope:
-                return await awaitable
-        except TimeoutError:
-            if scope.expired():
-                raise EvaluationTimeout(timeout) from None
-            raise  # the function raised a TimeoutError of its own: that is an ordinary failure

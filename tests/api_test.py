@@ -15,10 +15,13 @@ import auxein
 ROOT = Path(__file__).resolve().parents[1]
 
 EXPECTED = {
+    "Aggregator",
     "Backend",
     "BatchResult",
     "Box",
     "Budget",
+    "EpisodeEvaluator",
+    "EpisodeResult",
     "FunctionEvaluator",
     "GeneticAlgorithm",
     "Objective",
@@ -26,6 +29,8 @@ EXPECTED = {
     "RecordingDisabledWarning",
     "Result",
     "RunResult",
+    "Scenario",
+    "ScenarioSet",
     "Status",
     "VectorisedEvaluator",
     "__version__",
