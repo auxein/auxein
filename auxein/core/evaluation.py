@@ -119,3 +119,31 @@ class Evaluation(Generic[G]):
         object.__setattr__(self, "objectives", _frozen(self.objectives, "objective"))
         object.__setattr__(self, "constraints", _frozen(self.constraints, "constraint"))
         object.__setattr__(self, "descriptors", _frozen(self.descriptors, "descriptor"))
+
+
+def unchecked_evaluation(
+    candidate: Candidate[G],
+    status: Status,
+    objectives: Mapping[str, float],
+    constraints: Mapping[str, float],
+    descriptors: Mapping[str, float],
+    cost: Cost,
+) -> Evaluation[G]:
+    """An `Evaluation` without validation and without copying the mappings.
+
+    For `auxein.core.normalise`, which has already validated the values (finite objectives, constraint violations and
+    costs) and builds read-only mappings itself: it turns a batch into evaluations at a fraction of the cost of the
+    constructor, which matters because that is the per-evaluation cost of the driver. Everything else should use the
+    `Evaluation` constructor, which validates.
+    """
+    evaluation: Evaluation[G] = object.__new__(Evaluation)  # pyright: ignore[reportUnknownVariableType]
+    write = object.__setattr__
+    write(evaluation, "candidate", candidate)
+    write(evaluation, "status", status)
+    write(evaluation, "objectives", objectives)
+    write(evaluation, "constraints", constraints)
+    write(evaluation, "descriptors", descriptors)
+    write(evaluation, "cost", cost)
+    write(evaluation, "raw", None)
+    write(evaluation, "error", None)
+    return evaluation

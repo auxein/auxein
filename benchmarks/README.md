@@ -34,7 +34,7 @@ The same config, commit and seeds reproduce identical `runs.jsonl` contents (apa
 
 ### Configs
 
-TOML files in `configs/`: the problems, dimensions, number of runs, the budget per dimension (`budget_per_dim`), the precision targets, the overhead benchmark, and a list of named algorithm entries (`name`, `adapter`, `params`). Run *k* of every algorithm uses problem instance *k* and seed `base_seed + k`, so comparisons are paired.
+TOML files in `configs/`: the problems, dimensions, number of runs, the budget per dimension (`budget_per_dim`), the precision targets, the overhead benchmark, and a list of named algorithm entries (`name`, `adapter`, `params`). Run *k* of every algorithm uses problem instance `instance_offset + k` (the offset is 0 unless the config says otherwise, e.g. to tune on other instances than the ones a comparison is judged on) and seed `base_seed + k`, so comparisons are paired. An optional `[report] references = [...]` names the algorithms the statistical comparison is made from (default: `auxein-default`).
 
 ## Layout
 
@@ -42,7 +42,7 @@ TOML files in `configs/`: the problems, dimensions, number of runs, the budget p
 |---|---|
 | `problems.py` | the `Problem` interface and the five problems (sphere, ellipsoid, Rosenbrock, Rastrigin, noisy sphere) |
 | `objective.py` | `CountingObjective`, `BudgetExhausted` and the trace checkpoints |
-| `adapters/` | one module per algorithm: Auxein's 0.x `Static` playground, random search, CMA-ES, and the new core's driver with `RandomSearch` (`auxein_core_random`, a cross-check of the driver) |
+| `adapters/` | one module per algorithm: Auxein's 0.x `Static` playground, random search, CMA-ES, the new core's driver with `RandomSearch` (`auxein_core_random`, a cross-check of the driver) and with `GeneticAlgorithm` (`auxein_core_ga`, configured by operator tables) |
 | `runner.py`, `config.py`, `metadata.py` | parallel runs, the overhead benchmark, configs and result metadata |
 | `report.py`, `stats.py` | the report: plots, tables and statistics |
 | `tests/` | tests of the harness, run by the main `uv run pytest` |

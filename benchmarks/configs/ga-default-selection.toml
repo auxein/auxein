@@ -1,0 +1,47 @@
+# Choosing the default configuration of the new GeneticAlgorithm (design doc §3.3).
+# It uses other instances and seeds than full.toml (instance_offset and base_seed), so that choosing a default and
+# judging it never use the same problem instances.
+name = "ga-default-selection"
+base_seed = 1000
+instance_offset = 1000    # run k uses instance 1000 + k and seed 1000 + k
+runs = 15
+budget_per_dim = 2000
+dims = [10, 30]
+problems = ["sphere", "ellipsoid", "rosenbrock", "rastrigin", "noisy_sphere"]
+targets = [1e-1, 1e-3, 1e-6]
+
+# A: tournament selection, one self-adaptive step size per individual
+[[algorithms]]
+name = "ga-a"
+adapter = "auxein_core_ga"
+[algorithms.params]
+population_size = 50
+offspring_size = 50
+selection = { type = "tournament", size = 2 }
+recombination = { type = "intermediate" }
+mutation = { type = "self_adaptive", per_gene = false }
+repair = "clip"
+
+# B: as A, with one self-adaptive step size per gene
+[[algorithms]]
+name = "ga-b"
+adapter = "auxein_core_ga"
+[algorithms.params]
+population_size = 50
+offspring_size = 50
+selection = { type = "tournament", size = 2 }
+recombination = { type = "intermediate" }
+mutation = { type = "self_adaptive", per_gene = true }
+repair = "clip"
+
+# C: stochastic universal sampling with sigma scaling, the closest in spirit to 0.2.0's default
+[[algorithms]]
+name = "ga-c"
+adapter = "auxein_core_ga"
+[algorithms.params]
+population_size = 50
+offspring_size = 50
+selection = { type = "sus", scaling = 2.0 }
+recombination = { type = "intermediate" }
+mutation = { type = "self_adaptive", per_gene = false }
+repair = "clip"

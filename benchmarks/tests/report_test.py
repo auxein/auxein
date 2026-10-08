@@ -92,3 +92,37 @@ def test_sanity_checks_pass_and_fail_on_success_counts(tiny_results, hits, expec
     lines = sanity_checks(results)
     sphere_lines = [line for line in lines if "sphere" in line and "ellipsoid" not in line]
     assert [line.split(":")[0].strip("- ") for line in sphere_lines].count(expected) >= 1
+
+
+def test_the_report_has_a_mean_rank_table(tiny_results):
+    from benchmarks.report import mean_ranks
+
+    text = build_report(tiny_results).read_text()
+    assert "### Mean rank" in text and "| Algorithm | sphere d=2 |" in text and "Mean rank |" in text
+    cells, ranks = mean_ranks(Results(tiny_results))
+    assert len(cells) == 6 and set(ranks) == {"auxein-default", "random-search", "cma-es"}
+    for position in range(len(cells)):
+        assert sorted(r[position] for r in ranks.values()) == [1, 2, 3]  # each cell ranks every algorithm exactly once
+
+
+def test_a_config_can_name_several_reference_algorithms(tiny_results, tmp_path):
+    import json
+    import shutil
+
+    copy = tmp_path / "results"
+    shutil.copytree(tiny_results, copy)
+    metadata = json.loads((copy / "metadata.json").read_text())
+    metadata["config"]["report"] = {"references": ["auxein-default", "cma-es", "not-in-this-run"]}
+    (copy / "metadata.json").write_text(json.dumps(metadata))
+
+    results = Results(copy)
+    assert results.references == ["auxein-default", "cma-es"]  # the unknown name is ignored
+    text = build_report(copy).read_text()
+    assert "### Reference: `auxein-default`" in text and "### Reference: `cma-es`" in text
+    assert "| auxein-default vs |" in text and "| cma-es vs |" in text
+    assert text.splitlines().count("### sphere, d=2") == 1  # one summary table, however many references
+    assert "#### sphere, d=2" in text and "`auxein-default`, `cma-es`" in text
+
+
+def test_the_default_reference_is_auxein_default(tiny_results):
+    assert Results(tiny_results).references == ["auxein-default"]

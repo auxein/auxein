@@ -17,7 +17,7 @@ from benchmarks import stats  # noqa: E402
 from benchmarks.runner import read_jsonl  # noqa: E402
 
 ERROR_FLOOR = 1e-10  # errors are clipped here in the plots, so that exact zeros fit on a log axis
-REFERENCE = "auxein-default"
+REFERENCE = "auxein-default"  # the default reference of the statistical comparison; a config can name others
 
 # categorical slots 1, 2, 3, 7, 5 of the reference palette (validated light-mode set), assigned by algorithm
 COLORS = {
@@ -54,6 +54,8 @@ class Results:
         seen = list(dict.fromkeys(r["algorithm"] for r in self.runs))
         self.algorithms = [a for a in configured if a in seen] + [a for a in seen if a not in configured]
         self.targets: list[float] = [float(t) for t in self.metadata["config"]["targets"]]
+        configured_references = self.metadata["config"].get("report", {}).get("references", [REFERENCE])
+        self.references: list[str] = [r for r in configured_references if r in self.algorithms] or [REFERENCE]
         self.problems = list(dict.fromkeys(r["problem"] for r in self.runs))
         self.dims = sorted({r["dim"] for r in self.runs})
         groups: dict[tuple[str, int, str], list[dict[str, Any]]] = defaultdict(list)
@@ -141,14 +143,42 @@ def summary_table(results: Results, cell: dict[str, list[dict[str, Any]]]) -> st
     return "\n".join(rows)
 
 
-def comparison_rows(cell: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
-    """auxein-default against every other algorithm, with Holm correction over the comparisons of this cell."""
-    if REFERENCE not in cell:
+def mean_ranks(results: Results) -> tuple[list[tuple[str, int]], dict[str, list[int]]]:
+    """The rank (1 = best) of every algorithm by median final error in each problem x dimension, in the order of the cells."""
+    cells = [(p, d) for p in results.problems for d in results.dims if results.cell(p, d)]
+    ranks: dict[str, list[int]] = {a: [] for a in results.algorithms}
+    for problem, dim in cells:
+        cell = results.cell(problem, dim)
+        medians = {a: statistics.median(final_errors(records)) for a, records in cell.items()}
+        ordered = sorted(medians, key=lambda a: (medians[a], results.algorithms.index(a)))
+        for algorithm in ranks:
+            ranks[algorithm].append(ordered.index(algorithm) + 1 if algorithm in ordered else 0)
+    return cells, ranks
+
+
+def mean_rank_table(results: Results) -> str:
+    """A table of the rank of each algorithm in every cell, and its mean rank (lower is better)."""
+    cells, ranks = mean_ranks(results)
+    header = ["Algorithm", *[f"{p} d={d}" for p, d in cells], "Mean rank"]
+    rows = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
+    for algorithm, values in sorted(ranks.items(), key=lambda kv: statistics.mean(kv[1]) if kv[1] else math.inf):
+        present = [v for v in values if v]
+        rows.append(
+            "| "
+            + " | ".join([algorithm, *[str(v) if v else "" for v in values], f"{statistics.mean(present):.2f}" if present else ""])
+            + " |"
+        )
+    return "\n".join(rows)
+
+
+def comparison_rows(cell: dict[str, list[dict[str, Any]]], reference_name: str = REFERENCE) -> list[dict[str, Any]]:
+    """The reference algorithm against every other, with Holm correction over the comparisons of this cell."""
+    if reference_name not in cell:
         return []
-    reference = final_errors(cell[REFERENCE])
+    reference = final_errors(cell[reference_name])
     rows = []
     for algorithm, records in cell.items():
-        if algorithm == REFERENCE:
+        if algorithm == reference_name:
             continue
         other = final_errors(records)
         rows.append(
@@ -162,12 +192,12 @@ def comparison_rows(cell: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any
         )
     for row, adjusted in zip(rows, stats.holm([r["p"] for r in rows])):
         row["p_holm"] = adjusted
-        row["reading"] = stats.reading(REFERENCE, row["algorithm"], row["a12"], adjusted)
+        row["reading"] = stats.reading(reference_name, row["algorithm"], row["a12"], adjusted)
     return rows
 
 
-def comparison_table(rows: list[dict[str, Any]]) -> str:
-    header = f"| {REFERENCE} vs | median error ({REFERENCE}) | median error (other) | A12 | p | p (Holm) | Reading |"
+def comparison_table(rows: list[dict[str, Any]], reference_name: str = REFERENCE) -> str:
+    header = f"| {reference_name} vs | median error ({reference_name}) | median error (other) | A12 | p | p (Holm) | Reading |"
     lines = [header, "|---|---|---|---|---|---|---|"]
     for r in rows:
         lines.append(
@@ -333,11 +363,11 @@ def methodology(results: Results) -> str:
 - **Machine**: {cpu["model"]} ({cpu["logical_cpus"]} logical CPUs), {cpu["system"]}.
 - **Budget**: {config["budget_per_dim"]} × d fitness evaluations for every algorithm, counted outside the algorithms by `CountingObjective`. The initial population counts, and a partial generation is fine. Progress is always against evaluations, never generations.
 - **Domain and conventions**: search domain [-5, 5]^d for every problem, boundaries not enforced. Optimum value 0, results are errors f(x) − f*. Algorithms see the noisy value on the noisy problem, the trace records the noise-free error of the evaluated point.
-- **Instances**: each instance has its own random shift x* ~ U[-4, 4]^d (and, for the ellipsoid, a uniform random rotation from a QR decomposition with sign correction), drawn from a generator keyed by the instance id and the dimension, separate from algorithm randomness. Run k of every algorithm uses instance k, so comparisons are paired. {config["runs"]} runs per combination.
+- **Instances**: each instance has its own random shift x* ~ U[-4, 4]^d (and, for the ellipsoid, a uniform random rotation from a QR decomposition with sign correction), drawn from a generator keyed by the instance id and the dimension, separate from algorithm randomness. Run k of every algorithm uses instance {config.get("instance_offset", 0)} + k, so comparisons are paired. {config["runs"]} runs per combination.
 - **Seeds**: run k uses seed {config.get("base_seed", 0)} + k. Auxein is seeded with `np.random.seed(seed)` (it uses global numpy randomness), random search with `np.random.default_rng(seed)`, CMA-ES with seed + 1.
 - **Precision targets**: {", ".join(f"{t:g}" for t in results.targets)}.
 - **Traces**: best-so-far error at about 20 log-spaced evaluation counts per decade, plus the first and last evaluation. Plots show the median and the interquartile band over runs at each checkpoint. Errors below {ERROR_FLOOR:g} are drawn at {ERROR_FLOOR:g}; dotted lines mark the targets.
-- **Statistics**: two-sided Mann-Whitney U test on the final error of `{REFERENCE}` against every other algorithm (scipy), with Holm correction over the comparisons of each problem × dimension table. A12 is the probability that a `{REFERENCE}` run ends with a lower error than a run of the other algorithm (ties count half); 0.5 is no difference. Effect size labels follow Vargha and Delaney: negligible below |A12 − 0.5| = 0.06, small below 0.14, medium below 0.21, large above. Significance level 0.05.
+- **Statistics**: two-sided Mann-Whitney U test on the final error of the reference algorithm (`{"`, `".join(results.references)}`) against every other algorithm (scipy), with Holm correction over the comparisons of each problem × dimension table. A12 is the probability that a run of the reference ends with a lower error than a run of the other algorithm (ties count half); 0.5 is no difference. Effect size labels follow Vargha and Delaney: negligible below |A12 − 0.5| = 0.06, small below 0.14, medium below 0.21, large above. Significance level 0.05.
 - **ERT (expected running time)**: total evaluations spent over all runs, divided by the number of successful runs, infinity if there is none. A successful run spends the evaluations it needed to first reach the target, an unsuccessful run spends everything it evaluated. It estimates the evaluations needed to reach the target if failed runs were restarted from scratch.
 - **Algorithms**:
 {algorithms}
@@ -386,23 +416,37 @@ def build_report(results_dir: Path) -> Path:
         "Final error, success rate per precision target (runs that reached it) and expected running time (ERT, in evaluations).",
         "",
     ]
-    comparisons = []
-    for problem in results.problems:
-        for dim in results.dims:
-            cell = results.cell(problem, dim)
-            if not cell:
-                continue
-            sections += [f"### {problem}, d={dim}", "", summary_table(results, cell), ""]
-            rows = comparison_rows(cell)
-            if rows:
-                comparisons += [f"### {problem}, d={dim}", "", comparison_table(rows), ""]
+    several = len(results.references) > 1
+    comparisons: list[str] = []
+    for reference_name in results.references:
+        if several:
+            comparisons += [f"### Reference: `{reference_name}`", ""]
+        for problem in results.problems:
+            for dim in results.dims:
+                cell = results.cell(problem, dim)
+                if not cell:
+                    continue
+                if reference_name == results.references[0]:
+                    sections += [f"### {problem}, d={dim}", "", summary_table(results, cell), ""]
+                rows = comparison_rows(cell, reference_name)
+                if rows:
+                    comparisons += [f"{'####' if several else '###'} {problem}, d={dim}", "", comparison_table(rows, reference_name), ""]
 
-    sections += ["## 3. Statistical comparison", ""]
     sections += [
-        f"Final error of `{REFERENCE}` against every other algorithm: two-sided Mann-Whitney U with Holm correction within each table, and the Vargha-Delaney A12 effect size (the probability that `{REFERENCE}` wins).",
+        "### Mean rank",
+        "",
+        "Rank of each algorithm by the median final error in each problem × dimension (1 = best), and the mean rank.",
+        "",
+        mean_rank_table(results),
         "",
     ]
-    sections += comparisons or [f"No `{REFERENCE}` runs in this benchmark.", ""]
+    sections += ["## 3. Statistical comparison", ""]
+    names = ", ".join(f"`{r}`" for r in results.references)
+    sections += [
+        f"Final error of the reference ({names}) against every other algorithm: two-sided Mann-Whitney U with Holm correction within each table, and the Vargha-Delaney A12 effect size (the probability that the reference wins).",
+        "",
+    ]
+    sections += comparisons or [f"No `{results.references[0]}` runs in this benchmark.", ""]
 
     sections += ["## 4. Overhead", ""]
     if results.overhead:
