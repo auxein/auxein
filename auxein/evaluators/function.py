@@ -30,10 +30,10 @@ class FunctionEvaluator(Generic[G]):
     order the evaluations finish in. Each candidate's wall time is recorded in its `Cost`, next to any cost units of its
     `Result`; with a pool it includes the hand-off to the worker, not the wait for a free one.
 
-    What the function returns is turned into an `Evaluation` here, in the driver's process and in ask order, so that validation
-    errors look the same with every executor and always name the first bad candidate. An exception in `fn` is raised as an `EvaluationError` naming the candidate; the other
-    evaluations of the batch are cancelled first (a function already running in a thread or process finishes first, as
-    Python cannot interrupt it).
+    What the function returns is turned into an `Evaluation` here, in the driver's process and in ask order, so that
+    validation errors look the same with every executor and always name the first bad candidate. An exception in `fn` is
+    raised as an `EvaluationError` naming the candidate; the other evaluations of the batch are cancelled first (a function
+    already running in a thread or process finishes first, as Python cannot interrupt it).
     """
 
     @overload
