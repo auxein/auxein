@@ -51,7 +51,7 @@ def test_contexts_carry_what_the_driver_provides(backend: Backend):
         timeout=5.0,
     )
     assert eval_ctx.problem is problem
-    assert eval_ctx.deadline is None and eval_ctx.timeout == 5.0
+    assert eval_ctx.timeout == 5.0
     a, b, a_again = eval_ctx.rng_for(3), eval_ctx.rng_for(4), eval_ctx.rng_for(3)
     assert backend.to_numpy(a.uniform(3)).tolist() == backend.to_numpy(a_again.uniform(3)).tolist()  # follows the candidate
     assert backend.to_numpy(b.uniform(3)).tolist() != backend.to_numpy(eval_ctx.rng_for(3).uniform(3)).tolist()

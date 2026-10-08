@@ -1,14 +1,17 @@
 """Evaluation records (design doc §5.1 and §5.2)."""
 
 import math
+import traceback
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
-from typing import Generic, Literal
+from typing import Generic, Literal, TypeVar
 
 from auxein.core._typing import G
 from auxein.core.candidate import Candidate
+
+T = TypeVar("T")
 
 
 class Status(Enum):
@@ -20,6 +23,13 @@ class Status(Enum):
 
 
 Direction = Literal["minimise", "maximise"]
+
+
+def describe_exception(error: BaseException) -> str:
+    """The text recorded as the `error` of a failed evaluation: the exception type and message and the full formatted
+    traceback, with the chain of causes (for an exception raised in a worker process, that includes the worker's own
+    traceback). One string, so that it is stored, shown and searched like any other field."""
+    return "".join(traceback.format_exception(error)).rstrip()
 
 
 @dataclass(frozen=True)
@@ -119,6 +129,24 @@ class Evaluation(Generic[G]):
         object.__setattr__(self, "objectives", _frozen(self.objectives, "objective"))
         object.__setattr__(self, "constraints", _frozen(self.constraints, "constraint"))
         object.__setattr__(self, "descriptors", _frozen(self.descriptors, "descriptor"))
+
+    @staticmethod
+    def failed(
+        candidate: Candidate[T], status: Status, error: str, wall_time: float = 0.0, units: Mapping[str, float] | None = None
+    ) -> "Evaluation[T]":
+        """The one way to build an evaluation that did not succeed (design doc §5.1).
+
+        `status` is `FAILED` (an exception, a worker that died, a non-finite objective) or `TIMEOUT`. `error` says what
+        happened: for an exception, its type, message and formatted traceback (`describe_exception`); for a timeout or a
+        crash, the details (the limit, the exit code or signal). A failed evaluation has no objective, constraint or
+        descriptor values: the batch views fill them in as NaN and infinite violation, so it is infeasible and ranks last.
+        `wall_time` is how long it ran before failing (the limit, for a timeout).
+        """
+        if status is Status.OK:
+            raise ValueError("a failed evaluation needs the status FAILED or TIMEOUT, not OK")
+        if not error:
+            raise ValueError("a failed evaluation needs an error that says what happened")
+        return Evaluation(candidate, status, {}, cost=Cost(wall_time, units or {}), error=error)
 
 
 def unchecked_evaluation(

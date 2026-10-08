@@ -110,9 +110,11 @@ def test_other_returns_are_rejected(raw: object):
 
 @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
 @pytest.mark.parametrize("wrap", [lambda v: v, lambda v: Result({"loss": v})])
-def test_a_non_finite_objective_is_an_error_naming_the_candidate(value: float, wrap):
-    with pytest.raises(ValueError, match=r"candidate 7: objective 'loss' is .*finite"):
-        one(wrap(value))
+def test_a_non_finite_objective_is_a_failed_evaluation_naming_the_objective(value: float, wrap):
+    evaluation = one(wrap(value))
+    assert evaluation.status is Status.FAILED and evaluation.candidate.id == 7
+    assert evaluation.error is not None and f"'loss' is {value}" in evaluation.error and "non-finite" in evaluation.error
+    assert dict(evaluation.objectives) == {}  # a failed evaluation has no values: the batch views fill in NaN
 
 
 # --- vectorised returns ---
@@ -203,13 +205,19 @@ def test_non_array_returns_are_rejected():
 
 
 @pytest.mark.parametrize("value", [math.nan, math.inf])
-def test_a_non_finite_value_names_the_candidate(backend: Backend, value: float):
-    with pytest.raises(ValueError, match=r"candidate 11: objective 'loss' is"):
-        many(backend.asarray([1.0, value, 3.0]))
-    with pytest.raises(ValueError, match=r"candidate 12: objective 'score' is"):
-        many(backend.asarray([[1.0, 1.0], [2.0, 2.0], [3.0, value]]), TWO)
-    with pytest.raises(ValueError, match=r"candidate 10: objective 'loss' is"):
-        many(BatchResult({"loss": [value, 1.0, 2.0]}))
+def test_a_non_finite_value_fails_only_its_own_candidate(backend: Backend, value: float):
+    def statuses(evaluations):
+        return [e.status for e in evaluations]
+
+    evaluations = many(backend.asarray([1.0, value, 3.0]))
+    assert statuses(evaluations) == [Status.OK, Status.FAILED, Status.OK]
+    assert "'loss' is" in (evaluations[1].error or "") and evaluations[1].candidate.id == 11
+    evaluations = many(backend.asarray([[1.0, 1.0], [2.0, 2.0], [3.0, value]]), TWO)
+    assert statuses(evaluations) == [Status.OK, Status.OK, Status.FAILED] and "'score' is" in (evaluations[2].error or "")
+    evaluations = many(BatchResult({"loss": [value, 1.0, 2.0]}))
+    assert statuses(evaluations) == [Status.FAILED, Status.OK, Status.OK] and evaluations[0].candidate.id == 10
+    both = many(backend.asarray([[value, value], [2.0, 2.0], [3.0, 3.0]]), TWO)
+    assert "'loss'" in (both[0].error or "") and "'score'" in (both[0].error or "")  # every bad objective is named
 
 
 def test_an_empty_batch():

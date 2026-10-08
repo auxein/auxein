@@ -3,7 +3,9 @@
 from auxein.driver.budget import Budget
 from auxein.driver.driver import arun, run
 from auxein.driver.errors import (
+    AllEvaluationsFailedError,
     DriverError,
+    EvaluationFailureWarning,
     EvaluatorError,
     RecordingDisabledWarning,
     SteadyStateVectorisationWarning,
@@ -12,8 +14,10 @@ from auxein.driver.errors import (
 from auxein.driver.result import RunResult
 
 __all__ = [
+    "AllEvaluationsFailedError",
     "Budget",
     "DriverError",
+    "EvaluationFailureWarning",
     "EvaluatorError",
     "RecordingDisabledWarning",
     "RunResult",

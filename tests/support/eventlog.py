@@ -1,4 +1,8 @@
-"""Reads the deterministic part of a recorded run: everything except timestamps and measured times."""
+"""Reads the deterministic part of a recorded run: everything except timestamps, measured times and error texts.
+
+The status of a failed evaluation is part of it, but its error text is not: a traceback shows different frames inline, in a
+thread and in a worker process.
+"""
 
 import json
 import sqlite3
@@ -17,7 +21,7 @@ def event_log(run_dir: Path) -> dict[str, list[object]]:
         ).fetchall()
         lineage = db.execute("SELECT parent_id, child_id FROM lineage ORDER BY rowid").fetchall()
         evaluations = db.execute(
-            "SELECT candidate_id, status, objectives, constraints, descriptors, cost_units, error FROM evaluations ORDER BY rowid"
+            "SELECT candidate_id, status, objectives, constraints, descriptors, cost_units FROM evaluations ORDER BY rowid"
         ).fetchall()
     finally:
         db.close()

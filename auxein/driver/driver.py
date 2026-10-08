@@ -27,11 +27,14 @@ from auxein.core import (
     ArrayBatch,
     Batch,
     EvalContext,
+    Evaluation,
     EvaluationBatch,
     Evaluator,
+    FailurePolicy,
     IdIssuer,
     Objective,
     ProblemSpec,
+    Status,
     Strategy,
     StrategyContext,
     single,
@@ -39,10 +42,17 @@ from auxein.core import (
 )
 from auxein.core._typing import G
 from auxein.driver.budget import Budget
-from auxein.driver.errors import EvaluatorError, RecordingDisabledWarning, SteadyStateVectorisationWarning, StrategyError
+from auxein.driver.errors import (
+    AllEvaluationsFailedError,
+    EvaluationFailureWarning,
+    EvaluatorError,
+    RecordingDisabledWarning,
+    SteadyStateVectorisationWarning,
+    StrategyError,
+)
 from auxein.driver.result import ResultTracker, RunResult
-from auxein.evaluators import VectorisedEvaluator
-from auxein.execution import ExecutorKind, ExecutorName, make_executor, resolve_executor
+from auxein.evaluators import EvaluationError, VectorisedEvaluator
+from auxein.execution import AbandonedEvaluationWarning, ExecutorKind, ExecutorName, make_executor, resolve_executor
 from auxein.random import RunSeed
 from auxein.recording import NoopRecorder, Recorder, SQLiteRecorder
 from auxein.spaces import Space
@@ -112,6 +122,9 @@ class Driver(Generic[G]):
         executor: ExecutorName = "auto",
         delivery: Delivery | None = None,
         deterministic: bool = True,
+        failure_policy: FailurePolicy = "infeasible",
+        timeout: float | None = None,
+        initial_failure_guard: int | None = 10,
         recorder: Recorder,
         run_dir: Path | None,
         name: str | None,
@@ -121,7 +134,25 @@ class Driver(Generic[G]):
             raise ValueError(f"batch_size must be at least 1, got {batch_size}")
         if concurrency < 1:
             raise ValueError(f"concurrency must be at least 1, got {concurrency}")
-        self._executor_kind: ExecutorKind = resolve_executor(executor, concurrency)
+        if failure_policy not in ("infeasible", "fail_fast"):
+            raise ValueError(f"unknown failure_policy {failure_policy!r}: expected 'infeasible' or 'fail_fast'")
+        if timeout is not None and not timeout > 0:
+            raise ValueError(f"timeout must be a positive number of seconds or None, got {timeout!r}")
+        if initial_failure_guard is not None and initial_failure_guard < 1:
+            raise ValueError(f"initial_failure_guard must be at least 1 or None, got {initial_failure_guard}")
+        if timeout is not None and isinstance(evaluator, VectorisedEvaluator):
+            raise ValueError(
+                "a timeout cannot be combined with a VectorisedEvaluator: it makes one call per batch on the driver's thread, "
+                "which nothing can interrupt, and a vectorised call is normally cheap. Use FunctionEvaluator to time out evaluations"
+            )
+        self._executor_kind: ExecutorKind = resolve_executor(executor, concurrency, timeout)
+        self._policy, self._timeout = failure_policy, timeout
+        self._guard = initial_failure_guard
+        self._guard_told = 0  # evaluations told while the guard is undecided
+        self._guard_open = initial_failure_guard is not None
+        self._first_failure: Evaluation[G] | None = None
+        self._failures = {Status.FAILED: 0, Status.TIMEOUT: 0}
+        self._abandoned = 0
         self._delivery: Delivery = _resolve_delivery(delivery, strategy)
         self._concurrency, self._deterministic = concurrency, deterministic
         self._strategy, self._evaluator, self._problem = strategy, evaluator, problem
@@ -138,6 +169,8 @@ class Driver(Generic[G]):
             lambda cid: run_seed.stream("evaluation", cid, backend=host_backend),  # always numpy: see EvalContext.rng_for
             lambda cid: run_seed.stream("evaluation-batch", cid, backend=backend),
             concurrency=concurrency,
+            timeout=timeout,
+            failure_policy=failure_policy,
         )
         self._eval_context = self._base_context
         self._tracker: ResultTracker[G] = ResultTracker(problem.objectives, constrained=bool(problem.constraints))
@@ -163,11 +196,20 @@ class Driver(Generic[G]):
                 stop_reason = await self._steady_state()
             else:
                 stop_reason = await self._loop()
+            self._check_guard_at_end()
             status = "completed"
         except (KeyboardInterrupt, asyncio.CancelledError):
             status = "interrupted"
             raise
         finally:
+            self._abandoned = executor.abandoned_running()
+            if self._abandoned:
+                warnings.warn(
+                    f"{self._abandoned} timed-out evaluation(s) were still running in background threads when the run ended; "
+                    "their results were discarded",
+                    AbandonedEvaluationWarning,
+                    stacklevel=2,
+                )
             executor.shutdown()  # pools never outlive the run, whatever ended it
             self._recorder.on_end(status, stop_reason, self._summary())
         assert stop_reason is not None  # the run completed
@@ -179,6 +221,7 @@ class Driver(Generic[G]):
             best=self._tracker.best,
             pareto_front=self._tracker.pareto_front,
             trace=self._tracker.trace,
+            status_counts=self._status_counts(),
         )
 
     async def _loop(self) -> str:
@@ -217,7 +260,7 @@ class Driver(Generic[G]):
 
         results = await self._evaluator.evaluate(batch, self._eval_context)
         self._validate_results(batch, results)
-        self._account(step, batch, results)
+        self._account(step, batch, results)  # records, and applies the failure policy and the guard before anyone is told
 
         if truncated:
             return True  # the strategy is not told about an incomplete batch
@@ -229,11 +272,63 @@ class Driver(Generic[G]):
         """Count, track and record evaluations that are about to be told (or, for a truncated batch, dropped)."""
         self._tracker.add(results.evaluations, self._used)
         self._used += len(results)
+        failed: list[Evaluation[G]] = []
         for evaluation in results:
+            if evaluation.status is not Status.OK:
+                failed.append(evaluation)
             for unit, amount in evaluation.cost.units.items():
                 if unit in self._costs:
                     self._costs[unit] += amount
         self._recorder.on_batch(step, batch, results)
+        if failed or self._guard_open:
+            self._apply_failure_rules(results, failed)
+
+    # --- failures (design doc §6.6) ---
+
+    def _apply_failure_rules(self, results: EvaluationBatch[G], failed: list[Evaluation[G]]) -> None:
+        """The driver is the backstop for failures, whichever evaluator produced them: it counts them, stops the run under
+        `fail_fast`, warns about the first one, and stops a run whose first evaluations all failed."""
+        for evaluation in failed:
+            self._failures[evaluation.status] += 1
+        if failed and self._policy == "fail_fast":
+            first = failed[0]
+            raise EvaluationError([first.candidate.id], detail=f"{first.status.value}: {first.error}")
+        if failed and self._first_failure is None:
+            self._first_failure = failed[0]
+            warnings.warn(self._describe_failure(failed[0], "first failure of this run"), EvaluationFailureWarning, stacklevel=2)
+        if not self._guard_open:
+            return
+        assert self._guard is not None
+        for evaluation in results:  # in the order they are told: ask order in deterministic mode
+            if evaluation.status is Status.OK:
+                self._guard_open = False  # at least one of the first evaluations worked: this is a result, not a bug
+                return
+            self._guard_told += 1
+            if self._guard_told >= self._guard:
+                raise self._all_failed(self._guard_told)
+
+    def _check_guard_at_end(self) -> None:
+        """A run too short to reach the guard's count, in which nothing ever succeeded, is just as broken."""
+        if self._guard_open and self._guard_told > 0:
+            raise self._all_failed(self._guard_told)
+
+    def _all_failed(self, count: int) -> AllEvaluationsFailedError:
+        assert self._first_failure is not None
+        return AllEvaluationsFailedError(
+            f"the first {count} evaluation(s) all failed, which almost certainly means the evaluation function has a bug: "
+            "this is not a result worth optimising. The first failure was\n"
+            f"{self._describe_failure(self._first_failure, None)}\n"
+            "If failing at the start is expected, turn this check off with initial_failure_guard=None."
+        )
+
+    @staticmethod
+    def _describe_failure(evaluation: Evaluation[G], note: str | None) -> str:
+        head = f"candidate {evaluation.candidate.id} ended with status {evaluation.status.value!r}"
+        return f"{head} ({note}):\n{evaluation.error}" if note else f"{head}:\n{evaluation.error}"
+
+    def _status_counts(self) -> dict[str, int]:
+        failed = sum(self._failures.values())
+        return {"ok": self._used - failed, "failed": self._failures[Status.FAILED], "timeout": self._failures[Status.TIMEOUT]}
 
     # --- steady-state delivery ---
 
@@ -392,6 +487,9 @@ class Driver(Generic[G]):
             "delivery": self._delivery,
             "deterministic": self._deterministic,
             "in_flight_window": self._batch_size,
+            "failure_policy": self._policy,
+            "timeout": self._timeout,
+            "initial_failure_guard": self._guard,
             "strategy": _describe_component(self._strategy),
             "evaluator": _describe_component(self._evaluator),
         }
@@ -404,6 +502,8 @@ class Driver(Generic[G]):
             "best_candidate_id": None if best is None else int(best.candidate.id),
             "best_objectives": None if best is None else dict(best.objectives),
             "pareto_size": len(self._tracker.pareto_front),
+            "status_counts": self._status_counts(),
+            "abandoned_evaluations": self._abandoned,
         }
 
 
@@ -436,6 +536,9 @@ def _build(
     executor: ExecutorName,
     delivery: Delivery | None,
     deterministic: bool,
+    failure_policy: FailurePolicy,
+    timeout: float | None,
+    initial_failure_guard: int | None,
     run_dir: str | Path | None,
     name: str | None,
     clock: Callable[[], float],
@@ -454,6 +557,9 @@ def _build(
         executor=executor,
         delivery=delivery,
         deterministic=deterministic,
+        failure_policy=failure_policy,
+        timeout=timeout,
+        initial_failure_guard=initial_failure_guard,
         recorder=recorder,
         run_dir=None if run_dir is None else Path(run_dir),
         name=name if name is not None else (None if run_dir is None else Path(run_dir).name),
@@ -487,6 +593,9 @@ def run(
     executor: ExecutorName = "auto",
     delivery: Delivery | None = None,
     deterministic: bool = True,
+    failure_policy: FailurePolicy = "infeasible",
+    timeout: float | None = None,
+    initial_failure_guard: int | None = 10,
     run_dir: str | Path | None = None,
     name: str | None = None,
     clock: Callable[[], float] = time.monotonic,
@@ -511,12 +620,25 @@ def run(
     the run is reproducible whatever `concurrency` and `executor`: steady-state results are told in ask order and the window
     is refilled only after a tell. With `deterministic=False` steady-state results are told as they finish, which is faster
     when evaluation times vary and not reproducible; generation delivery is unaffected.
+
+    **Failures.** `failure_policy="infeasible"` (the default) turns an exception in user code, a timeout or a worker crash
+    into a recorded `FAILED` or `TIMEOUT` evaluation that ranks below every feasible one, and the run goes on; it is never
+    retried. `"fail_fast"` stops the run at the first one, naming the candidate and chaining the original exception.
+    Misconfiguration (an unpicklable function, a return value that breaks the contract, a strategy or evaluator breaking
+    its contract) always fails the run. Under `infeasible` the first failure is shown at once as an
+    `EvaluationFailureWarning` with the full traceback, and a run whose first `initial_failure_guard` evaluations (10 by
+    default; `None` turns it off) all failed is stopped with an `AllEvaluationsFailedError`: that is almost certainly a bug
+    in the evaluation, not a result. `timeout` is the seconds one evaluation may take: an `async def` is cancelled, a worker
+    process is killed and replaced, a function in a thread is abandoned (it keeps running in the background and its result
+    is dropped), and it cannot be combined with `executor="inline"` or a `VectorisedEvaluator`. A timed-out evaluation
+    counts towards the evaluation budget.
     """
     _warn_unrecorded(run_dir, stacklevel=3)
     driver = _build(
         strategy=strategy, evaluator=evaluator, space=space, objectives=objectives, constraints=constraints, descriptors=descriptors,
         budget=budget, seed=seed, backend=backend, batch_size=batch_size, concurrency=concurrency, executor=executor,
-        delivery=delivery, deterministic=deterministic, run_dir=run_dir, name=name, clock=clock,
+        delivery=delivery, deterministic=deterministic, failure_policy=failure_policy, timeout=timeout,
+        initial_failure_guard=initial_failure_guard, run_dir=run_dir, name=name, clock=clock,
     )  # fmt: skip
     try:
         asyncio.get_running_loop()
@@ -542,6 +664,9 @@ async def arun(
     executor: ExecutorName = "auto",
     delivery: Delivery | None = None,
     deterministic: bool = True,
+    failure_policy: FailurePolicy = "infeasible",
+    timeout: float | None = None,
+    initial_failure_guard: int | None = 10,
     run_dir: str | Path | None = None,
     name: str | None = None,
     clock: Callable[[], float] = time.monotonic,
@@ -551,6 +676,7 @@ async def arun(
     driver = _build(
         strategy=strategy, evaluator=evaluator, space=space, objectives=objectives, constraints=constraints, descriptors=descriptors,
         budget=budget, seed=seed, backend=backend, batch_size=batch_size, concurrency=concurrency, executor=executor,
-        delivery=delivery, deterministic=deterministic, run_dir=run_dir, name=name, clock=clock,
+        delivery=delivery, deterministic=deterministic, failure_policy=failure_policy, timeout=timeout,
+        initial_failure_guard=initial_failure_guard, run_dir=run_dir, name=name, clock=clock,
     )  # fmt: skip
     return await driver.execute()

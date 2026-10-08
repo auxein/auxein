@@ -3,7 +3,7 @@
 import numpy as np
 
 from auxein.backend import Backend
-from auxein.core import ArrayBatch, CandidateId, EvalContext, Objective, ProblemSpec
+from auxein.core import ArrayBatch, CandidateId, EvalContext, FailurePolicy, Objective, ProblemSpec
 from auxein.execution import Executor, InlineExecutor
 from auxein.random import RunSeed
 from auxein.spaces import Box
@@ -19,7 +19,14 @@ def problem(
 
 
 def eval_context(
-    spec: ProblemSpec, backend: Backend, seed: int = 0, *, concurrency: int = 1, executor: Executor | None = None
+    spec: ProblemSpec,
+    backend: Backend,
+    seed: int = 0,
+    *,
+    concurrency: int = 1,
+    executor: Executor | None = None,
+    failure_policy: FailurePolicy = "fail_fast",
+    timeout: float | None = None,
 ) -> EvalContext:
     run_seed = RunSeed(seed)
     return EvalContext(
@@ -29,6 +36,8 @@ def eval_context(
         lambda cid: run_seed.stream("evaluation-batch", cid, backend=backend),
         executor=InlineExecutor() if executor is None else executor,
         concurrency=concurrency,
+        timeout=timeout,
+        failure_policy=failure_policy,  # fail_fast unless a test asks otherwise: most tests check that errors surface
     )
 
 

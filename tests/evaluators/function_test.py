@@ -140,8 +140,8 @@ def test_interrupts_are_not_wrapped():
 def test_invalid_returns_are_not_wrapped_as_evaluation_errors():
     with pytest.raises(TypeError, match="returned a dict"):
         evaluate(FunctionEvaluator(lambda g: {"value": 1.0}), array_batch(Backend(), 2, 2))
-    with pytest.raises(ValueError, match="candidate 1: objective 'value' is nan"):
-        evaluate(FunctionEvaluator(lambda g: float("nan") if float(g[0]) > 2 else 1.0), array_batch(Backend(), 3, 2))
+    results = evaluate(FunctionEvaluator(lambda g: float("nan") if float(g[0]) > 2 else 1.0), array_batch(Backend(), 3, 2))
+    assert [e.status for e in results] == [Status.OK, Status.FAILED, Status.FAILED]  # a non-finite objective is a failure, not an error
 
 
 def test_an_empty_batch():

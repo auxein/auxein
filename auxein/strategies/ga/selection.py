@@ -11,6 +11,12 @@ def distinct_partners(first: Array, second: Array, population_size: int, rng: Ra
     This is what keeps the parents of a child distinct (the 0.x engine allowed self-mating). It needs at least two members.
     """
     xp = view.backend.xp
+    valid = view.valid
+    if valid < population_size:
+        # some members failed: the partner is another member that did not, found by moving along the ranking
+        offset = rng.integers(1, valid, (int(first.shape[0]),))  # 1 .. valid-1
+        moved = xp.take(view.order, xp.remainder(xp.take(view.rank, first, axis=0) + offset, valid), axis=0)
+        return xp.where(first == second, moved, second)
     offset = rng.integers(1, population_size, (int(first.shape[0]),))  # 1 .. m-1: never the member itself
     return xp.where(first == second, xp.remainder(first + offset, population_size), second)
 
@@ -19,7 +25,8 @@ class TournamentSelection:
     """Each parent is the best of `size` members drawn uniformly at random (with replacement), by the ranking.
 
     Tournaments only look at ranks, so the selection pressure doesn't depend on the scale of the objective, and infeasible
-    and failed members lose to feasible ones without any special case.
+    members lose to feasible ones without any special case. Members that failed are not drawn at all while any other
+    member exists, so a tournament of failed members can never produce a parent.
     """
 
     name = "tournament"
@@ -35,8 +42,12 @@ class TournamentSelection:
     def select(self, population: PopulationView, count: int, rng: RandomStream) -> tuple[Array, Array]:
         xp = population.backend.xp
         m = population.size
-        draws = rng.integers(0, m, (2 * count, self.size))
-        ranks = xp.reshape(xp.take(population.rank, xp.reshape(draws, (-1,)), axis=0), (2 * count, self.size))
+        if population.valid < m:
+            # the contestants are drawn from the members that did not fail, which are the first `valid` of the ranking
+            ranks = rng.integers(0, population.valid, (2 * count, self.size))
+        else:
+            draws = rng.integers(0, m, (2 * count, self.size))
+            ranks = xp.reshape(xp.take(population.rank, xp.reshape(draws, (-1,)), axis=0), (2 * count, self.size))
         winners = xp.take(population.order, xp.min(ranks, axis=1), axis=0)
         first, second = winners[:count], winners[count:]
         return first, distinct_partners(first, second, m, rng, population)
@@ -87,7 +98,10 @@ class SigmaScalingSUS:
         weights = xp.where(xp.any(feasible), by_value, by_violation)
         total = xp.sum(weights)
         usable = xp.isfinite(total) & (total > 0)
-        return xp.where(usable, weights, xp.ones_like(weights))
+        # the fallback is uniform over the members that did not fail (all of them, when none failed)
+        uniform = xp.where(finite, xp.ones_like(weights), xp.zeros_like(weights))
+        uniform = xp.where(xp.any(finite), uniform, xp.ones_like(weights))
+        return xp.where(usable, weights, uniform)
 
     def select(self, population: PopulationView, count: int, rng: RandomStream) -> tuple[Array, Array]:
         backend = population.backend

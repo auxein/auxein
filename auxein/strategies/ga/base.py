@@ -18,7 +18,7 @@ class PopulationView:
 
     The ranking puts feasible members before infeasible ones, then lower total violation, then lower objective in
     minimisation form, then lower candidate id (design doc §3.3). Failed members have NaN objectives and infinite
-    violation, so they rank last.
+    violation, so they rank last, and parent selection never looks beyond `valid` of them.
     """
 
     values: Array
@@ -30,10 +30,19 @@ class PopulationView:
     rank: Array
     """`(m,)` rank of each member (0 = best): the inverse permutation of `order`."""
     backend: Backend
+    n_valid: int | None = None
+    """How many members did not fail (their violation is finite), or None when the strategy knows none did. Failed members
+    rank last, so the valid ones are exactly the first `valid` of the ranking."""
 
     @property
     def size(self) -> int:
         return int(self.order.shape[0])
+
+    @property
+    def valid(self) -> int:
+        """The number of members that can be parents: those that did not fail. A failed member is never chosen while there
+        is any alternative (design doc §6.6)."""
+        return self.size if self.n_valid is None else self.n_valid
 
 
 class ParentSelection(Protocol):

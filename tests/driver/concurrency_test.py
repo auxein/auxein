@@ -365,6 +365,13 @@ def _eval_threads() -> set[threading.Thread]:
     return {t for t in threading.enumerate() if t.name.startswith("auxein-eval")}
 
 
+def _wait_for_no_eval_threads(seconds: float = 3.0) -> None:
+    """Daemon threads that were still running a (short) function when the run ended finish on their own, shortly after."""
+    deadline = time.monotonic() + seconds
+    while _eval_threads() and time.monotonic() < deadline:
+        time.sleep(0.005)
+
+
 @pytest.mark.parametrize("delivery", ["generation", "steady_state"])
 def test_pools_are_shut_down_when_a_run_ends_normally_or_fails(delivery: str):
     def sometimes_fails(genome):
@@ -391,7 +398,9 @@ def test_pools_are_shut_down_when_a_run_ends_normally_or_fails(delivery: str):
             delivery=delivery,
             executor="thread",
             concurrency=4,
+            failure_policy="fail_fast",
         )
+    _wait_for_no_eval_threads()
     assert _eval_threads() == set() and threading.active_count() == before
 
 
@@ -409,7 +418,7 @@ def test_processes_are_shut_down_when_a_run_ends_normally_or_fails(delivery: str
     with pytest.raises(EvaluationError, match="ZeroDivisionError"):
         go(
             evaluator=FunctionEvaluator(workers.divide_by_zero_1), budget=Budget(evaluations=12), batch_size=4,
-            delivery=delivery, executor="process", concurrency=2,
+            delivery=delivery, executor="process", concurrency=2, failure_policy="fail_fast",
         )  # fmt: skip
     assert multiprocessing.active_children() == []
 
@@ -430,6 +439,7 @@ def test_a_keyboard_interrupt_finalises_the_recording_and_leaves_nothing_running
             executor=executor, concurrency=1 if executor == "inline" else 3, run_dir=tmp_path / "r",
         )  # fmt: skip
     assert json.loads((tmp_path / "r" / "metadata.json").read_text())["status"] == "interrupted"
+    _wait_for_no_eval_threads()
     assert _eval_threads() == set() and threading.active_count() == before
 
 

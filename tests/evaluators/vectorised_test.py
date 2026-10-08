@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from auxein.backend import Backend
-from auxein.core import BatchResult, Candidate, CandidateId, ListBatch, Objective
+from auxein.core import BatchResult, Candidate, CandidateId, ListBatch, Objective, Status
 from auxein.evaluators import EvaluationError, VectorisedEvaluator
 from auxein.random import RunSeed
 from tests.support.helpers import array_batch, eval_context, problem
@@ -90,13 +90,14 @@ def test_shape_errors(backend: Backend):
         )
 
 
-def test_non_finite_values_name_the_candidate(backend: Backend):
+def test_non_finite_values_fail_only_their_own_candidates(backend: Backend):
     def fn(X):
         out = X.sum(axis=1)
         return backend.xp.where(X[:, 0] > 5.0, float("nan"), out)
 
-    with pytest.raises(ValueError, match=r"candidate 3: objective 'value' is nan"):
-        evaluate(VectorisedEvaluator(fn), array_batch(backend, 4, 2), backend=backend)
+    results = evaluate(VectorisedEvaluator(fn), array_batch(backend, 4, 2), backend=backend)
+    assert [e.status for e in results] == [Status.OK, Status.OK, Status.OK, Status.FAILED]
+    assert "'value' is nan" in (results[3].error or "")
 
 
 def test_it_needs_an_array_backed_batch():

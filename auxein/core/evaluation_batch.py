@@ -101,13 +101,17 @@ class EvaluationBatch(Generic[G]):
 
         Failed and timed-out evaluations have infinite violation.
         """
-        totals = [
+        return backend.asarray(self.violation_list(names))
+
+    def violation_list(self, names: Sequence[str] | None = None) -> list[float]:
+        """`total_violation` as a plain list on the host. A strategy that must know whether anything failed can test
+        `INFEASIBLE in violation_list()` at the speed of a list scan, without a pass over an array."""
+        return [
             INFEASIBLE
             if e.status is not Status.OK
             else float(sum(e.constraints[n] for n in names) if names is not None else sum(e.constraints.values()))
             for e in self.evaluations
         ]
-        return backend.asarray(totals)
 
     def feasible_mask(self, backend: Backend) -> Array:
         """An `(n,)` boolean array: status OK and no constraint violated."""

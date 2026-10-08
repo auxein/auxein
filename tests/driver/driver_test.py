@@ -6,7 +6,16 @@ import pytest
 
 from auxein.backend import Backend
 from auxein.core import ArrayBatch, Candidate, CandidateId, EvaluationBatch, ListBatch, Objective, Result
-from auxein.driver import Budget, EvaluatorError, RecordingDisabledWarning, StrategyError, arun, run
+from auxein.driver import (
+    AllEvaluationsFailedError,
+    Budget,
+    EvaluationFailureWarning,
+    EvaluatorError,
+    RecordingDisabledWarning,
+    StrategyError,
+    arun,
+    run,
+)
 from auxein.evaluators import EvaluationError, FunctionEvaluator, VectorisedEvaluator
 from auxein.spaces import Box
 from auxein.strategies import RandomSearch
@@ -250,7 +259,7 @@ def test_exceptions_in_user_code_fail_the_run_naming_the_candidate():
         return genome
 
     with pytest.raises(EvaluationError, match="candidate 5 failed: RuntimeError: boom") as info:
-        go(evaluator=FunctionEvaluator(fn), batch_size=4)
+        go(evaluator=FunctionEvaluator(fn), batch_size=4, failure_policy="fail_fast")
     assert isinstance(info.value.__cause__, RuntimeError)
 
 
@@ -376,8 +385,11 @@ def test_a_backend_reaches_the_strategy_and_the_arrays(backend: Backend):
 def test_invalid_returns_surface_with_their_own_error_types():
     with pytest.raises(TypeError, match="returned a dict"):
         go(evaluator=FunctionEvaluator(lambda g: {"value": g}))
-    with pytest.raises(ValueError, match="candidate 0: objective 'value' is nan"):
-        go(evaluator=FunctionEvaluator(lambda g: float("nan")))
+    with (
+        pytest.warns(EvaluationFailureWarning),
+        pytest.raises(AllEvaluationsFailedError, match="non-finite objective value: 'value' is nan"),
+    ):
+        go(evaluator=FunctionEvaluator(lambda g: float("nan")))  # a diverged simulation is a failure, and here it is all of them
 
 
 def test_the_dim_of_a_space_is_independent_of_the_scripted_genomes():

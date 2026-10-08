@@ -20,6 +20,8 @@ from auxein.random import RandomStream
 
 T = TypeVar("T")
 
+FailurePolicy = Literal["infeasible", "fail_fast"]
+
 TellMode = Literal["generation", "steady_state", "both"]
 
 
@@ -75,15 +77,20 @@ class EvalContext(Generic[G]):
     """The most evaluations in progress at once in this run. An evaluator that evaluates candidates concurrently must
     not exceed it. `async def` user functions run natively on the driver's event loop, limited by this number."""
     timeout: float | None = None
-    """Seconds an evaluation may take, or None for no limit."""
-    deadline: float | None = None
-    """An absolute `time.monotonic()` deadline for the whole batch, or None."""
+    """Seconds one evaluation may take, or None for no limit. How hard it is depends on where the function runs (§5.3):
+    an `async def` is cancelled, a worker process is killed, a thread is abandoned. `call` applies it."""
+    failure_policy: FailurePolicy = "infeasible"
+    """What an evaluator does with an exception in user code, a timeout or a worker crash: `infeasible` turns it into a
+    `FAILED` or `TIMEOUT` evaluation, `fail_fast` raises an `EvaluationError` (§6.6). Misconfiguration is never a
+    result: it raises whatever the policy."""
 
     async def call(self, fn: Callable[..., T], /, *args: object) -> T:
         """Run the synchronous `fn(*args)` where the run's executor says (inline, in a thread or in a process) and await
-        its result. User-written evaluators use this so that they obey `executor=` like the built-in ones. With a process
-        executor `fn` and `args` must be picklable; `async def` functions are awaited directly instead."""
-        return await self.executor.call(fn, *args)
+        its result, for at most `timeout` seconds if the run has one (then it raises `EvaluationTimeout`). User-written
+        evaluators use this so that they obey `executor=` and `timeout=` like the built-in ones. With a process executor
+        `fn` and `args` must be picklable, and a worker that dies raises `WorkerCrashed`. `async def` functions are
+        awaited directly instead."""
+        return await self.executor.call(fn, *args, timeout=self.timeout)
 
 
 class Strategy(Protocol[G]):

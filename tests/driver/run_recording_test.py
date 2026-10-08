@@ -104,7 +104,7 @@ def test_a_failing_run_is_recorded_as_failed_and_the_error_propagates(tmp_path: 
 
     fn.calls = 0  # type: ignore[attr-defined]
     with pytest.raises(EvaluationError, match="simulator crashed"):
-        record(tmp_path / "r", evaluator=FunctionEvaluator(fn), budget=Budget(evaluations=100), batch_size=8)
+        record(tmp_path / "r", evaluator=FunctionEvaluator(fn), budget=Budget(evaluations=100), batch_size=8, failure_policy="fail_fast")
     meta = json.loads((tmp_path / "r" / "metadata.json").read_text())
     assert meta["status"] == "failed" and meta["stop_reason"] is None and meta["summary"]["evaluations_used"] == 16
     with open_run(tmp_path / "r") as recorded:
