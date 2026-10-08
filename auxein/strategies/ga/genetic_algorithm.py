@@ -16,6 +16,7 @@ from auxein.core import (
     StrategyCapabilities,
     StrategyContext,
 )
+from auxein.core.evaluation_batch import INFEASIBLE
 from auxein.core.ids import CandidateId
 from auxein.spaces import Box
 from auxein.strategies.ga.base import BoundsRepair, Mutation, ParentSelection, PopulationView, Recombination
@@ -277,8 +278,9 @@ class GeneticAlgorithm:
 
         genomes, steps, positions = self._take_pending(told, backend)
         values = results.minimisation_matrix(problem.objectives, backend)[:, 0]
-        violation = results.total_violation(backend)
-        if not self._ever_failed and bool(xp.any(xp.isinf(violation))):
+        totals = results.violation_list()
+        violation = backend.asarray(totals)
+        if not self._ever_failed and INFEASIBLE in totals:  # a failed evaluation has infinite violation
             self._ever_failed = True
         if positions is not None:  # the children came from several blocks: put the values in the order of the genomes
             index = backend.asarray(positions, dtype=backend.int_dtype)

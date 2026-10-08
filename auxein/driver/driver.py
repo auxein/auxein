@@ -620,6 +620,18 @@ def run(
     the run is reproducible whatever `concurrency` and `executor`: steady-state results are told in ask order and the window
     is refilled only after a tell. With `deterministic=False` steady-state results are told as they finish, which is faster
     when evaluation times vary and not reproducible; generation delivery is unaffected.
+
+    **Failures.** `failure_policy="infeasible"` (the default) turns an exception in user code, a timeout or a worker crash
+    into a recorded `FAILED` or `TIMEOUT` evaluation that ranks below every feasible one, and the run goes on; it is never
+    retried. `"fail_fast"` stops the run at the first one, naming the candidate and chaining the original exception.
+    Misconfiguration (an unpicklable function, a return value that breaks the contract, a strategy or evaluator breaking
+    its contract) always fails the run. Under `infeasible` the first failure is shown at once as an
+    `EvaluationFailureWarning` with the full traceback, and a run whose first `initial_failure_guard` evaluations (10 by
+    default; `None` turns it off) all failed is stopped with an `AllEvaluationsFailedError`: that is almost certainly a bug
+    in the evaluation, not a result. `timeout` is the seconds one evaluation may take: an `async def` is cancelled, a worker
+    process is killed and replaced, a function in a thread is abandoned (it keeps running in the background and its result
+    is dropped), and it cannot be combined with `executor="inline"` or a `VectorisedEvaluator`. A timed-out evaluation
+    counts towards the evaluation budget.
     """
     _warn_unrecorded(run_dir, stacklevel=3)
     driver = _build(
