@@ -29,8 +29,10 @@ EXPECTED = {
     "Status",
     "VectorisedEvaluator",
     "__version__",
+    "aresume",
     "arun",
     "open_run",
+    "resume",
     "run",
 }
 

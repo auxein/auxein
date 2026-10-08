@@ -44,11 +44,11 @@ def test_creates_the_directory_with_metadata_and_a_versioned_schema(tmp_path: Pa
     assert (run_dir / "metadata.json").exists() and (run_dir / "events.sqlite").exists()
     recorder.on_end("completed", "budget:evaluations", {})
     with open_run(run_dir) as run:
-        assert run.schema_version == 1
+        assert run.schema_version == 2
     db = sqlite3.connect(run_dir / "events.sqlite")
-    assert db.execute("SELECT version FROM schema_version").fetchall() == [(1,)]
+    assert db.execute("SELECT version FROM schema_version").fetchall() == [(2,)]
     tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"schema_version", "candidates", "lineage", "evaluations", "events"} <= tables
+    assert {"schema_version", "candidates", "lineage", "evaluations", "events", "checkpoints"} <= tables
     indexes = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='index'")}
     assert {"lineage_parent", "lineage_child"} <= indexes
 
@@ -238,10 +238,10 @@ def test_the_reader_rejects_other_directories_and_schema_versions(tmp_path: Path
         open_run(tmp_path)
     run_dir = hand_built_lineage(tmp_path)
     db = sqlite3.connect(run_dir / "events.sqlite")
-    db.execute("UPDATE schema_version SET version = 2")
+    db.execute("UPDATE schema_version SET version = 3")
     db.commit()
     db.close()
-    with pytest.raises(ValueError, match="unsupported run schema version 2"):
+    with pytest.raises(ValueError, match="unsupported run schema version 3"):
         open_run(run_dir)
 
 

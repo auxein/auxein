@@ -1,4 +1,4 @@
-"""A minimal reader of a recorded run: `open_run(path)`."""
+"""A minimal reader of a recorded run: `open_run(path)`: its evaluations, lineage, sessions and checkpoints."""
 
 import json
 import sqlite3
@@ -10,7 +10,7 @@ from typing import cast
 
 from auxein.core import CandidateId, Status
 from auxein.recording.genomes import decode_genome
-from auxein.recording.sqlite import SCHEMA_VERSION
+from auxein.recording.sqlite import SCHEMA_VERSION, CheckpointInfo
 
 
 @dataclass(frozen=True)
@@ -78,6 +78,18 @@ class RunReader:
     def metadata(self) -> dict[str, object]:
         """The contents of `metadata.json`."""
         return cast("dict[str, object]", json.loads((self.path / "metadata.json").read_text()))
+
+    @property
+    def sessions(self) -> list[dict[str, object]]:
+        """The sessions of the run, oldest first: the first start and each resume, with its mode, budget, versions, and (once it
+        ended) its end time, status, stop reason, evaluations used and cumulative wall time. A session that was killed has
+        no end."""
+        return cast("list[dict[str, object]]", self.metadata.get("sessions", []))
+
+    def checkpoints(self) -> list[CheckpointInfo]:
+        """The checkpoints that are kept, oldest first."""
+        rows = self._db.execute("SELECT id, event_seq, evaluations_used, path, created_at FROM checkpoints ORDER BY id").fetchall()
+        return [CheckpointInfo(*row) for row in rows]
 
     def evaluations(self) -> Iterator[RecordedEvaluation]:
         """Every evaluated candidate, in id order, with its genome decoded."""

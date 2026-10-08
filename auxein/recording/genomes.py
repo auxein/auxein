@@ -2,13 +2,16 @@
 
 import json
 from dataclasses import dataclass
-from typing import cast
+from typing import TypeVar, cast
 
 import numpy as np
 
 from auxein.backend import Array, Backend, HostArray, is_array
+from auxein.core import Batch
 
 _HOST = Backend()
+
+G = TypeVar("G")
 
 
 class GenomeEncodingError(TypeError):
@@ -51,3 +54,15 @@ def decode_genome(kind: str, data: bytes, dtype: str | None, shape: str | None) 
     if kind == "json":
         return json.loads(data.decode("utf-8"))
     raise ValueError(f"unknown genome kind {kind!r}")
+
+
+def encode_batch(batch: Batch[G]) -> list[EncodedGenome]:
+    """The genomes of a batch as bytes, in ask order. An array-backed batch makes one device-to-host copy for all of it.
+
+    The recorder stores these; replay compares them with the recorded ones, which is what "byte-identical genome" means.
+    """
+    genomes = batch.as_array()
+    if genomes is not None:
+        host = _HOST.to_numpy(genomes)
+        return [encode_array(host[i]) for i in range(host.shape[0])]
+    return [encode_genome(c.genome) for c in batch.candidates]
