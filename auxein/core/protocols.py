@@ -5,8 +5,8 @@ These are typing contracts: the driver, the strategies and the evaluators that i
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Generic, Literal, Protocol
+from dataclasses import dataclass, field
+from typing import Generic, Literal, Protocol, TypeVar
 
 from auxein.backend import Backend
 from auxein.core._typing import G
@@ -15,7 +15,10 @@ from auxein.core.evaluation_batch import EvaluationBatch
 from auxein.core.ids import CandidateId
 from auxein.core.problem import ProblemSpec
 from auxein.core.state import StateDict
+from auxein.execution import Executor, InlineExecutor
 from auxein.random import RandomStream
+
+T = TypeVar("T")
 
 TellMode = Literal["generation", "steady_state", "both"]
 
@@ -59,14 +62,28 @@ class EvalContext(Generic[G]):
     rng_for: Callable[[CandidateId], RandomStream]
     """Derives the evaluation stream of a candidate from its id, so that randomness follows the candidate, not the
     worker or the time of evaluation (§8). It is a factory rather than a list of streams, so that a batch of
-    thousands of candidates does not create thousands of generators up front."""
+    thousands of candidates does not create thousands of generators up front. **The stream is always numpy-backed,
+    whatever the run's backend**: evaluating one candidate is host-side Python, per-candidate streams are the only
+    kind a run creates by the tens of thousands (a torch CPU generator has only 32 bits of seed, which would make
+    collisions likely), and a numpy stream can be pickled to a worker process."""
     batch_rng_for: Callable[[CandidateId], RandomStream]
     """Derives the one stream a vectorised evaluator receives per batch, from the id of the batch's first candidate
     (§8). It is deterministic because the composition of a batch is."""
+    executor: Executor = field(default_factory=InlineExecutor)
+    """Where synchronous user functions run (§5.3). Use `call` rather than this directly."""
+    concurrency: int = 1
+    """The most evaluations in progress at once in this run. An evaluator that evaluates candidates concurrently must
+    not exceed it. `async def` user functions run natively on the driver's event loop, limited by this number."""
     timeout: float | None = None
     """Seconds an evaluation may take, or None for no limit."""
     deadline: float | None = None
     """An absolute `time.monotonic()` deadline for the whole batch, or None."""
+
+    async def call(self, fn: Callable[..., T], /, *args: object) -> T:
+        """Run the synchronous `fn(*args)` where the run's executor says (inline, in a thread or in a process) and await
+        its result. User-written evaluators use this so that they obey `executor=` like the built-in ones. With a process
+        executor `fn` and `args` must be picklable; `async def` functions are awaited directly instead."""
+        return await self.executor.call(fn, *args)
 
 
 class Strategy(Protocol[G]):

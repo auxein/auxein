@@ -24,6 +24,11 @@ class VectorisedEvaluator:
     Shapes and finiteness are validated. The batch's wall time is measured once and **split equally** across its
     candidates, since a vectorised call has no per-candidate time.
 
+    **Concurrency does not apply.** There is exactly one call per batch, made on the driver's thread (or awaited there if
+    `fn` is an `async def`), so `concurrency` and `executor` have no effect on it: the parallelism is inside the array
+    operation. Under steady-state delivery the driver hands over one candidate at a time, which works but defeats the
+    purpose of vectorising; the driver warns once per run when that happens. Prefer generation delivery here.
+
     With `uses_rng=True`, `fn` receives **one stream per batch**, derived from the id of the batch's first candidate
     (`ctx.batch_rng_for`). That is deterministic because the composition of a batch is, and it is the documented
     exception to the per-candidate evaluation streams of design doc §8: a vectorised function draws its randomness for

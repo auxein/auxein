@@ -2,7 +2,13 @@
 
 from auxein.driver.budget import Budget
 from auxein.driver.driver import arun, run
-from auxein.driver.errors import DriverError, EvaluatorError, RecordingDisabledWarning, StrategyError
+from auxein.driver.errors import (
+    DriverError,
+    EvaluatorError,
+    RecordingDisabledWarning,
+    SteadyStateVectorisationWarning,
+    StrategyError,
+)
 from auxein.driver.result import RunResult
 
 __all__ = [
@@ -12,6 +18,7 @@ __all__ = [
     "RecordingDisabledWarning",
     "RunResult",
     "StrategyError",
+    "SteadyStateVectorisationWarning",
     "arun",
     "run",
 ]

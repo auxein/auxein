@@ -152,10 +152,15 @@ def test_the_strategy_is_bound_before_the_first_ask():
     assert strategy.bound is not None and strategy.bound[0].objective_names == ("value",)
 
 
-def test_a_strategy_that_needs_steady_state_delivery_is_rejected():
-    with pytest.raises(ValueError, match="generation only"):
-        go(ScriptedStrategy(tell_mode="steady_state"))
-    go(ScriptedStrategy(tell_mode="both"))
+def test_delivery_is_checked_against_the_strategys_tell_mode():
+    with pytest.raises(ValueError, match="supports tell_mode='generation' only"):
+        go(ScriptedStrategy(tell_mode="generation"), delivery="steady_state")
+    with pytest.raises(ValueError, match="supports tell_mode='steady_state' only"):
+        go(ScriptedStrategy(tell_mode="steady_state"), delivery="generation")
+    with pytest.raises(ValueError, match="unknown delivery"):
+        go(delivery="whenever")
+    go(ScriptedStrategy(tell_mode="both"), delivery="steady_state")
+    go(ScriptedStrategy(tell_mode="steady_state"))  # None: the strategy's own mode
 
 
 def test_batch_size_must_be_positive():
