@@ -148,11 +148,31 @@ class ArrayBatch:
     def candidate(self, index: int) -> Candidate[Array]:
         return Candidate(self._ids[index], self._genomes[index], self._parents[index], self._origins[index], self._step)
 
+    def slice(self, start: int, stop: int) -> "ArrayBatch":
+        """The candidates `start` to `stop`, as a batch sharing this batch's array (a view, not a copy)."""
+        if not 0 <= start <= stop <= len(self):
+            raise ValueError(f"cannot slice [{start}:{stop}] out of {len(self)} candidates")
+        return ArrayBatch(
+            self._genomes[start:stop], self._ids[start:stop], self._step, self._origins[start:stop], self._parents[start:stop]
+        )
+
     def take(self, n: int) -> "ArrayBatch":
         """The first `n` candidates, as a batch sharing this batch's array (a slice, not a copy)."""
         if not 0 <= n <= len(self):
             raise ValueError(f"cannot take {n} candidates out of {len(self)}")
         return ArrayBatch(self._genomes[:n], self._ids[:n], self._step, self._origins[:n], self._parents[:n])
+
+
+def single(batch: Batch[G], index: int) -> Batch[G]:
+    """The one-candidate batch holding candidate `index`. Array-backed batches stay array-backed (a view, not a copy).
+
+    Steady-state delivery evaluates and records candidates one at a time, through the same evaluators as batches.
+    """
+    if not 0 <= index < len(batch.candidates):
+        raise ValueError(f"no candidate {index} in a batch of {len(batch.candidates)}")
+    if isinstance(batch, ArrayBatch):
+        return cast("Batch[G]", batch.slice(index, index + 1))
+    return ListBatch((batch.candidates[index],))
 
 
 def take(batch: Batch[G], n: int) -> Batch[G]:

@@ -1,6 +1,6 @@
 """Core types of the Auxein design (design doc §3 to §5): candidates, batches, evaluations and the protocols."""
 
-from auxein.core.batch import ArrayBatch, Batch, ListBatch, take
+from auxein.core.batch import ArrayBatch, Batch, ListBatch, single, take
 from auxein.core.candidate import Candidate
 from auxein.core.evaluation import ArtifactRef, Cost, Direction, Evaluation, Objective, RawRef, Status
 from auxein.core.evaluation_batch import EvaluationBatch, to_minimisation
@@ -38,6 +38,7 @@ __all__ = [
     "StrategyCapabilities",
     "StrategyContext",
     "TellMode",
+    "single",
     "evaluation_from_return",
     "evaluations_from_batch_return",
     "take",
