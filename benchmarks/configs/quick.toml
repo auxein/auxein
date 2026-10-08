@@ -7,30 +7,8 @@ dims = [2, 10]
 problems = ["sphere", "ellipsoid", "rosenbrock", "rastrigin", "noisy_sphere"]
 targets = [1e-1, 1e-3, 1e-6]
 
-[[algorithms]]
-name = "auxein-default"
-adapter = "auxein_static"
-[algorithms.params]
-population_size = 100
-mutation = { type = "self_adaptive", tau = 0.1 }
-distribution = "sigma_scaling"
-offspring_size = 4
-alpha = 0.5
-
-[[algorithms]]
-name = "random-search"
-adapter = "random_search"
-
-[[algorithms]]
-name = "cma-es"
-adapter = "cmaes"
-[algorithms.params]
-sigma0 = 2.0
-x0_range = 4.0
-
-[[algorithms]]
-name = "auxein-core-random"
-adapter = "auxein_core_random"
+[report]
+references = ["auxein-core-ga"]
 
 [[algorithms]]
 name = "auxein-core-ga"
@@ -43,6 +21,21 @@ selection = { type = "tournament", size = 2 }
 recombination = { type = "intermediate", per_gene = false }
 mutation = { type = "self_adaptive", per_gene = false, initial_step = 0.1, min_step = 1e-12 }
 repair = "clip"
+
+[[algorithms]]
+name = "auxein-core-random"
+adapter = "auxein_core_random"
+
+[[algorithms]]
+name = "random-search"
+adapter = "random_search"
+
+[[algorithms]]
+name = "cma-es"
+adapter = "cmaes"
+[algorithms.params]
+sigma0 = 2.0
+x0_range = 4.0
 
 [overhead]
 budget = 2000

@@ -17,7 +17,7 @@ def test_report_builds_from_a_results_directory(tiny_results):
         "## 6. Methodology",
     ):
         assert heading in text
-    for algorithm in ("auxein-default", "random-search", "cma-es"):
+    for algorithm in ("auxein-core-ga", "random-search", "cma-es"):
         assert algorithm in text
 
 
@@ -38,10 +38,10 @@ def test_report_tables(tiny_results):
     assert (
         "| Algorithm | Final error, median [IQR] | Success 0.1 | Success 0.001 | Success 1e-06 | ERT 0.1 | ERT 0.001 | ERT 1e-06 |" in text
     )
-    assert "| auxein-default vs |" in text
+    assert "| auxein-core-ga vs |" in text
     assert "| cma-es |" in text and "| random-search |" in text
     assert "Evaluations per generation" in text
-    assert "| auxein-default | 10 | 14 |" in text  # population 10 + 4 children per generation
+    assert "| auxein-core-ga | 10 | 10 |" in text  # lambda = 10 children per generation, nothing re-scored
     assert "Holm" in text and "A12" in text and "ERT (expected running time)" in text
 
 
@@ -100,7 +100,7 @@ def test_the_report_has_a_mean_rank_table(tiny_results):
     text = build_report(tiny_results).read_text()
     assert "### Mean rank" in text and "| Algorithm | sphere d=2 |" in text and "Mean rank |" in text
     cells, ranks = mean_ranks(Results(tiny_results))
-    assert len(cells) == 6 and set(ranks) == {"auxein-default", "random-search", "cma-es"}
+    assert len(cells) == 6 and set(ranks) == {"auxein-core-ga", "random-search", "cma-es"}
     for position in range(len(cells)):
         assert sorted(r[position] for r in ranks.values()) == [1, 2, 3]  # each cell ranks every algorithm exactly once
 
@@ -112,17 +112,17 @@ def test_a_config_can_name_several_reference_algorithms(tiny_results, tmp_path):
     copy = tmp_path / "results"
     shutil.copytree(tiny_results, copy)
     metadata = json.loads((copy / "metadata.json").read_text())
-    metadata["config"]["report"] = {"references": ["auxein-default", "cma-es", "not-in-this-run"]}
+    metadata["config"]["report"] = {"references": ["auxein-core-ga", "cma-es", "not-in-this-run"]}
     (copy / "metadata.json").write_text(json.dumps(metadata))
 
     results = Results(copy)
-    assert results.references == ["auxein-default", "cma-es"]  # the unknown name is ignored
+    assert results.references == ["auxein-core-ga", "cma-es"]  # the unknown name is ignored
     text = build_report(copy).read_text()
-    assert "### Reference: `auxein-default`" in text and "### Reference: `cma-es`" in text
-    assert "| auxein-default vs |" in text and "| cma-es vs |" in text
+    assert "### Reference: `auxein-core-ga`" in text and "### Reference: `cma-es`" in text
+    assert "| auxein-core-ga vs |" in text and "| cma-es vs |" in text
     assert text.splitlines().count("### sphere, d=2") == 1  # one summary table, however many references
-    assert "#### sphere, d=2" in text and "`auxein-default`, `cma-es`" in text
+    assert "#### sphere, d=2" in text and "`auxein-core-ga`, `cma-es`" in text
 
 
-def test_the_default_reference_is_auxein_default(tiny_results):
-    assert Results(tiny_results).references == ["auxein-default"]
+def test_the_default_reference_is_the_first_algorithm_of_the_config(tiny_results):
+    assert Results(tiny_results).references == ["auxein-core-ga"]
