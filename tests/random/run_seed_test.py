@@ -11,11 +11,32 @@ def test_stable_name_ids_are_pinned():
     assert stable_name_id("scenarios") == 2469974053
     assert stable_name_id("evaluation") == 321103221
     assert stable_name_id("evaluation-batch") == 2065073135  # the one stream of a vectorised evaluator's batch (design doc §8)
+    # the agent layer's streams (design doc §8): the agent's stream per (candidate, scenario), the batched environment's stream per
+    # batch, the world's stream from a scenario's seed, the scenarios' own seeds, and the held-out evaluation's seed
+    assert stable_name_id("episode") == 3718913242
+    assert stable_name_id("episode-batch") == 2246772810
+    assert stable_name_id("world") == 980881731
+    assert stable_name_id("scenario-seed") == 2807596693
+    assert stable_name_id("held-out") == 3101022945
     assert stable_name_id("é") == stable_name_id("é")
 
 
 def test_the_names_auxein_uses_map_to_different_integers():
-    names = ["strategy", "scenarios", "evaluation", "evaluation-batch", "init", "selection", "variation", "replacement"]
+    names = [
+        "strategy",
+        "scenarios",
+        "evaluation",
+        "evaluation-batch",
+        "episode",
+        "episode-batch",
+        "world",
+        "scenario-seed",
+        "held-out",
+        "init",
+        "selection",
+        "variation",
+        "replacement",
+    ]
     assert len({stable_name_id(n) for n in names}) == len(names)
 
 

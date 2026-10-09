@@ -6,6 +6,9 @@ run goes on. *Misconfiguration* (a function that cannot be sent to a worker, a r
 means nothing will work, so it fails the run whatever the policy.
 """
 
+import asyncio
+from collections.abc import Awaitable
+
 from auxein.core import Candidate, EvalContext, Evaluation, Status, describe_exception
 from auxein.core._typing import G
 from auxein.evaluators.errors import EvaluationError
@@ -31,3 +34,17 @@ def failures_of(candidates: list[Candidate[G]], error: Exception, wall_time: flo
     text = describe_exception(error)
     each = wall_time / len(candidates) if candidates else 0.0
     return [Evaluation.failed(c, Status.FAILED, text, each) for c in candidates]
+
+
+async def await_with_timeout(awaitable: Awaitable[object], timeout: float | None) -> object:
+    """Await a native coroutine, cancelling it if it outlives `timeout`: the one hard timeout that needs no process."""
+    if timeout is None:
+        return await awaitable
+    scope = asyncio.timeout(timeout)
+    try:
+        async with scope:
+            return await awaitable
+    except TimeoutError:
+        if scope.expired():
+            raise EvaluationTimeout(timeout) from None
+        raise  # the function raised a TimeoutError of its own: that is an ordinary failure

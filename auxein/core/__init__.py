@@ -2,6 +2,7 @@
 
 from auxein.core.batch import ArrayBatch, Batch, ListBatch, single, take
 from auxein.core.candidate import Candidate
+from auxein.core.episodes import EpisodeRecords
 from auxein.core.evaluation import ArtifactRef, Cost, Direction, Evaluation, Objective, RawRef, Status, describe_exception
 from auxein.core.evaluation_batch import EvaluationBatch, to_minimisation
 from auxein.core.ids import CandidateId, IdIssuer
@@ -20,6 +21,7 @@ __all__ = [
     "CandidateId",
     "Cost",
     "Direction",
+    "EpisodeRecords",
     "EvalContext",
     "Evaluation",
     "EvaluationBatch",

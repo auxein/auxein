@@ -10,6 +10,7 @@ import numpy as np
 from auxein.backend import Array, Backend
 from auxein.core._typing import G
 from auxein.core.candidate import Candidate
+from auxein.core.episodes import EpisodeRecords
 from auxein.core.evaluation import Evaluation, Objective, Status
 
 NO_VALUE = math.nan
@@ -37,6 +38,8 @@ class EvaluationBatch(Generic[G]):
     """
 
     evaluations: Sequence[Evaluation[G]]
+    episodes: EpisodeRecords | None = None
+    """The per-scenario measurements behind the evaluations, for the recorder (an episode evaluator sets it; design doc §6.4)."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "evaluations", tuple(self.evaluations))

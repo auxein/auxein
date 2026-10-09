@@ -19,10 +19,12 @@ Everything else is importable from its subpackage: `auxein.core` (candidates, ba
 
 from importlib import metadata
 
+from auxein.aggregators import Aggregator
 from auxein.backend import Backend
 from auxein.core import BatchResult, Objective, Result, Status
 from auxein.driver import Budget, RecordingDisabledWarning, RunResult, aresume, arun, resume, run
-from auxein.evaluators import FunctionEvaluator, VectorisedEvaluator
+from auxein.environments import EpisodeResult, Scenario, ScenarioSet
+from auxein.evaluators import EpisodeEvaluator, FunctionEvaluator, VectorisedEvaluator
 from auxein.recording import open_run
 from auxein.spaces import Box
 from auxein.strategies import GeneticAlgorithm, RandomSearch
@@ -33,10 +35,13 @@ except metadata.PackageNotFoundError:  # running from a source tree that was nev
     __version__ = "0+unknown"
 
 __all__ = [
+    "Aggregator",
     "Backend",
     "BatchResult",
     "Box",
     "Budget",
+    "EpisodeEvaluator",
+    "EpisodeResult",
     "FunctionEvaluator",
     "GeneticAlgorithm",
     "Objective",
@@ -44,6 +49,8 @@ __all__ = [
     "RecordingDisabledWarning",
     "Result",
     "RunResult",
+    "Scenario",
+    "ScenarioSet",
     "Status",
     "VectorisedEvaluator",
     "__version__",

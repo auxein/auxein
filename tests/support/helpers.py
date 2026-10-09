@@ -34,6 +34,8 @@ def eval_context(
         backend,
         lambda cid: run_seed.stream("evaluation", cid, backend=Backend("numpy", "cpu", backend.precision)),  # as the driver does
         lambda cid: run_seed.stream("evaluation-batch", cid, backend=backend),
+        lambda cid, scenario: run_seed.stream("episode", cid, scenario, backend=Backend("numpy", "cpu", backend.precision)),
+        lambda cid: run_seed.stream("episode-batch", cid, backend=backend),
         executor=InlineExecutor() if executor is None else executor,
         concurrency=concurrency,
         timeout=timeout,

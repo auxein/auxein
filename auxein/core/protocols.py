@@ -71,6 +71,13 @@ class EvalContext(Generic[G]):
     batch_rng_for: Callable[[CandidateId], RandomStream]
     """Derives the one stream a vectorised evaluator receives per batch, from the id of the batch's first candidate
     (§8). It is deterministic because the composition of a batch is."""
+    episode_rng_for: Callable[[CandidateId, int], RandomStream] | None = None
+    """Derives the agent's stream for one episode, from the candidate's id and the scenario's index in its set (§8): the
+    randomness that belongs to the agent (a stochastic policy), as opposed to the world's, which comes from the scenario's own
+    seed so that every candidate faces the same realisation. Numpy-backed like `rng_for`, and picklable. The episode evaluator
+    needs it; the driver always provides it."""
+    episode_batch_rng_for: Callable[[CandidateId], RandomStream] | None = None
+    """Derives the one stream a batched environment receives per batch, from the id of the batch's first candidate (§8)."""
     executor: Executor = field(default_factory=InlineExecutor)
     """Where synchronous user functions run (§5.3). Use `call` rather than this directly."""
     concurrency: int = 1
