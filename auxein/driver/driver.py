@@ -76,6 +76,7 @@ from auxein.recording.replay import ReplayRecord, ReplayStream, iter_records
 from auxein.recording.sqlite import DEFAULT_GENOME_THRESHOLD
 from auxein.spaces import Space, codec_of
 from auxein.spaces.codec import GenomeCodec
+from auxein.strategies.structured.variation import ReplayDivergence
 
 T = TypeVar("T")
 
@@ -297,6 +298,8 @@ class Driver(Generic[G]):
             status = "interrupted"
             self._checkpoint_on_interrupt()
             raise
+        except ReplayDivergence as error:
+            raise ReplayMismatchError(f"cannot resume {self._run_dir}: {error}") from error
         except ReplayMismatchError:
             abandon = True  # nothing new is recorded by an attempt that found the recording does not match
             raise

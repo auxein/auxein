@@ -26,8 +26,8 @@ from auxein.driver import Budget, RecordingDisabledWarning, RunResult, aresume, 
 from auxein.environments import EpisodeResult, Scenario, ScenarioSet
 from auxein.evaluators import EpisodeEvaluator, FunctionEvaluator, VectorisedEvaluator
 from auxein.recording import open_run
-from auxein.spaces import Box
-from auxein.strategies import GeneticAlgorithm, RandomSearch
+from auxein.spaces import Box, SequenceSpace
+from auxein.strategies import GeneticAlgorithm, RandomSearch, StructuredGeneticAlgorithm
 
 try:
     __version__ = metadata.version("auxein")
@@ -51,7 +51,9 @@ __all__ = [
     "RunResult",
     "Scenario",
     "ScenarioSet",
+    "SequenceSpace",
     "Status",
+    "StructuredGeneticAlgorithm",
     "VectorisedEvaluator",
     "__version__",
     "aresume",
