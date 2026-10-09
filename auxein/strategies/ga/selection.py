@@ -84,10 +84,14 @@ class SigmaScalingSUS:
         finite = xp.isfinite(violation)
 
         def scaled(goodness: Array, mask: Array) -> Array:
+            # an objective that is finite in float64 can be infinite in float32 (1e39): such a member has no usable goodness, so it
+            # gets no weight, like an infeasible one, instead of turning the scale into infinity and every weight into NaN
+            mask = mask & xp.isfinite(goodness)
+            goodness = xp.where(mask, goodness, 0.0)
             members = xp.astype(mask, population.backend.dtype)
             n = xp.maximum(xp.sum(members), xp.asarray(1.0, dtype=population.backend.dtype, device=population.backend.device))
             # weights are invariant under a positive rescaling of goodness: normalise it so that squaring never overflows
-            scale = xp.max(xp.where(mask, xp.abs(goodness), 0.0))
+            scale = xp.max(xp.abs(goodness))
             g = xp.where(mask, goodness / xp.where(scale > 0, scale, 1.0), 0.0)
             mean = xp.sum(g) / n
             std = xp.sqrt(xp.sum(xp.where(mask, (g - mean) ** 2, 0.0)) / n)
