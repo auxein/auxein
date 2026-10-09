@@ -96,8 +96,12 @@ def test_fail_fast_turns_a_timeout_into_an_error_naming_the_candidate():
 @pytest.mark.parametrize("delivery", ["generation", "steady_state"])
 def test_a_process_that_times_out_is_killed_and_replaced_and_the_others_are_unaffected(tmp_path: Path, delivery: str):
     evaluator = FunctionEvaluator(partial(workers.slow_if_unlucky, 60.0), uses_rng=True)
-    # a spawned worker imports torch to unpickle its first tensor genome (about a second), and that counts towards the timeout
-    timeout = 0.5 if integration_backend().name == "numpy" else 4.0
+    if integration_backend().name != "numpy":
+        # killing and replacing a worker does not depend on the backend, and on torch every spawned worker first imports it to
+        # unpickle a tensor genome (about a second, counted towards the timeout), which would need a timeout that makes this
+        # test last half a minute; the torch corner of the process executor is covered by the kill-and-resume and episode tests
+        pytest.skip("worker kill and replacement is independent of the backend")
+    timeout = 0.5
     t0 = time.perf_counter()
     result = go(
         evaluator,
