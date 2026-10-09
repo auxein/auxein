@@ -13,6 +13,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
+from array_api_compat import numpy as xp_numpy
 
 from auxein.aggregators import Aggregator, maximum, mean
 from auxein.backend import Array, Backend, backend_of
@@ -51,15 +52,12 @@ def simulate(xp: Any, gains: Array, targets: Array, drifts: Array, noise: Array,
     `gains` is `(n, 3)`, `targets` and `drifts` are `(s,)`, `noise` is `(s, STEPS)`. Returns `(n, s)` arrays. An episode ends
     when the mass has settled on the target; the state then stays frozen, so that nothing more is counted.
     """
-    # `device=` is part of the array API, which numpy implements from 2.0: the per-episode path hands in plain numpy, so the
-    # keyword is only passed on when there is a device to name (numpy 1.26, the lowest supported version, has no such keyword)
-    where = {} if device is None else {"device": device}
     kp, kd, bias = (gains[:, i][:, None] for i in range(3))
     target, drift = targets[None, :], drifts[None, :]
     shape = (gains.shape[0], targets.shape[0])
-    zeros = xp.zeros(shape, dtype=dtype, **where)
+    zeros = xp.zeros(shape, dtype=dtype, device=device)
     x, v, effort, steps, overshoot = zeros, zeros, zeros, zeros, zeros
-    done = xp.zeros(shape, dtype=xp.bool, **where)
+    done = xp.zeros(shape, dtype=xp.bool, device=device)
     for t in range(STEPS):
         error = target - x
         u = xp.clip(kp * error - kd * v + bias, -FORCE_LIMIT, FORCE_LIMIT)
@@ -69,7 +67,7 @@ def simulate(xp: Any, gains: Array, targets: Array, drifts: Array, noise: Array,
         x = xp.where(active, x_next, x)
         v = xp.where(active, v_next, v)
         effort = effort + xp.where(active, xp.abs(u) * DT, zeros)
-        steps = steps + xp.where(active, xp.ones(shape, dtype=dtype, **where), zeros)
+        steps = steps + xp.where(active, xp.ones(shape, dtype=dtype, device=device), zeros)
         overshoot = xp.maximum(overshoot, xp.where(active, x - target, zeros))
         done = done | ((xp.abs(target - x) < TOLERANCE) & (xp.abs(v) < TOLERANCE))
     distance = xp.abs(target - x)
@@ -77,7 +75,7 @@ def simulate(xp: Any, gains: Array, targets: Array, drifts: Array, noise: Array,
         "final_distance": distance,
         "steps": steps,
         "effort": effort,
-        "success": xp.where(distance < TOLERANCE, xp.ones(shape, dtype=dtype, **where), zeros),
+        "success": xp.where(distance < TOLERANCE, xp.ones(shape, dtype=dtype, device=device), zeros),
         "max_overshoot": overshoot,
     }
 
@@ -116,7 +114,7 @@ class PointMassEnvironment:
     def run_episode(self, agents: Mapping[str, Any], scenario: Scenario, rng: RandomStream) -> EpisodeResult:
         gains = np.asarray(agents["controller"], dtype=np.float64)[None, :]
         out = simulate(
-            np,
+            xp_numpy,  # numpy's array API namespace: plain `numpy` has `device=`, `bool` and `concat` only from 2.0, and 1.26 is supported
             gains,
             np.array([scenario.params["target"]], dtype=np.float64),
             np.array([scenario.params["drift"]], dtype=np.float64),
