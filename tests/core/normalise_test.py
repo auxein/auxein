@@ -277,3 +277,18 @@ def test_a_batch_shares_one_immutable_cost_unless_cost_units_are_per_candidate(b
     assert shared[0].cost is shared[1].cost and shared[0].cost.wall_time == pytest.approx(0.1)
     own = many(BatchResult({"loss": [1.0, 2.0, 3.0]}, cost={"tokens": [1.0, 2.0, 3.0]}))
     assert [e.cost.units["tokens"] for e in own] == [1.0, 2.0, 3.0] and own[0].cost is not own[1].cost
+
+
+def test_results_pickle_so_that_functions_in_worker_processes_can_return_them():
+    import pickle
+
+    import numpy as np
+
+    from auxein.core import BatchResult, Result
+
+    result = Result({"a": 1.0}, {"c": 0.5}, {"d": 2.0}, {"tokens": 3.0})
+    back = pickle.loads(pickle.dumps(result))
+    assert back == result and dict(back.objectives) == {"a": 1.0} and dict(back.cost) == {"tokens": 3.0}
+    batch = BatchResult({"a": np.array([1.0, 2.0])}, {"c": np.array([0.0, 1.0])})
+    again = pickle.loads(pickle.dumps(batch))
+    assert list(again.objectives["a"]) == [1.0, 2.0] and list(again.constraints["c"]) == [0.0, 1.0]
