@@ -82,7 +82,8 @@ def test_a_resumed_or_extended_run_regenerates_the_same_candidates_and_does_not_
     snapshot = comparable(tmp_path / "r")
 
     again = sq.FakeLLM()
-    auxein.resume(budget=auxein.Budget(evaluations=96), **arguments(strategy(again), tmp_path / "r"))  # nothing to do
+    with pytest.warns(auxein.driver.ResumeWarning):
+        auxein.resume(budget=auxein.Budget(evaluations=96), **arguments(strategy(again), tmp_path / "r"))  # nothing to do
     assert again.calls == 0
 
     extended = sq.FakeLLM()
@@ -139,14 +140,24 @@ def test_changed_inputs_are_detected_as_a_divergence_and_the_operator_is_not_cal
     assert drifted.calls == 0  # it was not called for a candidate that is recorded
 
 
+@pytest.mark.filterwarnings("ignore::auxein.RecordingDisabledWarning")
 def test_without_recording_the_calls_are_live_and_the_run_says_it_cannot_be_reproduced():
-    with pytest.warns(OperatorNotRecordedWarning, match="cannot be reproduced or resumed"):
-        first = auxein.run(budget=auxein.Budget(evaluations=60), **arguments(strategy(sq.FakeLLM()), None))
-    with pytest.warns(OperatorNotRecordedWarning):
-        second = auxein.run(budget=auxein.Budget(evaluations=60), **arguments(strategy(sq.FakeLLM()), None))
-    assert first.best is not None and second.best is not None
+    def run_once() -> list[tuple[object, ...]]:
+        seen: list[tuple[object, ...]] = []
+
+        def distance(genome: tuple[object, ...]) -> auxein.Result:
+            seen.append(genome)
+            return sq.distance(genome)
+
+        with pytest.warns(OperatorNotRecordedWarning, match="cannot be reproduced or resumed"):
+            auxein.run(
+                budget=auxein.Budget(evaluations=60),
+                **arguments(strategy(sq.FakeLLM()), None, evaluator=auxein.FunctionEvaluator(distance)),
+            )
+        return seen
+
     # the same seed, but a model that answers differently each time: the two runs are not the same run
-    assert first.trace != second.trace or first.best.candidate.genome != second.best.candidate.genome
+    assert run_once() != run_once()
 
 
 def test_a_recorded_run_does_not_warn(tmp_path: Path):

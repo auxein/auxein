@@ -107,6 +107,7 @@ def test_extending_a_structured_run_gives_the_run_a_larger_budget_would_have_mad
 # --- structured genomes with the agent layer ---
 
 
+@pytest.mark.filterwarnings("ignore::auxein.RecordingDisabledWarning")
 def test_a_sequence_genome_becomes_an_agent_for_the_point_mass_through_the_episode_evaluator():
     scenarios = ScenarioSet.generate(pm.scenario_params, 4, seed=3)
     evolver = auxein.EpisodeEvaluator(sq.PlanDecoder(), pm.step_environment(), scenarios, pm.aggregator())
