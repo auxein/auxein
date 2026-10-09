@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from auxein.backend import Backend
+from auxein.backend import Backend, BackendError
 from tests.gpu import report as probe
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -19,6 +19,11 @@ ROOT = Path(__file__).resolve().parents[2]
 def device(request: pytest.FixtureRequest) -> str:
     chosen = request.config.getoption("--device")
     assert isinstance(chosen, str) and chosen, "the GPU smoke suite needs --device (the tests are skipped without it)"
+    try:
+        Backend("torch", chosen, "float32")
+    except BackendError as error:
+        # a device that was asked for and is not there is not a skipped test: whoever ran the suite believes it ran on that device
+        pytest.exit(f"--device {chosen}: {error}", returncode=4)
     return chosen
 
 
@@ -77,7 +82,9 @@ def pytest_runtest_logreport(report: pytest.TestReport) -> None:
 def _git_sha() -> str:
     try:
         sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True, timeout=10).stdout.strip()
-        dirty = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True, timeout=10).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain", "--", ".", ":!docs/gpu-smoke"], cwd=ROOT, capture_output=True, text=True, timeout=10
+        ).stdout.strip()
         return sha + (" (with uncommitted changes)" if dirty else "")
     except (OSError, subprocess.SubprocessError):
         return "unknown"
