@@ -115,3 +115,22 @@ def test_the_new_core_ga_beats_random_search_on_the_sphere():
     ga, _ = run_once("auxein_core_ga", {}, budget=4000, dim=5)
     rs, _ = run_once("random_search", {}, budget=4000, dim=5)
     assert ga.best_error < rs.best_error / 100
+
+
+@pytest.mark.parametrize("adapter", ["auxein_core_ga", "auxein_core_random"])
+def test_the_core_adapters_run_on_torch_and_say_so(adapter):
+    pytest.importorskip("torch")
+    torch_objective, torch_info = run_once(adapter, {"backend": "torch", "precision": "float32"}, budget=300)
+    numpy_objective, _ = run_once(adapter, {}, budget=300)
+    assert torch_objective.evals == numpy_objective.evals == 300
+    assert torch_objective.trace != numpy_objective.trace  # another backend draws other numbers
+    if adapter == "auxein_core_ga":
+        assert torch_info.extra["backend"] == "torch-cpu-float32"
+
+
+def test_without_backend_params_the_core_adapters_are_the_numpy_float64_default():
+    """The existing entries and their committed reports must mean what they meant: no param, no change."""
+    from benchmarks.adapters.base import backend_from
+
+    assert backend_from({}) is None and backend_from({"population_size": 50}) is None
+    assert backend_from({"backend": "torch"}).precision == "float64"  # type: ignore[union-attr]
