@@ -27,7 +27,7 @@ from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Generic, Literal, TypeVar, cast
+from typing import Any, Generic, Literal, TypeVar, cast
 
 from auxein.backend import Backend
 from auxein.core import (
@@ -41,7 +41,9 @@ from auxein.core import (
     FailurePolicy,
     IdIssuer,
     ListBatch,
+    NoOperatorLog,
     Objective,
+    OperatorLog,
     ProblemSpec,
     StateDict,
     Status,
@@ -71,7 +73,9 @@ from auxein.random import RunSeed
 from auxein.recording import CheckpointInfo, ExistingRun, NoopRecorder, Recorder, ResumeError, SQLiteRecorder
 from auxein.recording.genomes import EncodedGenome, encode_batch
 from auxein.recording.replay import ReplayRecord, ReplayStream, iter_records
-from auxein.spaces import Space
+from auxein.recording.sqlite import DEFAULT_GENOME_THRESHOLD
+from auxein.spaces import Space, codec_of
+from auxein.spaces.codec import GenomeCodec
 
 T = TypeVar("T")
 
@@ -214,7 +218,11 @@ class Driver(Generic[G]):
 
         run_seed = RunSeed(seed)
         self._issuer = IdIssuer()
-        self._strategy_context = StrategyContext(run_seed.stream("strategy", backend=backend), backend, self._issuer.next)
+        self._codec: GenomeCodec[Any] | None = codec_of(problem.space)
+        if isinstance(recorder, SQLiteRecorder):
+            recorder.use_codec(self._codec)  # structured genomes are recorded through their space's codec
+        operators: OperatorLog = recorder if isinstance(recorder, SQLiteRecorder) else NoOperatorLog()
+        self._strategy_context = StrategyContext(run_seed.stream("strategy", backend=backend), backend, self._issuer.next, operators)
         host_backend = Backend("numpy", "cpu", backend.precision)
         self._base_context: EvalContext[G] = EvalContext(
             problem,
@@ -397,7 +405,7 @@ class Driver(Generic[G]):
             return await self._evaluator.evaluate(batch, self._eval_context), 0, False
         candidates = batch.candidates
         records = replay.take(len(candidates))
-        self._verify(candidates, encode_batch(take(batch, len(records))), records)
+        self._verify(candidates, encode_batch(take(batch, len(records)), self._codec), records)
         done = [record.evaluation(candidate) for record, candidate in zip(records, candidates, strict=False)]
         if len(records) == len(candidates):
             return EvaluationBatch(done), len(records), False
@@ -665,7 +673,7 @@ class Driver(Generic[G]):
             else {"candidate_id": first.candidate_id, "status": first.status.value, "error": first.error},
             "wall_time": self._elapsed(),
             "ask_high": self._ask_high,
-            "window": None if self._window is None else encode_window(self._window),
+            "window": None if self._window is None else encode_window(self._window, self._codec),
         }
         return {"delivery": self._delivery, "strategy": self._strategy.state_dict(), "driver": driver}
 
@@ -700,7 +708,7 @@ class Driver(Generic[G]):
         self._ask_high = max(self._batch_size, cast("int", driver["ask_high"]))
         window = cast("StateDict | None", driver["window"])
         if window is not None:
-            self._restored_window = cast("Window[G]", decode_window(window, self._backend))
+            self._restored_window = cast("Window[G]", decode_window(window, self._backend, self._codec))
 
     # --- resuming (design doc §10.4) ---
 
@@ -823,7 +831,7 @@ class Driver(Generic[G]):
         chunk: list[Evaluation[G]] = []
         total = 0
         for record in iter_records(database, upto=upto):
-            evaluation = cast("Evaluation[G]", record.evaluation(record.decoded_candidate(self._backend)))
+            evaluation = cast("Evaluation[G]", record.evaluation(record.decoded_candidate(self._backend, self._codec)))
             chunk.append(evaluation)
             for unit, amount in evaluation.cost.units.items():
                 if unit in self._costs:
@@ -845,7 +853,7 @@ class Driver(Generic[G]):
             return
         records = replay.take(len(slots))
         candidates = [slot.batch.candidates[0] for slot in slots[: len(records)]]
-        genomes = [encode_batch(slot.batch)[0] for slot in slots[: len(records)]]
+        genomes = [encode_batch(slot.batch, self._codec)[0] for slot in slots[: len(records)]]
         self._verify(candidates, genomes, records)
         for slot, record, candidate in zip(slots, records, candidates, strict=False):
             slot.result = EvaluationBatch([record.evaluation(candidate)])
@@ -1009,6 +1017,7 @@ def _build(
     checkpoint_every: float | None,
     checkpoint_every_evaluations: int | None,
     keep_checkpoints: int | None,
+    genome_store_threshold: int | None,
     run_dir: str | Path | None,
     name: str | None,
     clock: Callable[[], float],
@@ -1020,7 +1029,9 @@ def _build(
             "run directory, and a run without one is not recorded"
         )
     problem = ProblemSpec(space, tuple(objectives), tuple(constraints), tuple(descriptors))
-    recorder: Recorder = NoopRecorder() if run_dir is None else SQLiteRecorder(run_dir, resume=resume)
+    recorder: Recorder = (
+        NoopRecorder() if run_dir is None else SQLiteRecorder(run_dir, resume=resume, genome_threshold=genome_store_threshold)
+    )
     return Driver(
         strategy=strategy,
         evaluator=evaluator,
@@ -1088,6 +1099,7 @@ def run(
     checkpoint_every: float | None = None,
     checkpoint_every_evaluations: int | None = None,
     keep_checkpoints: int | None = None,
+    genome_store_threshold: int | None = DEFAULT_GENOME_THRESHOLD,
     run_dir: str | Path | None = None,
     name: str | None = None,
     clock: Callable[[], float] = time.monotonic,
@@ -1130,6 +1142,10 @@ def run(
     `checkpoint_every_evaluations` evaluations, when the run ends and when it is interrupted at a consistent moment. The
     newest `keep_checkpoints` (default 2) are kept; 0 writes none, and then a resume replays the run from its start.
     Passing any of these without `run_dir` is an error.
+
+    **The genome store** (design doc §10.3): a genome whose encoding is larger than `genome_store_threshold` bytes (default
+    4096; `None` keeps every genome inline) is stored once in the run's database, by its SHA-256, and the candidates refer to
+    it. It changes the size of the recording, not its content, and is ignored without `run_dir`.
     """
     _warn_unrecorded(run_dir, stacklevel=3)
     driver = _build(
@@ -1137,7 +1153,8 @@ def run(
         budget=budget, seed=seed, backend=backend, batch_size=batch_size, concurrency=concurrency, executor=executor,
         delivery=delivery, deterministic=deterministic, failure_policy=failure_policy, timeout=timeout,
         initial_failure_guard=initial_failure_guard, checkpoint_every=checkpoint_every,
-        checkpoint_every_evaluations=checkpoint_every_evaluations, keep_checkpoints=keep_checkpoints, run_dir=run_dir, name=name,
+        checkpoint_every_evaluations=checkpoint_every_evaluations, keep_checkpoints=keep_checkpoints,
+        genome_store_threshold=genome_store_threshold, run_dir=run_dir, name=name,
         clock=clock,
     )  # fmt: skip
     return _execute(driver)
@@ -1165,6 +1182,7 @@ async def arun(
     checkpoint_every: float | None = None,
     checkpoint_every_evaluations: int | None = None,
     keep_checkpoints: int | None = None,
+    genome_store_threshold: int | None = DEFAULT_GENOME_THRESHOLD,
     run_dir: str | Path | None = None,
     name: str | None = None,
     clock: Callable[[], float] = time.monotonic,
@@ -1176,7 +1194,8 @@ async def arun(
         budget=budget, seed=seed, backend=backend, batch_size=batch_size, concurrency=concurrency, executor=executor,
         delivery=delivery, deterministic=deterministic, failure_policy=failure_policy, timeout=timeout,
         initial_failure_guard=initial_failure_guard, checkpoint_every=checkpoint_every,
-        checkpoint_every_evaluations=checkpoint_every_evaluations, keep_checkpoints=keep_checkpoints, run_dir=run_dir, name=name,
+        checkpoint_every_evaluations=checkpoint_every_evaluations, keep_checkpoints=keep_checkpoints,
+        genome_store_threshold=genome_store_threshold, run_dir=run_dir, name=name,
         clock=clock,
     )  # fmt: skip
     return await driver.execute()
@@ -1204,6 +1223,7 @@ def resume(
     checkpoint_every: float | None = None,
     checkpoint_every_evaluations: int | None = None,
     keep_checkpoints: int | None = None,
+    genome_store_threshold: int | None = DEFAULT_GENOME_THRESHOLD,
     run_dir: str | Path,
     name: str | None = None,
     clock: Callable[[], float] = time.monotonic,
@@ -1240,7 +1260,8 @@ def resume(
         budget=budget, seed=seed, backend=backend, batch_size=batch_size, concurrency=concurrency, executor=executor,
         delivery=delivery, deterministic=deterministic, failure_policy=failure_policy, timeout=timeout,
         initial_failure_guard=initial_failure_guard, checkpoint_every=checkpoint_every,
-        checkpoint_every_evaluations=checkpoint_every_evaluations, keep_checkpoints=keep_checkpoints, run_dir=run_dir, name=name,
+        checkpoint_every_evaluations=checkpoint_every_evaluations, keep_checkpoints=keep_checkpoints,
+        genome_store_threshold=genome_store_threshold, run_dir=run_dir, name=name,
         clock=clock, resume=True,
     )  # fmt: skip
     result = _execute(driver)
@@ -1271,6 +1292,7 @@ async def aresume(
     checkpoint_every: float | None = None,
     checkpoint_every_evaluations: int | None = None,
     keep_checkpoints: int | None = None,
+    genome_store_threshold: int | None = DEFAULT_GENOME_THRESHOLD,
     run_dir: str | Path,
     name: str | None = None,
     clock: Callable[[], float] = time.monotonic,
@@ -1281,7 +1303,8 @@ async def aresume(
         budget=budget, seed=seed, backend=backend, batch_size=batch_size, concurrency=concurrency, executor=executor,
         delivery=delivery, deterministic=deterministic, failure_policy=failure_policy, timeout=timeout,
         initial_failure_guard=initial_failure_guard, checkpoint_every=checkpoint_every,
-        checkpoint_every_evaluations=checkpoint_every_evaluations, keep_checkpoints=keep_checkpoints, run_dir=run_dir, name=name,
+        checkpoint_every_evaluations=checkpoint_every_evaluations, keep_checkpoints=keep_checkpoints,
+        genome_store_threshold=genome_store_threshold, run_dir=run_dir, name=name,
         clock=clock, resume=True,
     )  # fmt: skip
     result = await driver.execute()

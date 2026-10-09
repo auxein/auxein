@@ -16,17 +16,21 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TypeVar, cast
+from typing import Any, TypeVar, cast
 
 from auxein.backend import Backend
-from auxein.core import Batch, EpisodeRecords, EvaluationBatch, StateDict, Status
+from auxein.core import Batch, EpisodeRecords, EvaluationBatch, OperatorRecord, StateDict, Status
 from auxein.recording import checkpoints, environment
-from auxein.recording.genomes import EncodedGenome, encode_batch
+from auxein.recording.genomes import EncodedGenome, encode_batch, genome_hash
 from auxein.recording.lock import RunLock, RunLockedError
+from auxein.spaces.codec import GenomeCodec, canonical_json
 
 G = TypeVar("G")
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
+
+DEFAULT_GENOME_THRESHOLD = 4096
+"""Genomes larger than this many encoded bytes go into the genome store instead of inline in `candidates` (design doc §10.3)."""
 
 SCHEMA = """
 CREATE TABLE schema_version (version INTEGER NOT NULL);
@@ -39,8 +43,13 @@ CREATE TABLE candidates (
     genome_dtype TEXT,              -- arrays only
     genome_shape TEXT,              -- arrays only: a JSON list
     created_at REAL NOT NULL,
-    event_seq INTEGER NOT NULL      -- the 'ask' event whose transaction recorded the candidate and its evaluation
+    event_seq INTEGER NOT NULL,     -- the 'ask' event whose transaction recorded the candidate and its evaluation
+    genome_hash TEXT                -- set when the genome is in `blobs`: then `genome` is empty
 );
+CREATE TABLE blobs (
+    hash TEXT PRIMARY KEY,          -- SHA-256 of the encoded genome, in hex
+    data BLOB NOT NULL
+) WITHOUT ROWID;
 CREATE TABLE lineage (
     parent_id INTEGER NOT NULL,
     child_id INTEGER NOT NULL
@@ -73,6 +82,16 @@ CREATE TABLE episodes (
     error TEXT,
     PRIMARY KEY (candidate_id, scenario_index)
 ) WITHOUT ROWID;
+CREATE TABLE operator_calls (
+    key TEXT PRIMARY KEY,           -- SHA-256 of the operator's name, its encoded inputs and a draw from the strategy's stream
+    operator TEXT NOT NULL,
+    output TEXT NOT NULL,           -- the proposed genome as canonical JSON
+    cost_units TEXT NOT NULL,       -- JSON object: unit -> amount
+    wall_time REAL NOT NULL,
+    metadata TEXT NOT NULL,         -- JSON object
+    event_seq INTEGER NOT NULL,     -- the last event written when the call was made
+    created_at REAL NOT NULL
+);
 CREATE TABLE checkpoints (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_seq INTEGER NOT NULL,     -- the checkpoint is consistent with the events up to this one
@@ -151,9 +170,15 @@ class SQLiteRecorder:
     holds the run's lock file, so that no second process can. Read a recorded run back with `auxein.recording.open_run`.
     """
 
-    def __init__(self, run_dir: str | Path, *, resume: bool = False) -> None:
+    recording = True
+
+    def __init__(self, run_dir: str | Path, *, resume: bool = False, genome_threshold: int | None = DEFAULT_GENOME_THRESHOLD) -> None:
         self.run_dir = Path(run_dir)
         self.resume = resume
+        if genome_threshold is not None and genome_threshold < 0:
+            raise ValueError(f"the genome store threshold must be at least 0 bytes or None, got {genome_threshold}")
+        self._threshold = genome_threshold
+        self.codec: GenomeCodec[Any] | None = None
         if resume:
             if not (self.run_dir / "events.sqlite").exists() or not (self.run_dir / "metadata.json").exists():
                 raise ResumeError(f"{self.run_dir} is not a recorded run: it has no events.sqlite and metadata.json to resume")
@@ -286,6 +311,7 @@ class SQLiteRecorder:
             db.execute(f"DELETE FROM evaluations WHERE candidate_id IN ({doomed})", (event_seq,))
             db.execute(f"DELETE FROM episodes WHERE candidate_id IN ({doomed})", (event_seq,))
             db.execute("DELETE FROM candidates WHERE event_seq > ?", (event_seq,))
+            self._drop_unreferenced_blobs(db)  # a genome nobody references any more is gone with its last candidate
             db.execute("DELETE FROM events WHERE seq > ? AND kind != 'resume'", (event_seq,))
             db.execute("DELETE FROM checkpoints WHERE event_seq > ?", (event_seq,))
         self._last_seq = event_seq
@@ -317,6 +343,47 @@ class SQLiteRecorder:
             self._metadata.pop(key, None)
         self._write_metadata()
 
+    def use_codec(self, codec: GenomeCodec[Any] | None) -> None:
+        """The codec of the run's search space, if it has one: structured genomes are recorded through it."""
+        self.codec = codec
+
+    def _drop_unreferenced_blobs(self, db: sqlite3.Connection) -> None:
+        db.execute("DELETE FROM blobs WHERE hash NOT IN (SELECT genome_hash FROM candidates WHERE genome_hash IS NOT NULL)")
+
+    # --- the log of external operator calls (design doc §3.5) ---
+
+    def lookup(self, key: str) -> OperatorRecord | None:
+        row = (
+            self._connection()
+            .execute("SELECT operator, output, cost_units, wall_time, metadata FROM operator_calls WHERE key = ?", (key,))
+            .fetchone()
+        )
+        if row is None:
+            return None
+        return OperatorRecord(key, row[0], json.loads(row[1]), json.loads(row[2]), row[3], json.loads(row[4]))
+
+    def store(self, record: OperatorRecord) -> None:
+        """Keep a call at once, in its own transaction: it has been paid for, and a crash must not lose it."""
+        db = self._connection()
+        self._flush_session()
+        with db:
+            db.execute(
+                "INSERT OR IGNORE INTO operator_calls VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    record.key,
+                    record.operator,
+                    canonical_json(record.output).decode("utf-8"),
+                    json.dumps(dict(record.cost)),
+                    record.wall_time,
+                    json.dumps(dict(record.metadata)),
+                    self._last_seq,
+                    time.time(),
+                ),
+            )
+
+    def must_be_recorded(self, candidate_id: int) -> bool:
+        return self._connection().execute("SELECT 1 FROM candidates WHERE id = ?", (candidate_id,)).fetchone() is not None
+
     # --- events ---
 
     def _first_event_after(self, seq: int, kinds: str) -> tuple[int, str] | None:
@@ -334,6 +401,7 @@ class SQLiteRecorder:
         db.execute(f"DELETE FROM evaluations WHERE candidate_id IN ({doomed})", (ask_seq,))
         db.execute(f"DELETE FROM episodes WHERE candidate_id IN ({doomed})", (ask_seq,))
         db.execute("DELETE FROM candidates WHERE event_seq = ?", (ask_seq,))
+        self._drop_unreferenced_blobs(db)
         following = self._first_event_after(ask_seq, "'ask', 'tell'")
         db.execute("DELETE FROM events WHERE seq = ?", (ask_seq,))
         if following is not None and following[1] == "tell":
@@ -358,7 +426,7 @@ class SQLiteRecorder:
         self._flush_session()
         grow = 0 < recorded and not rerecord
         skip = recorded if grow else 0  # candidates that are in the recording already and stay there
-        encoded: list[EncodedGenome] = encode_batch(batch)
+        encoded: list[EncodedGenome] = encode_batch(batch, self.codec)
         now = time.time()
         lineage_rows = [(parent, c.id) for c in candidates[skip:] for parent in c.parents]
         evaluation_rows = [
@@ -390,11 +458,18 @@ class SQLiteRecorder:
                     self._delete_group(db, int(row[0]))
             if not grow:
                 seq = int(db.execute("INSERT INTO events (kind, step, payload) VALUES ('ask', ?, ?)", (step, payload)).lastrowid or 0)
-            candidate_rows = [
-                (c.id, c.step, c.origin, e.kind, e.data, e.dtype, e.shape, now, seq)
-                for c, e in zip(candidates[skip:], encoded[skip:], strict=True)
-            ]
-            db.executemany("INSERT INTO candidates VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", candidate_rows)
+            blobs: dict[str, bytes] = {}
+            candidate_rows: list[tuple[Any, ...]] = []
+            for c, e in zip(candidates[skip:], encoded[skip:], strict=True):
+                data, digest = e.data, None
+                if self._threshold is not None and len(data) > self._threshold:
+                    digest = genome_hash(data)
+                    blobs[digest] = data  # stored once however many candidates share it
+                    data = b""
+                candidate_rows.append((c.id, c.step, c.origin, e.kind, data, e.dtype, e.shape, now, seq, digest))
+            if blobs:
+                db.executemany("INSERT OR IGNORE INTO blobs VALUES (?, ?)", list(blobs.items()))
+            db.executemany("INSERT INTO candidates VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", candidate_rows)
             db.executemany("INSERT INTO lineage VALUES (?, ?)", lineage_rows)
             db.executemany("INSERT INTO evaluations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", evaluation_rows)
             if results.episodes is not None:

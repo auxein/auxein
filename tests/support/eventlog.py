@@ -17,7 +17,7 @@ def event_log(run_dir: Path) -> dict[str, list[object]]:
             (kind, step, json.loads(payload)) for kind, step, payload in db.execute("SELECT kind, step, payload FROM events ORDER BY seq")
         ]
         candidates = db.execute(
-            "SELECT id, step, origin, genome_kind, genome, genome_dtype, genome_shape FROM candidates ORDER BY rowid"
+            "SELECT id, step, origin, genome_kind, genome, genome_dtype, genome_shape, genome_hash FROM candidates ORDER BY rowid"
         ).fetchall()
         lineage = db.execute("SELECT parent_id, child_id FROM lineage ORDER BY rowid").fetchall()
         evaluations = db.execute(

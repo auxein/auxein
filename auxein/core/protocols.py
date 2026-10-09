@@ -13,6 +13,7 @@ from auxein.core._typing import G
 from auxein.core.batch import Batch
 from auxein.core.evaluation_batch import EvaluationBatch
 from auxein.core.ids import CandidateId
+from auxein.core.operators import NoOperatorLog, OperatorLog
 from auxein.core.problem import ProblemSpec
 from auxein.core.state import StateDict
 from auxein.execution import Executor, InlineExecutor
@@ -52,6 +53,8 @@ class StrategyContext:
     """Array namespace, device and precision (§7)."""
     new_id: Callable[[], CandidateId]
     """The deterministic id issuer (§4.2)."""
+    operators: OperatorLog = field(default_factory=NoOperatorLog)
+    """Where calls of external proposal operators are recorded and replayed (§3.5); a no-op log when the run is not recorded."""
 
 
 @dataclass(frozen=True)
