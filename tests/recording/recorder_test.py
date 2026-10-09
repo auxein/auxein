@@ -44,11 +44,21 @@ def test_creates_the_directory_with_metadata_and_a_versioned_schema(tmp_path: Pa
     assert (run_dir / "metadata.json").exists() and (run_dir / "events.sqlite").exists()
     recorder.on_end("completed", "budget:evaluations", {})
     with open_run(run_dir) as run:
-        assert run.schema_version == 3
+        assert run.schema_version == 4
     db = sqlite3.connect(run_dir / "events.sqlite")
-    assert db.execute("SELECT version FROM schema_version").fetchall() == [(3,)]
+    assert db.execute("SELECT version FROM schema_version").fetchall() == [(4,)]
     tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"schema_version", "candidates", "lineage", "evaluations", "events", "checkpoints", "episodes"} <= tables
+    assert {
+        "schema_version",
+        "candidates",
+        "lineage",
+        "evaluations",
+        "events",
+        "checkpoints",
+        "episodes",
+        "blobs",
+        "operator_calls",
+    } <= tables
     indexes = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='index'")}
     assert {"lineage_parent", "lineage_child"} <= indexes
 
@@ -161,7 +171,7 @@ def test_json_genomes_round_trip(tmp_path: Path):
 def test_a_genome_that_cannot_be_stored_is_a_clear_error_and_writes_nothing(tmp_path: Path):
     batch = ListBatch([Candidate(CandidateId(0), {1, 2}, (), "init", 0), Candidate(CandidateId(1), "ok", (), "init", 0)])
     recorder = started(tmp_path / "r")
-    with pytest.raises(GenomeEncodingError, match=r"set cannot be recorded.*Structured genomes get proper storage in a later step"):
+    with pytest.raises(GenomeEncodingError, match=r"set cannot be recorded.*Give its search space a codec"):
         recorder.on_batch(0, batch, evaluations_of(batch))
     assert sqlite3.connect(tmp_path / "r" / "events.sqlite").execute("SELECT COUNT(*) FROM candidates").fetchone() == (0,)
     assert issubclass(GenomeEncodingError, TypeError)
@@ -238,10 +248,10 @@ def test_the_reader_rejects_other_directories_and_schema_versions(tmp_path: Path
         open_run(tmp_path)
     run_dir = hand_built_lineage(tmp_path)
     db = sqlite3.connect(run_dir / "events.sqlite")
-    db.execute("UPDATE schema_version SET version = 4")
+    db.execute("UPDATE schema_version SET version = 5")
     db.commit()
     db.close()
-    with pytest.raises(ValueError, match="unsupported run schema version 4"):
+    with pytest.raises(ValueError, match="unsupported run schema version 5"):
         open_run(run_dir)
 
 

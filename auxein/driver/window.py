@@ -4,13 +4,14 @@ import asyncio
 import json
 from collections import deque
 from dataclasses import dataclass
-from typing import Generic, cast
+from typing import Any, Generic, cast
 
 import numpy as np
 
 from auxein.backend import Array, Backend, is_array
 from auxein.core import ArrayBatch, Batch, Candidate, CandidateId, EvaluationBatch, ListBatch, StateDict
 from auxein.core._typing import G
+from auxein.spaces.codec import GenomeCodec
 
 
 @dataclass
@@ -44,7 +45,7 @@ class Window(Generic[G]):
     """Why asking has stopped, once it has."""
 
 
-def encode_window(window: Window[G]) -> StateDict:
+def encode_window(window: Window[G], codec: GenomeCodec[Any] | None = None) -> StateDict:
     """The candidates asked but not told, in ask order, as a state dict: ids, lineage, genomes, and their positions.
 
     Results that finished but have not been told are not part of it: those candidates are evaluated again on resume.
@@ -68,11 +69,14 @@ def encode_window(window: Window[G]) -> StateDict:
         if len({(a.shape, a.dtype) for a in host}) == 1:
             state["genomes"] = np.stack(host)  # pyright: ignore[reportUnknownMemberType]
             return state
-    state["genome_list"] = [cast("Array", g) if is_array(g) else json.loads(json.dumps(g)) for g in genomes]
+    state["genome_list"] = [
+        cast("Array", g) if is_array(g) else (json.loads(json.dumps(codec.encode(g))) if codec is not None else json.loads(json.dumps(g)))
+        for g in genomes
+    ]
     return state
 
 
-def decode_window(state: StateDict, backend: Backend) -> Window[object]:
+def decode_window(state: StateDict, backend: Backend, codec: GenomeCodec[Any] | None = None) -> Window[object]:
     """The inverse of `encode_window`: every candidate asked but not told comes back queued, with its id and genome, ready to
     be evaluated again."""
     ids = cast("list[int]", state["ids"])
@@ -95,6 +99,8 @@ def decode_window(state: StateDict, backend: Backend) -> Window[object]:
             genome = listed[index]
             if is_array(genome):
                 genome = backend.asarray(cast("Array", genome))
+            elif codec is not None:
+                genome = codec.decode(genome)
             batch = ListBatch((Candidate(CandidateId(candidate_id), genome, pedigree, origins[index], steps[index]),))
         slot = Slot(seqs[index], steps[index], batch)
         window.queue.append(slot)

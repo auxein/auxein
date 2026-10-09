@@ -6,7 +6,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -16,6 +16,7 @@ from auxein.backend import Backend
 from auxein.core import CandidateId, Status
 from auxein.recording.genomes import decode_genome
 from auxein.recording.sqlite import SCHEMA_VERSION, CheckpointInfo
+from auxein.spaces.codec import GenomeCodec
 
 
 @dataclass(frozen=True)
@@ -64,10 +65,33 @@ class Reaggregated:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class RecordedOperatorCall:
+    """One recorded call of an external operator: what it proposed, what it cost and how long it took."""
+
+    key: str
+    operator: str
+    output: object
+    cost: dict[str, float]
+    wall_time: float
+    metadata: dict[str, object]
+    event_seq: int
+
+
+@dataclass(frozen=True)
+class GenomeStoreStats:
+    """What the genome store holds (design doc §10.3)."""
+
+    blobs: int
+    bytes: int
+    references: int
+    """How many candidates refer to a blob; more than `blobs` when genomes are shared."""
+
+
 _EVALUATIONS = """
-SELECT c.id, c.step, c.origin, c.genome_kind, c.genome, c.genome_dtype, c.genome_shape,
+SELECT c.id, c.step, c.origin, c.genome_kind, CASE WHEN c.genome_hash IS NULL THEN c.genome ELSE b.data END, c.genome_dtype, c.genome_shape,
        e.status, e.objectives, e.constraints, e.descriptors, e.cost_units, e.wall_time, e.error
-FROM evaluations e JOIN candidates c ON c.id = e.candidate_id
+FROM evaluations e JOIN candidates c ON c.id = e.candidate_id LEFT JOIN blobs b ON b.hash = c.genome_hash
 ORDER BY c.id
 """
 
@@ -97,8 +121,10 @@ def _row(columns: Mapping[str, npt.NDArray[np.float64]], row: int) -> dict[str, 
 class RunReader:
     """A recorded run opened for reading (read-only)."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, codec: GenomeCodec[Any] | None = None) -> None:
         self.path = Path(path)
+        self.codec = codec
+        """The codec of the run's search space, if known: structured genomes then come back decoded, and as plain JSON otherwise."""
         database = self.path / "events.sqlite"
         if not database.exists():
             raise FileNotFoundError(f"{self.path} is not a recorded run: there is no events.sqlite in it")
@@ -141,7 +167,7 @@ class RunReader:
                 step=row[1],
                 origin=row[2],
                 parents=parents,
-                genome=decode_genome(row[3], row[4], row[5], row[6]),
+                genome=decode_genome(row[3], row[4], row[5], row[6], self.codec),
                 status=Status(row[7]),
                 objectives=json.loads(row[8]),
                 constraints=json.loads(row[9]),
@@ -208,6 +234,19 @@ class RunReader:
                 )
         return [results[c] for c in sorted(results)]
 
+    def operator_calls(self) -> list[RecordedOperatorCall]:
+        """The recorded calls of external proposal operators, oldest first (design doc §3.5)."""
+        rows = self._db.execute(
+            "SELECT key, operator, output, cost_units, wall_time, metadata, event_seq FROM operator_calls ORDER BY rowid"
+        ).fetchall()
+        return [RecordedOperatorCall(r[0], r[1], json.loads(r[2]), json.loads(r[3]), r[4], json.loads(r[5]), r[6]) for r in rows]
+
+    def genome_store(self) -> GenomeStoreStats:
+        """How much the genome store holds: blobs, their bytes, and how many candidates refer to them."""
+        blobs, size = self._db.execute("SELECT COUNT(*), COALESCE(SUM(LENGTH(data)), 0) FROM blobs").fetchone()
+        references = self._db.execute("SELECT COUNT(*) FROM candidates WHERE genome_hash IS NOT NULL").fetchone()[0]
+        return GenomeStoreStats(int(blobs), int(size), int(references))
+
     def ancestry(self, candidate_id: int) -> list[int]:
         """The ancestors of a candidate (parents, grandparents, ...), nearest first, then by id. One recursive query."""
         return [r[0] for r in self._db.execute(_ANCESTRY, (candidate_id,))]
@@ -226,6 +265,6 @@ class RunReader:
         self.close()
 
 
-def open_run(path: str | Path) -> RunReader:
-    """Open a recorded run directory for reading."""
-    return RunReader(path)
+def open_run(path: str | Path, codec: GenomeCodec[Any] | None = None) -> RunReader:
+    """Open a recorded run directory for reading. Pass the codec of its search space to get structured genomes decoded."""
+    return RunReader(path, codec)

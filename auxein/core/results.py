@@ -9,7 +9,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -45,6 +45,10 @@ class Result:
     constraints: Mapping[str, float] = field(default_factory=dict[str, float])
     descriptors: Mapping[str, float] = field(default_factory=dict[str, float])
     cost: Mapping[str, float] = field(default_factory=dict[str, float])
+
+    def __reduce__(self) -> tuple[Any, tuple[dict[str, float], dict[str, float], dict[str, float], dict[str, float]]]:
+        """Pickle as plain dicts: the read-only mappings cannot be pickled, and a function in a worker process returns a Result."""
+        return (Result, (dict(self.objectives), dict(self.constraints), dict(self.descriptors), dict(self.cost)))
 
     def __post_init__(self) -> None:
         if not self.objectives:
@@ -87,6 +91,9 @@ class BatchResult:
     constraints: Mapping[str, Array] = field(default_factory=dict[str, Array])
     descriptors: Mapping[str, Array] = field(default_factory=dict[str, Array])
     cost: Mapping[str, Array] = field(default_factory=dict[str, Array])
+
+    def __reduce__(self) -> tuple[Any, tuple[dict[str, Array], dict[str, Array], dict[str, Array], dict[str, Array]]]:
+        return (BatchResult, (dict(self.objectives), dict(self.constraints), dict(self.descriptors), dict(self.cost)))
 
     def __post_init__(self) -> None:
         if not self.objectives:

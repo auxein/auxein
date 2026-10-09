@@ -112,6 +112,7 @@ class StrategyContext:
     rng: RandomStream               # the strategy's own random stream (§8)
     backend: Backend                # array namespace, device, precision (§7)
     new_id: Callable[[], CandidateId]   # deterministic id issuer (§4.2)
+    operators: OperatorLog          # recorded and replayed calls of external proposal operators (§3.5); a no-op log when not recording
 ```
 
 - **`StateDict`** is the type of everything saved by `state_dict()`: a dict with string keys whose values are JSON scalars (`None`, `bool`, `int`, `float`, `str`), lists, dicts with string keys, or arrays of a supported backend (numpy arrays that aren't of dtype `object`, torch tensors). Tuples, sets, numpy scalars and any other object are rejected by `validate_state_dict()`, so a state survives a JSON round trip unchanged. There is no pickle (§10.4).
@@ -153,13 +154,31 @@ The operator ideas from 0.x are re-implemented, not ported, and the limitations 
 
 **The default configuration** (`GeneticAlgorithm()`) was chosen by benchmark among three candidates on instances other than those of the comparison with 0.2.0: μ = λ = 50, tournament selection (k = 2), intermediate recombination, one self-adaptive step size per individual (initial step 0.1 of the box width, floor 10⁻¹²) and clipping. The candidates (A: this one; B: as A with one step size per gene; C: as A with SUS and sigma scaling) ended within 0.5 of each other in mean rank of the median final error (C 1.70, A 2.10, B 2.20; an earlier run of the same selection gave A 1.80, B 2.10, C 2.10), a near tie, so the simplest configuration was chosen. The results are in `benchmarks/reports/ga-default-selection/`.
 
+**The structured genetic algorithm** (`StructuredGeneticAlgorithm`, step 6b) is a separate strategy for genomes that are not arrays, generic over the genome type, not a generalisation of the numeric one (which is unchanged: its results for a given seed are byte-identical, pinned by a test). It has the same contract (single-objective, constraints supported, both tell modes, exactly λ children or `n`, no self-mating, every candidate evaluated once, pending children, exact `state_dict` continuation) and **reuses what only looks at objective values**: the ranking (`rank_order`), "plus" survivor selection (the population is stored in rank order and re-ranked on every `tell`), `PopulationView` and the parent-selection operators with their failure-aware behaviour (failed members are never parents while any other member exists; fewer than two valid members means random sampling). Only variation differs: **per-genome operators** instead of array operators.
+
+- `StructuredMutation.mutate(genome, rng, ctx) -> genome` and `StructuredRecombination.recombine(first, second, rng, ctx) -> child`, with a `VariationContext` (the space, its codec, the run's operator log, the id of the child being made). `mutation` may be a list of `(operator, probability)` pairs, mixed by those probabilities; without a `recombination` a child copies its first parent. Origins name the operators, e.g. `"tournament+one_point+sequence"`.
+- For a `SequenceSpace` the defaults are chosen automatically: **`SequenceMutation`** (insert, delete, replace or swap one item, each respecting the length bounds and `unique`, with configurable probabilities and number of `edits` per child) and **`SequenceCrossover`** (one-point or two-point cut-and-splice for variable lengths; the result is repaired: duplicates removed in a `unique` space, cut at `max_length`, filled up to `min_length` first with items of the parents that are not in it, then with random vocabulary items). Any other space needs a mutation supplied by the user.
+- The space must have a codec (§4.1): the population goes into checkpoints through it, and genomes are recorded through it.
+- Variation may call **external proposal operators** (§3.5).
+
 ### 3.4 Strategies in the first implementation
 
 - `RandomSearch`: the floor (done in step 2).
 - `GeneticAlgorithm`: composable, as above, supporting both tell modes (done in step 3a).
+- `StructuredGeneticAlgorithm`: the same algorithm for structured genomes, with `SequenceSpace` as the built-in space (done in step 6b).
 - `PycmaStrategy`: a wrapper around pycma, as an optional extra. Its purpose is to prove that external algorithms fit the contract.
 
-A strategy for structured genomes comes in step 6b and a multi-objective one (NSGA-II) in step 8. More algorithms (native CMA-ES, MAP-Elites and others) are added later on top of the same contract.
+A multi-objective strategy (NSGA-II) comes in step 8. More algorithms (native CMA-ES, MAP-Elites and others) are added later on top of the same contract.
+
+### 3.5 External proposal operators
+
+Some variation is not a function of Auxein's random streams: asking a language model to rewrite a prompt is the typical case. The slot for it is the **`ProposalOperator`** protocol: `name` and `propose(parents, rng) -> Proposal(genome, cost, metadata)`, where `cost` holds user-defined units (tokens, money) and `metadata` is JSON-serialisable. `ExternalMutation(operator)` and `ExternalRecombination(operator)` plug one into `StructuredGeneticAlgorithm` (one parent or two), alone or mixed by probability with built-in operators.
+
+- **Every call is recorded and replayed.** A call is keyed by the SHA-256 of the operator's name, the canonical encodings of its inputs and **a value drawn from the strategy's stream at that point** (so asking twice for the same input gives two keys, and the stream advances by exactly one draw whether the call is live or replayed). With a `run_dir`, the proposed genome (canonical JSON), cost units, wall time, metadata and the event sequence number go into the `operator_calls` table (§10.2) as soon as the call returns, in a transaction of its own, because the call has been paid for. **On replay** (§10.4) the recorded output is returned without calling the operator, so a resumed or extended run regenerates the identical candidates and never pays twice; that includes the calls made for children the old budget dropped. A live call for a candidate that the recording already holds means the run **diverged** (the operator's name, its inputs or the draw differ, so the strategy's configuration or code changed): that is a `ReplayMismatchError` and the operator is not called. Without recording, calls are always live, a `OperatorNotRecordedWarning` says so, and the run cannot be reproduced or resumed.
+- **Synchronous, inside `ask`.** A call blocks the driver's event loop while it runs. This is a documented limitation of this version; concurrent, asynchronous variation is an open question (§15).
+- **Failures fail the run.** An exception in the operator, a result that is not a `Proposal`, or a genome outside the space raises an `OperatorError` naming the operator (the original exception chained), and the run ends as `failed`. Failure policies for variation are future work.
+- **Cost is recorded, not budgeted.** The cost units of operator calls are kept in `operator_calls` but are **not counted against the run's budget** (§9.3) in this version; that is an open question too (§15).
+- The operator receives a stream derived from the draw, so an operator that uses it is deterministic; one that does not is made reproducible by recording.
 
 ---
 
@@ -169,6 +188,7 @@ A strategy for structured genomes comes in step 6b and a multi-objective one (NS
 
 - A genome is **whatever the user defines**: a 1-D array, a dataclass, a tree, a string. The core never inspects it.
 - **Genomes are immutable.** Operators always create new genomes. Arrays handed out by the framework are marked read-only where the backend allows, so accidental modification fails loudly. No deep copies are needed anywhere.
+- **Structured genomes are encoded through their space (step 6b).** A structured space has a **codec**: `encode(genome)` to a JSON-serialisable value and `decode(value)` back, with `decode(encode(g)) == g`. The **canonical encoding** is the one function `canonical_json`: UTF-8 JSON with sorted keys, no insignificant whitespace, only string keys and no NaN or infinity; values keep their JSON type (`1` and `1.0` differ), floats are written by Python's shortest round-trip `repr`, tuples encode as lists, and anything JSON cannot encode (numpy scalars other than `float64`, sets, bytes) is a clear `CanonicalEncodingError`. Equal genomes therefore always encode to identical bytes, which is what recording, replay's byte-identical check, the genome store's hashes and checkpoints rely on. Structured genomes must be **immutable by convention** (tuples, frozen dataclasses) and **picklable** (they are sent to worker processes). Spaces without a codec keep the earlier behaviour: arrays as raw bytes, JSON-serialisable values as JSON.
 - **Strategy parameters aren't part of the genome.** Self-adaptive step sizes, covariance matrices and the like live in the strategy's state, keyed by candidate id. Evaluators only ever see what defines the agent.
 
 ### 4.2 Candidates
@@ -203,7 +223,7 @@ class Batch(Protocol[G]):
 ### 4.4 Variable-length structure
 
 - **Numeric problems with structure** (e.g. polynomial degree, number of active rules or sensors) use a **fixed maximum size with structure genes**: binary switches or an integer gene that decides which components are active. The genome length stays constant, so the array fast path applies. A complexity objective (e.g. number of active terms, minimised) turns the problem into a trade-off between accuracy and complexity, which multi-objective strategies (step 8) can explore.
-- **Open-ended structure** (growing networks, program trees, rule lists without a natural maximum, prompts) uses **structured genomes** through the general (non-array) path, with operators that understand the structure.
+- **Open-ended structure** (growing networks, program trees, rule lists without a natural maximum, prompts) uses **structured genomes** through the general (non-array) path, with operators that understand the structure. This is built end to end (step 6b): a space with a codec (§4.5), `ListBatch`, recording through the codec, and `StructuredGeneticAlgorithm` (§3.3). The built-in variable-length space is **`SequenceSpace(items, min_length, max_length, unique=False)`**: genomes are tuples of items from a finite vocabulary of JSON-serialisable values (instructions, rule identifiers, tool names, tokens; two items are the same when their canonical encodings are), sampled by drawing a length uniformly and then the items (distinct if `unique`). Trees, graphs and free text are not built in: users bring their own space, codec and operators through the protocols.
 
 ### 4.5 Search spaces
 
@@ -213,10 +233,13 @@ class Space(Protocol[G]):
     def contains(self, genome: G) -> bool: ...
 ```
 
+A **structured space** also exposes a `codec` (a `GenomeCodec`: `encode`, `decode`, §4.1) and a `describe()`; `auxein.spaces.codec_of(space)` returns the codec of a space, or None.
+
 Spaces return **genomes**, not batches. Building a batch requires candidate ids, which are issued through the strategy context, so strategies wrap sampled genomes into batches themselves. Array spaces such as `Box` return an `(n, d)` array.
 
 - **First implementation:** `Box`, a bounded real vector with lower and upper bounds per dimension and an optional log scale per dimension (log-scale dimensions are sampled log-uniformly and need a positive lower bound). Samples are guaranteed to lie within `[lower, upper]` in float32 as well as float64: float32 bounds are rounded *inward* (a bound that isn't a float32 number moves to the next float32 inside the box) and samples are clipped to them. A box too narrow or too wide for float32 to represent is an error when sampling in float32. `Box.contains` and `Box.clip` are the membership test and a vectorised repair helper for operators.
-- **Later:** binary and integer spaces (step 8), then categorical, mixed and conditional spaces (e.g. hyperparameter spaces), plus structured spaces for text and trees (step 6b), added when a use case needs them. The concept lives in the core from the start, so operators and strategies can rely on it.
+- **`SequenceSpace`** (step 6b): variable-length sequences from a finite vocabulary, with `describe()` for the metadata and resume validation (the vocabulary and the bounds are part of the run's identity) and a codec.
+- **Later:** binary and integer spaces (step 8), then categorical, mixed and conditional spaces (e.g. hyperparameter spaces), plus spaces for text and trees, added when a use case needs them. The concept lives in the core from the start, so operators and strategies can rely on it.
 
 ---
 
@@ -537,6 +560,7 @@ result = auxein.run(
     checkpoint_every=300.0,                   # seconds of run time between checkpoints (default 300; math.inf: never); needs run_dir
     checkpoint_every_evaluations=None,        # also every this many evaluations; needs run_dir
     keep_checkpoints=2,                       # how many to keep (0: none, and a resume replays from the start); needs run_dir
+    genome_store_threshold=4096,              # genomes larger than this many encoded bytes are stored once by hash (None: never, §10.3)
 )
 
 result = await auxein.arun(...)  # same arguments
@@ -606,18 +630,21 @@ runs/<name>/
   checkpoints/           # ckpt-<event seq>/state.json + arrays.npz: snapshots of strategy, driver and random-generator state
   writer.lock            # the writer's process id, while a process is writing (§10.4)
   held_out.json          # optional: the report of a held-out evaluation (§6.4)
-  # later: genomes/ (content-addressed genome store, step 6b) and artifacts/ (heavy outputs: trajectories, transcripts, logs)
+  # later: artifacts/ (heavy outputs: trajectories, transcripts, logs)
+  # (the content-addressed genome store is not a directory: it is a table of events.sqlite, §10.3)
 ```
 
 ### 10.2 Event log (SQLite)
 
 - **Append-only.** Written by the driver, which is the single writer, one transaction per batch (per told candidate in steady-state delivery), so it's safe against crashes. The database is in WAL mode and is checkpointed when the run ends.
-- **Schema (version 3)**, as implemented; a `schema_version` table holds the version number. Version 2 (step 5) added `candidates.event_seq` and the `checkpoints` table, version 3 (step 6a) the `episodes` table. **A run recorded with an earlier version cannot be resumed, and the reader refuses it** (there is nothing to migrate: no one has such runs).
+- **Schema (version 4)**, as implemented; a `schema_version` table holds the version number. Version 2 (step 5) added `candidates.event_seq` and the `checkpoints` table, version 3 (step 6a) the `episodes` table, version 4 (step 6b) the genome store (`blobs` and `candidates.genome_hash`) and `operator_calls`. **A run recorded with an earlier version cannot be resumed, and the reader refuses it** (there is nothing to migrate: no one has such runs).
   - `candidates`: `id` (primary key), `step`, `origin`, `genome_kind` (`array` or `json`), `genome` (raw bytes or JSON text), `genome_dtype` and `genome_shape` (arrays only), `created_at`, and **`event_seq`**: the sequence number of the `ask` event whose transaction recorded the candidate together with its evaluation. It tells exactly what was recorded after a given point, which truncation and replay need
   - `lineage`: `parent_id`, `child_id`, both indexed
   - `evaluations`: `candidate_id` (primary key), `status`, `objectives`, `constraints`, `descriptors` and `cost_units` (JSON objects of name to value), `wall_time`, `error`, `finished_at`
   - `events`: `seq`, `kind` (`ask`, `tell`, `stop` or `resume`), `step`, a JSON `payload`. A candidate's tell is its `ask` event's successor; an `ask` without a following `tell` was recorded but never told (a final batch cut by the budget, or a process killed between the two writes)
   - `checkpoints`: `id`, `event_seq` (the checkpoint is consistent with the events up to this one), `evaluations_used`, `path` (relative to the run directory), `created_at`
+  - `blobs`: `hash` (primary key: the SHA-256 of the encoded genome, in hex) and `data`; and `candidates.genome_hash`, set when the genome is in the store (then `genome` is empty). See §10.3.
+  - `operator_calls`: `key` (primary key: the SHA-256 of the operator's name, its encoded inputs and a draw from the strategy's stream), `operator`, `output` (the proposed genome as canonical JSON), `cost_units`, `wall_time`, `metadata`, `event_seq` (the last event written when the call was made) and `created_at`; see §3.5. They are written at once, in their own transaction, and **never deleted**: a call is a paid-for result addressed by its content, so keeping the ones made after a checkpoint that throughput mode truncates costs nothing and lets the redone work reuse them whenever it asks for the same call.
   - `episodes`: `candidate_id`, `scenario_index`, `scenario_id`, `status`, `measurements` (a JSON object of name to value; empty for an episode that did not succeed) and `error`; primary key (`candidate_id`, `scenario_index`). They are written **in the same transaction as the candidate's evaluation**, at tell time, in batched inserts (thousands of candidates by tens of scenarios record without a measurable slowdown beyond the rows themselves), and `Evaluation.raw` is a `RawRef` with the key `episodes/<candidate id>`. Evaluators other than the episode evaluator write none.
 - **A `resume` event** is written for each resume. Its payload holds the `mode` (`replay` or `truncate`), the `checkpoint` used (its event sequence, or null when the run restarts from the beginning), the number of evaluations `replayed` or `truncated`, and the old and new budget. A run has **one `stop` event, at its end**: a resume deletes the `stop` of the earlier session (the session history in `metadata.json` keeps what it said).
 - **Candidates are recorded when they are told**, together with their evaluation, and a candidate that is never told has no row: one dropped by the budget truncation or by a wall-time stop (§9.3) was never evaluated. In generation delivery that is once per batch, in ask order. In steady-state delivery it is once per candidate, so the `ask` and `tell` events come per candidate (with a count of 1), in ask order in deterministic mode and in completion order in throughput mode. The tables are keyed by candidate id; the order of telling is in the `events` table.
@@ -629,8 +656,9 @@ runs/<name>/
 
 ### 10.3 Genomes and artifacts
 
-- In the first implementation genomes are stored inline in `candidates`, without pickle: array genomes (numpy arrays, or torch tensors copied to the host) as raw C-order bytes plus dtype and shape, other genomes as JSON when they are JSON-serialisable. A genome that is neither is a clear error; structured genomes get proper storage in a later step.
-- Small genomes are stored inline. Large genomes (network weights, long prompts) will go into a **content-addressed store** (step 6b): each distinct genome saved once under its hash. Until then every genome is inline in `events.sqlite`.
+- Genomes are stored without pickle: array genomes (numpy arrays, or torch tensors copied to the host) as raw C-order bytes plus dtype and shape; structured genomes as the **canonical JSON** of their codec encoding (§4.1); other genomes as JSON when they are JSON-serialisable. A genome that is none of these is a clear error that points to the codec.
+- **The genome store** (step 6b) is a table of `events.sqlite`, not a directory of files, so that writing a blob is part of the batch's transaction (crash-safe, consistent with the single-writer design) and truncation and replay stay simple. A genome whose encoding is larger than `genome_store_threshold` bytes (a `run` argument; default 4096; `None` keeps everything inline) is stored **once** in `blobs`, keyed by the SHA-256 of its encoded bytes, and its `candidates` row has an empty `genome` and the hash in `genome_hash`; smaller genomes stay inline. It applies to array and structured genomes alike, and dtype and shape stay per candidate. The reader and replay resolve references transparently, so replay's byte-identical check is unchanged. Throughput-mode truncation (§10.4) deletes the blobs that no remaining candidate refers to. The threshold is a recording detail, not part of the run's identity: a resume may use another. On a run of 2,000 candidates with a few large genomes the database is 6 to 56 times smaller (measured in step 6b: 10.4 MB to 0.41 MB for five distinct 5 KB structured genomes, 33 MB to 0.59 MB for ten distinct 16 KB array genomes, 10.4 MB to 1.7 MB when 250 genomes are distinct).
+- **Runs recorded with schema 3 or earlier cannot be resumed and the reader refuses them** (there is nothing to migrate: no one has such runs).
 - **Heavy artifacts** (trajectories, transcripts) are optional and stored by reference. **Default: kept for failed evaluations only.** Options keep them for the best candidates or a sample.
 
 ### 10.4 Checkpoints and resume
@@ -652,7 +680,7 @@ runs/<name>/
 - **Only the budget may change.** Everything else must equal the recorded run: the problem (space, objectives and directions, constraints, descriptors), seed, backend and precision, `batch_size`, `delivery`, `deterministic`, `concurrency`, `executor` (as resolved), `timeout`, `failure_policy`, the guard, and the strategy's and evaluator's class and `repr`. Any difference raises `ConfigurationMismatchError` listing every mismatching setting with its recorded and its given value, before anything is written. The checkpoint options and the `clock` are not part of the run. **Auxein cannot check that the evaluator's *code* is unchanged**: replay does not run it, so keeping it the same is the user's responsibility. The evaluation budget cannot go below what is already recorded.
 - **The mode comes from the recorded `deterministic` setting.**
   - **Deterministic mode replays.** The strategy and driver are restored from the latest checkpoint (or built afresh if there is none) and asked again. The driver rebuilds the result tracker from the recording, then re-runs the same loop with the *same decisions as a live run*: the same ask sizes, window refills, truncation rules and stop checks, under the new budget. For each candidate it regenerates for which the recording holds an evaluation, it checks that the candidate is exactly the recorded one (same id, origin, step and parents, **byte-identical genome**), and tells the strategy the **recorded evaluation instead of evaluating it again**. **No recorded evaluation is ever repeated**, with one exception: an evaluator that draws its randomness once per batch (a `VectorisedEvaluator`, or an `EpisodeEvaluator` on its batched path; they say so with `batch_sensitive`) evaluates a final batch that a larger budget has made longer whole again (it was cut at the old limit, never told) to give what the longer run gives, and the recording replaces the shorter batch, episodes included. For any other evaluator the recorded candidates of that batch stay as they are, with their episodes, and the batch grows by the new ones. Replayed evaluations keep their recorded episodes: replay writes none twice. Once the recorded evaluations are used up, the run goes on live. Any difference stops the resume with a `ReplayMismatchError` that names the first candidate that differs and the likely cause (the strategy's configuration or code changed, a different seed, an edited recording), and records nothing: the session is written only when the resume first writes something.
-  - **Throughput mode truncates and redoes.** The run restarts from the latest checkpoint; everything recorded after it (candidates, lineage, evaluations, events) is deleted in one transaction and that work is redone live. Candidates in flight at the checkpoint are re-issued with the same ids and genomes. With no checkpoint, everything recorded is deleted and the run restarts from the beginning.
+  - **Throughput mode truncates and redoes.** The run restarts from the latest checkpoint; everything recorded after it (candidates, lineage, evaluations, episodes, events, and the genome blobs no remaining candidate refers to) is deleted in one transaction and that work is redone live. Recorded calls of external operators are kept (§3.5, §10.2). Candidates in flight at the checkpoint are re-issued with the same ids and genomes. With no checkpoint, everything recorded is deleted and the run restarts from the beginning.
 - **Extending a finished run** with a larger evaluation budget gives, in deterministic mode, **the same event log and result as one uninterrupted run with the larger budget**, for both delivery modes. It follows from the hard-budget rule (§9.3): the candidates asked but dropped, or cut, at the old limit are regenerated by replay and now evaluated and told. A candidate that the old run evaluated but never told (the cut part of a final batch) is used from the recording and re-recorded as part of the longer batch. This needs the strategy to propose the same first candidates when asked for fewer (`ask(16)` is a prefix of `ask(64)`), which `RandomSearch` and the default `GeneticAlgorithm` do. A strategy that does not, such as a `GeneticAlgorithm` with `offspring_size=None` (it breeds exactly `n` children, drawing its random numbers per array) in generation delivery with a budget that is not a multiple of `batch_size`, cannot be extended: the first candidate to differ raises the replay mismatch. Steady-state delivery is not affected, because it asks one candidate at a time.
 - **Resuming a complete run** with exactly the budget it finished with returns its result from the recording without evaluating anything, and warns (`ResumeWarning`); it does not even add a session. A run that was killed with its budget already used up replays its tail and then stops.
 - **`fail_fast` runs.** The evaluation that stopped a `fail_fast` run was never recorded (the failure is raised before anything is written), so a resume evaluates it again: that is how to continue after fixing a bug in the evaluator. A run stopped by the all-failures guard replays the same recorded failures and stops again, because the guard is part of the configuration that cannot change.
@@ -662,7 +690,7 @@ runs/<name>/
 
 ### 10.5 Recorder interface
 
-The recorder is pluggable. The SQLite run directory is the built-in implementation. Integrations (e.g. MLflow, Weights & Biases) can be added later as additional sinks.
+The recorder is pluggable. The SQLite run directory is the built-in implementation, and the only one that also serves as the run's `OperatorLog` (§3.5) and that takes the space's codec (`use_codec`, called by the driver) to record structured genomes. Integrations (e.g. MLflow, Weights & Biases) can be added later as additional sinks.
 
 ---
 
@@ -720,26 +748,26 @@ These are rewritten as four notebooks for the new core (step 9): Rastrigin, line
 
 ## 12. Package layout
 
-What exists after step 6a (the packages marked "later" are planned):
+What exists after step 6b (the packages marked "later" are planned):
 
 ```
 auxein/
   __init__.py      # the public API (§9.1) and __version__
   core/            # ids, Candidate, batches (ListBatch, ArrayBatch), Evaluation and EvaluationBatch, Result and BatchResult,
                    # the normalisation of what user code returns, ProblemSpec, StateDict, the Strategy/Evaluator protocols
-  spaces/          # Space protocol, Box
+  spaces/          # Space protocol, Box, SequenceSpace, the codec protocol and canonical JSON
   backend/         # Backend, array-API helpers, precision, device validation
   random/          # RunSeed, backend-native RandomStream
   driver/          # run/arun, resume/aresume, Budget, RunResult and its tracking, held-out evaluation, driver errors and warnings
   strategies/
     random_search.py
     ga/            # GeneticAlgorithm and its operators (selection, recombination, mutation, bounds repair)
+    structured/    # StructuredGeneticAlgorithm, the sequence operators, external proposal operators and their recorded calls
   environments/    # Scenario, ScenarioSet, EpisodeResult, the Environment/BatchedEnvironment/Decoder interfaces, StepEnvironment
   aggregators/     # Aggregator and its reductions (mean, minimum, maximum, total, quantile, cvar_upper, cvar_lower)
   evaluators/      # FunctionEvaluator, VectorisedEvaluator, EpisodeEvaluator
   recording/       # Recorder protocol, SQLiteRecorder run directory, genome encoding, checkpoint files, the writer lock, replay, a reader
-  # later: strategies/external/ (PycmaStrategy), a structured-genome strategy (6b), a multi-objective strategy (8),
-  #        recording (genome store, 6b; export)
+  # later: strategies/external/ (PycmaStrategy), a multi-objective strategy (8), recording (export)
 benchmarks/        # the benchmark harness, its configs, and the committed reports (frozen results are history)
 tests/             # tests of the package, parametrised over the available backends and precisions
 docs/design/core.md
@@ -770,7 +798,7 @@ Each step ends with passing tests and is a candidate for its own Claude Code pro
 5. **Checkpoints and resume (done):** checkpoints of strategy, driver and random-generator state (JSON and arrays, no pickle, written atomically), `resume` / `aresume` by replay (deterministic mode) or truncate-and-redo (throughput mode), extension of finished runs, the single-writer lock, recording schema 2. The content-addressed genome store moved to step 6b, with the other genome storage.
 6. **Agents and structured genomes:**
    - **6a, agent layer (done):** environment interface, step-level adapter, decoders, episode evaluator, scenario sets with held-out splits, aggregators, recording of per-scenario measurements (schema 3), held-out evaluation, and a point-mass test fixture implemented three ways.
-   - **6b, structured genomes:** a strategy for non-numeric genomes with structure-aware operators, an interface slot for LLM-driven mutation operators, and the content-addressed genome store (moved from step 5).
+   - **6b, structured genomes (done):** codecs and canonical encoding, `SequenceSpace`, `StructuredGeneticAlgorithm` with structure-aware operators, recorded and replayed external proposal operators (the slot for LLM-driven mutation), and the content-addressed genome store in `events.sqlite` (recording schema 4).
 7. **PyTorch everywhere:** numpy and PyTorch coverage in float64 and float32 for every numeric strategy, operator, evaluator and aggregator, plus the GPU smoke suite (formerly step 8).
 8. **Multi-objective:** a multi-objective strategy (e.g. NSGA-II), plus binary and integer search spaces (new).
 9. **External strategies, adapters and examples:** `PycmaStrategy`, the Gymnasium adapter, and the four rewritten notebooks: Rastrigin, linear regression, logistic regression, polynomial regression (formerly step 9; the polynomial one depends on step 8).
@@ -787,3 +815,5 @@ Each step ends with passing tests and is a candidate for its own Claude Code pro
 - **Co-evolution:** how matchmaking between populations is configured.
 - **Noise handling:** built-in support for repeated evaluation and averaging, and how it interacts with caching.
 - **GPU CI:** whether to set up a self-hosted runner for CUDA and Metal.
+- **Concurrent, asynchronous variation:** external proposal operators (§3.5) are called synchronously inside `ask`, which blocks the driver while a model answers. Whether `ask` should become asynchronous, or variation run ahead of evaluation, is open; so is a failure policy for variation (retry, skip, fall back to a built-in operator).
+- **Operator costs and the budget:** the cost units of operator calls are recorded but not counted against the budget (§9.3). Whether, and how, they should be (a separate budget, or one with the evaluation costs), and how recorded calls reused by a replay count, is open.

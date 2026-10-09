@@ -13,8 +13,10 @@ import numpy as np
 
 import auxein
 from auxein.strategies.ga import GeneticAlgorithm
-from tests.support import pointmass
+from auxein.strategies.structured import ExternalMutation, SequenceMutation
+from tests.support import pointmass, sequences
 from tests.support.pointmass import PointMassEnvironment
+from tests.support.sequences import FakeLLM
 
 
 def logged_sphere(genome: np.ndarray) -> float:
@@ -45,6 +47,11 @@ class LoggedPointMass(PointMassEnvironment):
 def strategy_for(name: str) -> Any:
     if name == "random":
         return auxein.RandomSearch()
+    if name == "structured":
+        return auxein.StructuredGeneticAlgorithm(population_size=12, offspring_size=12)
+    if name == "structured-llm":
+        mixed = [(SequenceMutation(), 2.0), (ExternalMutation(FakeLLM()), 1.0)]
+        return auxein.StructuredGeneticAlgorithm(population_size=12, offspring_size=12, mutation=mixed)
     return GeneticAlgorithm(population_size=12, offspring_size=12)
 
 
@@ -63,6 +70,9 @@ def settings(config: dict[str, Any]) -> dict[str, Any]:
             "constraints": ["overshoot"],
             "descriptors": ["success_rate"],
         }
+    elif config.get("evaluator") == "sequence":
+        evaluator = auxein.FunctionEvaluator(sequences.distance)
+        problem = {"space": sequences.SPACE, "objectives": [auxein.Objective("distance")], "constraints": ["too_long"]}
     else:
         evaluator = auxein.FunctionEvaluator(logged_sphere)
         problem = {"space": auxein.Box(-5.0, 5.0, dim=4)}
@@ -80,4 +90,5 @@ def settings(config: dict[str, Any]) -> dict[str, Any]:
         "checkpoint_every_evaluations": config.get("checkpoint_every_evaluations", 40),
         "checkpoint_every": config.get("checkpoint_every"),
         "keep_checkpoints": config.get("keep_checkpoints"),
+        "genome_store_threshold": config.get("genome_store_threshold", 4096),
     }

@@ -11,21 +11,22 @@ import sqlite3
 from collections.abc import Generator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar, cast
+from typing import Any, TypeVar, cast
 
 from auxein.backend import Backend
 from auxein.core import Candidate, CandidateId, Cost, Evaluation, RawRef, Status
 from auxein.recording.genomes import EncodedGenome, decode_genome
+from auxein.spaces.codec import GenomeCodec
 
 _CHUNK = 2048
 
 G = TypeVar("G")
 
 _SELECT = """
-SELECT c.id, c.step, c.origin, c.genome_kind, c.genome, c.genome_dtype, c.genome_shape,
+SELECT c.id, c.step, c.origin, c.genome_kind, CASE WHEN c.genome_hash IS NULL THEN c.genome ELSE b.data END, c.genome_dtype, c.genome_shape,
        e.status, e.objectives, e.constraints, e.descriptors, e.cost_units, e.wall_time, e.error,
        EXISTS (SELECT 1 FROM episodes p WHERE p.candidate_id = c.id)
-FROM candidates c JOIN evaluations e ON e.candidate_id = c.id
+FROM candidates c JOIN evaluations e ON e.candidate_id = c.id LEFT JOIN blobs b ON b.hash = c.genome_hash
 """
 
 
@@ -54,9 +55,10 @@ class ReplayRecord:
         raw = RawRef(f"episodes/{self.candidate_id}") if self.has_episodes else None
         return Evaluation(candidate, self.status, self.objectives, self.constraints, self.descriptors, cost, raw, self.error)
 
-    def decoded_candidate(self, backend: Backend) -> Candidate[object]:
-        """The candidate with its genome decoded: array genomes on the run's backend, JSON genomes as plain values."""
-        genome = decode_genome(self.genome.kind, self.genome.data, self.genome.dtype, self.genome.shape)
+    def decoded_candidate(self, backend: Backend, codec: GenomeCodec[Any] | None = None) -> Candidate[object]:
+        """The candidate with its genome decoded: array genomes on the run's backend, JSON genomes as plain values, or as the
+        space's genomes when its codec is given."""
+        genome = decode_genome(self.genome.kind, self.genome.data, self.genome.dtype, self.genome.shape, codec)
         if self.genome.kind == "array":
             genome = backend.asarray(genome)  # type: ignore[arg-type]
         return Candidate(self.candidate_id, genome, self.parents, self.origin, self.step)

@@ -7,6 +7,7 @@ from auxein.core.evaluation import ArtifactRef, Cost, Direction, Evaluation, Obj
 from auxein.core.evaluation_batch import EvaluationBatch, to_minimisation
 from auxein.core.ids import CandidateId, IdIssuer
 from auxein.core.normalise import evaluation_from_return, evaluations_from_batch_return
+from auxein.core.operators import NoOperatorLog, OperatorLog, OperatorRecord, Proposal, ProposalOperator
 from auxein.core.problem import ProblemSpec
 from auxein.core.protocols import EvalContext, Evaluator, FailurePolicy, Strategy, StrategyCapabilities, StrategyContext, TellMode
 from auxein.core.results import BatchResult, Result
@@ -29,8 +30,13 @@ __all__ = [
     "FailurePolicy",
     "IdIssuer",
     "ListBatch",
+    "NoOperatorLog",
+    "OperatorLog",
+    "OperatorRecord",
     "Objective",
     "ProblemSpec",
+    "Proposal",
+    "ProposalOperator",
     "RawRef",
     "Result",
     "StateDict",

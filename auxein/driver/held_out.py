@@ -15,7 +15,7 @@ from typing import Any, Literal, cast
 
 import numpy as np
 
-from auxein.backend import Backend, Precision
+from auxein.backend import Backend, Precision, is_array
 from auxein.core import (
     ArrayBatch,
     Batch,
@@ -35,6 +35,7 @@ from auxein.evaluators.episode import describe_component
 from auxein.execution import ExecutorName, make_executor, resolve_executor
 from auxein.random import RandomStream, RunSeed
 from auxein.recording.replay import iter_records
+from auxein.spaces.codec import GenomeCodec
 
 REPORT_FILE = "held_out.json"
 
@@ -130,6 +131,7 @@ def evaluate_held_out(
     timeout: float | None = None,
     failure_policy: FailurePolicy = "infeasible",
     write: bool = True,
+    codec: GenomeCodec[Any] | None = None,
 ) -> HeldOutReport:
     """Evaluate candidates of a run on a held-out scenario set, outside the run.
 
@@ -158,6 +160,7 @@ def evaluate_held_out(
             timeout=timeout,
             failure_policy=failure_policy,
             write=write,
+            codec=codec,
         )
     )
 
@@ -176,6 +179,7 @@ async def aevaluate_held_out(
     timeout: float | None = None,
     failure_policy: FailurePolicy = "infeasible",
     write: bool = True,
+    codec: GenomeCodec[Any] | None = None,
 ) -> HeldOutReport:
     """The asynchronous variant of `evaluate_held_out`, for use inside a running event loop."""
     run_dir = run if isinstance(run, (str, Path)) else run.run_dir
@@ -192,7 +196,7 @@ async def aevaluate_held_out(
     base_seed = seed if seed is not None else (int(metadata["seed"]) if metadata is not None else 0)
     held_out_seed = int(RunSeed(base_seed).sequence("held-out").generate_state(1)[0])
 
-    chosen = _choose(run, run_dir, candidates, problem, backend)
+    chosen = _choose(run, run_dir, candidates, problem, backend, codec)
     batch = _batch_of(chosen, backend)
     seeds = RunSeed(held_out_seed)
     host = Backend("numpy", "cpu", backend.precision)
@@ -258,6 +262,7 @@ def _choose(
     candidates: Literal["best", "pareto"] | Sequence[int],
     problem: ProblemSpec[Any],
     backend: Backend,
+    codec: GenomeCodec[Any] | None = None,
 ) -> list[Candidate[Any]]:
     """The candidates to evaluate, with their genomes."""
     if isinstance(run, RunResult):
@@ -275,7 +280,7 @@ def _choose(
     found: dict[int, Candidate[Any]] = {}
     seen = 0
     for record in iter_records(run_dir / "events.sqlite"):
-        evaluation: Evaluation[Any] = record.evaluation(record.decoded_candidate(backend))
+        evaluation: Evaluation[Any] = record.evaluation(record.decoded_candidate(backend, codec))
         if wanted is not None:
             if int(record.candidate_id) in wanted:
                 found[int(record.candidate_id)] = evaluation.candidate
@@ -299,6 +304,8 @@ def _batch_of(chosen: Sequence[Candidate[Any]], backend: Backend) -> Batch[Any]:
     if not chosen:
         raise ValueError("there are no candidates to evaluate")
     genomes = [c.genome for c in chosen]
+    if not all(is_array(g) for g in genomes):
+        return ListBatch(tuple(chosen))  # structured genomes: a list batch, whatever they look like
     try:
         stacked = np.stack([np.asarray(backend.to_numpy(g)) for g in genomes])  # pyright: ignore[reportUnknownMemberType]
     except (TypeError, ValueError):
