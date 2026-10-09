@@ -18,7 +18,10 @@ from auxein.spaces import SequenceSpace
 from tests.driver.resume_modes_test import forget_checkpoints_after, rows_after
 from tests.driver.resume_test import comparable, pretend_killed
 from tests.support.fakes import ScriptedStrategy
+from tests.support.fixtures import integration_backend
 from tests.support.reading import peek
+
+pytestmark = pytest.mark.usefixtures("use_corner_backend")
 
 LONG = tuple(f"instruction-number-{i:03d}" for i in range(250))  # about 6 KB encoded
 SPACE = SequenceSpace(LONG, 1, 300)
@@ -36,6 +39,7 @@ def run_scripted(run_dir: Path, genomes, space, *, threshold: Any = 4096, evalua
         batch_size=10,
         run_dir=run_dir,
         genome_store_threshold=threshold,
+        backend=integration_backend(),
         **{"keep_checkpoints": 0, **kw},
     )
 
@@ -59,16 +63,19 @@ def test_large_structured_genomes_are_stored_once_by_hash_however_many_candidate
 
 
 def test_large_array_genomes_go_into_the_store_too(tmp_path: Path):
-    genome = np.arange(1000, dtype=np.float64)  # 8 KB
-    run_scripted(tmp_path / "r", lambda i: genome if i % 2 else genome + 1, auxein.Box(0.0, 1e6, dim=1000))
+    backend = integration_backend()
+    genome = backend.asarray(np.arange(1000, dtype=np.float64))  # 8 KB in float64, 4 KB in float32: the threshold is 2 KB for this test
+    other = genome + 1.0
+    run_scripted(tmp_path / "r", lambda i: genome if i % 2 else other, auxein.Box(0.0, 1e6, dim=1000), threshold=2048)
     db = db_of(tmp_path / "r")
     assert db.execute("SELECT COUNT(*) FROM blobs").fetchone()[0] == 2
-    assert db.execute("SELECT genome_dtype FROM candidates WHERE id = 0").fetchone() == ("float64",)  # dtype and shape stay per candidate
+    # dtype and shape stay per candidate, so the blob is the raw bytes of the backend's array whatever the backend
+    assert db.execute("SELECT genome_dtype FROM candidates WHERE id = 0").fetchone() == (backend.precision,)
     db.close()
     with open_run(tmp_path / "r") as run:
         first, second = list(run.evaluations())[:2]
-        np.testing.assert_array_equal(first.genome, genome + 1)  # type: ignore[arg-type]
-        np.testing.assert_array_equal(second.genome, genome)  # type: ignore[arg-type]
+        np.testing.assert_array_equal(first.genome, backend.to_numpy(other))  # type: ignore[arg-type]
+        np.testing.assert_array_equal(second.genome, backend.to_numpy(genome))  # type: ignore[arg-type]
 
 
 def test_small_genomes_stay_inline_and_the_threshold_is_configurable(tmp_path: Path):
@@ -118,6 +125,7 @@ def test_replay_still_checks_genomes_byte_for_byte_through_the_store(tmp_path: P
         batch_size=12,
         run_dir=tmp_path / "r",
         genome_store_threshold=64,  # almost every genome goes to the store
+        backend=integration_backend(),
         keep_checkpoints=0,
     )
     assert db_of(tmp_path / "r").execute("SELECT COUNT(*) FROM blobs").fetchone()[0] > 10
@@ -130,6 +138,7 @@ def test_replay_still_checks_genomes_byte_for_byte_through_the_store(tmp_path: P
         batch_size=12,
         run_dir=tmp_path / "r",
         genome_store_threshold=64,
+        backend=integration_backend(),
         keep_checkpoints=0,
     )
     assert extended.evaluations_used == 120
@@ -148,6 +157,7 @@ def test_replay_still_checks_genomes_byte_for_byte_through_the_store(tmp_path: P
             batch_size=12,
             run_dir=tmp_path / "r",
             genome_store_threshold=64,
+            backend=integration_backend(),
             keep_checkpoints=0,
         )
 

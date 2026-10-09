@@ -55,8 +55,14 @@ def strategy_for(name: str) -> Any:
     return GeneticAlgorithm(population_size=12, offspring_size=12)
 
 
+def backend_config(backend: auxein.Backend) -> list[str]:
+    """A backend as the JSON a test passes to the subprocess that runs the configuration (`config["backend"]`)."""
+    return [backend.name, backend.precision]
+
+
 def settings(config: dict[str, Any]) -> dict[str, Any]:
     """The arguments of `run` and `resume` for a configuration. The evaluator is built by the caller's module."""
+    name, precision = config.get("backend", ["numpy", "float64"])
     if config.get("evaluator") == "episode":
         evaluator: Any = auxein.EpisodeEvaluator(
             pointmass.GainsDecoder() if config.get("batched") else pointmass.PerEpisodeDecoder(),
@@ -87,6 +93,7 @@ def settings(config: dict[str, Any]) -> dict[str, Any]:
         "delivery": config.get("delivery"),
         "deterministic": config.get("deterministic", True),
         "run_dir": config["run_dir"],
+        "backend": auxein.Backend(name, "cpu", precision),
         "checkpoint_every_evaluations": config.get("checkpoint_every_evaluations", 40),
         "checkpoint_every": config.get("checkpoint_every"),
         "keep_checkpoints": config.get("keep_checkpoints"),

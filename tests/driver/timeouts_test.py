@@ -22,6 +22,10 @@ from auxein.recording import open_run
 from auxein.spaces import Box
 from auxein.strategies import RandomSearch
 from tests.support import workers
+from tests.support.fixtures import integration_backend
+
+pytestmark = pytest.mark.usefixtures("use_corner_backend")
+
 
 SPACE = Box(-5.0, 5.0, dim=3)
 
@@ -30,6 +34,7 @@ def go(evaluator, budget=None, batch_size=8, seed=1, **kwargs):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RecordingDisabledWarning)
         warnings.simplefilter("ignore", EvaluationFailureWarning)
+        kwargs.setdefault("backend", integration_backend())
         return run(
             strategy=kwargs.pop("strategy", RandomSearch()), evaluator=evaluator, space=SPACE,
             budget=budget or Budget(evaluations=40), seed=seed, batch_size=batch_size, **kwargs,
@@ -91,9 +96,11 @@ def test_fail_fast_turns_a_timeout_into_an_error_naming_the_candidate():
 @pytest.mark.parametrize("delivery", ["generation", "steady_state"])
 def test_a_process_that_times_out_is_killed_and_replaced_and_the_others_are_unaffected(tmp_path: Path, delivery: str):
     evaluator = FunctionEvaluator(partial(workers.slow_if_unlucky, 60.0), uses_rng=True)
+    # a spawned worker imports torch to unpickle its first tensor genome (about a second), and that counts towards the timeout
+    timeout = 0.5 if integration_backend().name == "numpy" else 4.0
     t0 = time.perf_counter()
     result = go(
-        evaluator, timeout=0.5, concurrency=3, executor="process", delivery=delivery, run_dir=tmp_path / "r", budget=Budget(evaluations=30)
+        evaluator, timeout=timeout, concurrency=3, executor="process", delivery=delivery, run_dir=tmp_path / "r", budget=Budget(evaluations=30)
     )
     assert time.perf_counter() - t0 < 40  # nothing waited for the 60 s
     counts = result.status_counts

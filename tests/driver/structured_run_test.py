@@ -24,10 +24,13 @@ from tests.driver.resume_test import comparable, same_result
 from tests.support import pointmass as pm
 from tests.support import sequences as sq
 from tests.support.eventlog import event_log
+from tests.support.fixtures import integration_backend
 from tests.support.reading import peek
-from tests.support.resumable import settings
+from tests.support.resumable import backend_config, settings
 
 ROOT = Path(__file__).resolve().parents[2]
+
+pytestmark = pytest.mark.usefixtures("use_corner_backend")
 
 
 def arguments(strategy: Any, run_dir: Path | None = None, **over: Any) -> dict[str, Any]:
@@ -40,6 +43,7 @@ def arguments(strategy: Any, run_dir: Path | None = None, **over: Any) -> dict[s
         "seed": 2,
         "batch_size": 20,
         "run_dir": run_dir,
+        "backend": integration_backend(),
     }
     settings_.update(over)
     if run_dir is None:
@@ -118,6 +122,7 @@ def test_a_sequence_genome_becomes_an_agent_for_the_point_mass_through_the_episo
         "constraints": ["overshoot"],
         "descriptors": ["success_rate"],
         "batch_size": 20,
+        "backend": integration_backend(),
     }
     found = auxein.run(strategy=structured(), budget=auxein.Budget(evaluations=400), seed=1, **common)  # type: ignore[arg-type]
     random = auxein.run(strategy=auxein.RandomSearch(), budget=auxein.Budget(evaluations=400), seed=1, **common)  # type: ignore[arg-type]
@@ -151,7 +156,7 @@ def recorded(run_dir: Path) -> int:
 def test_a_killed_structured_run_resumes_to_the_identical_event_log(tmp_path: Path, config: dict[str, Any], kill_after: int):
     total = 220
     run_dir = tmp_path / "run"
-    full = {"strategy": "structured", "evaluator": "sequence", "run_dir": str(run_dir), "evaluations": total, **config}
+    full = {"strategy": "structured", "evaluator": "sequence", "run_dir": str(run_dir), "evaluations": total, "backend": backend_config(integration_backend()), **config}
     victim = subprocess.Popen(
         [sys.executable, "-m", "tests.support.resume_cli", json.dumps(full)],
         cwd=ROOT,
