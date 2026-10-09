@@ -15,9 +15,13 @@ from auxein.core import Objective
 from auxein.driver import ConfigurationMismatchError, ReplayMismatchError, ResumeError, ResumeWarning
 from auxein.strategies.ga import GeneticAlgorithm
 from tests.support.eventlog import event_log
+from tests.support.fixtures import integration_backend
 from tests.support.reading import peek
 
-pytestmark = pytest.mark.filterwarnings("ignore::auxein.driver.errors.EvaluationFailureWarning")
+pytestmark = [
+    pytest.mark.filterwarnings("ignore::auxein.driver.errors.EvaluationFailureWarning"),
+    pytest.mark.usefixtures("use_corner_backend"),
+]
 
 
 def sphere(genome: np.ndarray) -> float:
@@ -37,6 +41,7 @@ def arguments(strategy: str, delivery: str, run_dir: Path, evaluator: Any = None
         "batch_size": 16,
         "delivery": delivery,
         "run_dir": run_dir,
+        "backend": integration_backend(),
     }
     settings.update(over)
     return settings
@@ -244,6 +249,9 @@ def test_each_setting_that_is_not_the_budget_is_refused_by_name_and_nothing_is_r
     auxein.run(budget=auxein.Budget(evaluations=60), **arguments("ga", "steady_state", run_dir))
     before = recorded_state(run_dir)
     changed = arguments("ga", "steady_state", run_dir)
+    if setting == "backend":  # the other precision of the backend the run used, whichever corner this is
+        current = integration_backend()
+        value = auxein.Backend(current.name, "cpu", "float32" if current.precision == "float64" else "float64")
     changed[setting] = value
     expected = (
         "precision" if setting == "backend" else setting.replace("space", "problem.space").replace("objectives", "problem.objectives")
@@ -285,7 +293,8 @@ class Drifting(auxein.RandomSearch):  # type: ignore[type-arg]
 
     def ask(self, n: int) -> Any:
         batch = super().ask(n)
-        return auxein.core.ArrayBatch(batch.as_array() + 1e-9, batch.ids, batch.step, "random")
+        # 1e-4: a drift that float32 does not round away
+        return auxein.core.ArrayBatch(batch.as_array() + 1e-4, batch.ids, batch.step, "random")
 
 
 Drifting.__name__ = Drifting.__qualname__ = "RandomSearch"

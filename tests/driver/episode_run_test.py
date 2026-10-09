@@ -31,13 +31,17 @@ from tests.driver.resume_test import comparable, same_result
 from tests.support import episodes as ep
 from tests.support import pointmass as pm
 from tests.support.eventlog import event_log
+from tests.support.fixtures import integration_backend
 from tests.support.reading import peek
-from tests.support.resumable import settings
+from tests.support.resumable import backend_config, settings
 
 ROOT = Path(__file__).resolve().parents[2]
 SELECTION, HELD_OUT = ScenarioSet.generate_split(pm.scenario_params, 8, 8, seed=3)
 
-pytestmark = pytest.mark.filterwarnings("ignore::auxein.driver.errors.EvaluationFailureWarning")
+pytestmark = [
+    pytest.mark.filterwarnings("ignore::auxein.driver.errors.EvaluationFailureWarning"),
+    pytest.mark.usefixtures("use_corner_backend"),
+]
 
 
 def evaluator(
@@ -58,11 +62,20 @@ def arguments(strategy: Any, run_dir: Path | None = None, **over: Any) -> dict[s
         "seed": 4,
         "batch_size": 20,
         "run_dir": run_dir,
+        "backend": integration_backend(),
     }
     settings_.update(over)
     if run_dir is None:
         warnings.simplefilter("ignore", auxein.RecordingDisabledWarning)
     return settings_
+
+
+def same_values(a: Any, b: Any) -> bool:
+    """Whether two dicts of measurements agree: exactly in float64; to float32 rounding where the two sides did the arithmetic
+    on different paths (batched in float32 against per-episode in Python floats, or re-reduced on the host)."""
+    if integration_backend().precision == "float64":
+        return bool(a == b)
+    return a.keys() == b.keys() and all(a[k] == pytest.approx(b[k], rel=1e-4, abs=1e-6) for k in a)
 
 
 def genetic() -> auxein.GeneticAlgorithm:
@@ -91,7 +104,7 @@ def test_the_step_level_environment_runs_through_the_same_evaluator():
     result = auxein.run(budget=auxein.Budget(evaluations=100), **arguments(genetic(), evaluator=evolved))
     reference = auxein.run(budget=auxein.Budget(evaluations=100), **arguments(genetic()))  # batched numpy
     assert result.best is not None and reference.best is not None
-    assert result.best.objectives == reference.best.objectives  # the same maths, so the same run
+    assert same_values(result.best.objectives, reference.best.objectives)  # the same maths, so the same run
 
 
 @pytest.mark.parametrize(("executor", "concurrency"), [("inline", 1), ("thread", 4), ("process", 3)])
@@ -217,11 +230,11 @@ def test_re_aggregating_a_recorded_run_matches_a_fresh_evaluation_with_that_aggr
     assert len(rejudged) == len(fresh) == 80
     for judged, evaluation in zip(rejudged, fresh, strict=True):
         assert judged.candidate_id == evaluation.candidate_id and judged.status is Status.OK
-        assert judged.objectives == evaluation.objectives and judged.constraints == evaluation.constraints
-        assert judged.descriptors == evaluation.descriptors
+        assert same_values(judged.objectives, evaluation.objectives) and same_values(judged.constraints, evaluation.constraints)
+        assert same_values(judged.descriptors, evaluation.descriptors)
     with open_run(tmp_path / "a") as original:  # and the original aggregator gives the original evaluations back
         for judged, evaluation in zip(original.reaggregate(pm.aggregator()), original.evaluations(), strict=True):
-            assert judged.objectives == evaluation.objectives
+            assert same_values(judged.objectives, evaluation.objectives)
 
 
 def test_re_aggregating_reports_failed_candidates_and_checks_the_names(tmp_path: Path):
@@ -315,7 +328,7 @@ def test_held_out_evaluation_is_the_same_with_the_per_episode_path_and_works_ins
     auxein.run(budget=auxein.Budget(evaluations=100), **arguments(genetic(), tmp_path / "r"))
     batched = evaluate_held_out(tmp_path / "r", evaluator(HELD_OUT), HELD_OUT, write=False)
     single = evaluate_held_out(tmp_path / "r", evaluator(HELD_OUT, batched=False), HELD_OUT, concurrency=3, executor="thread", write=False)
-    assert batched.candidates[0].objectives == single.candidates[0].objectives
+    assert same_values(batched.candidates[0].objectives, single.candidates[0].objectives)
 
     async def inside() -> Any:
         return await aevaluate_held_out(tmp_path / "r", evaluator(HELD_OUT), HELD_OUT, write=False)
@@ -393,7 +406,15 @@ def test_a_killed_episode_run_resumes_to_the_same_log_and_episodes_without_dupli
 ):
     total = 200
     run_dir = tmp_path / "run"
-    full = {"strategy": "ga", "evaluator": "episode", "run_dir": str(run_dir), "evaluations": total, "scenarios": 4, **config}
+    full = {
+        "strategy": "ga",
+        "evaluator": "episode",
+        "run_dir": str(run_dir),
+        "evaluations": total,
+        "scenarios": 4,
+        "backend": backend_config(integration_backend()),
+        **config,
+    }
     victim = subprocess.Popen(
         [sys.executable, "-m", "tests.support.resume_cli", json.dumps(full)],
         cwd=ROOT,

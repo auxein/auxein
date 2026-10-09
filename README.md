@@ -55,6 +55,7 @@ print(result.best.objectives["value"], result.best.candidate.genome)
 ```
 uv sync                                     # install the project with its development dependencies
 uv run pytest                               # tests
+uv run pytest -m gpu --device mps           # the GPU smoke suite, by hand: mps, cuda or cpu (tests/gpu/README.md)
 uv run ruff check                           # lint
 uv run ruff format --check                  # formatting
 uv run pyright                              # type check

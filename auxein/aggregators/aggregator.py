@@ -94,6 +94,7 @@ class Aggregator:
         ]
         objectives, constraints, descriptors, cost = groups
         invalid: dict[int, str] = {}
+        # the columns are on the host by now (see `_to_host`), so scanning for non-finite values is a numpy job
         for kind, columns in (("constraint", constraints), ("descriptor", descriptors), ("cost unit", cost)):
             for name, column in columns.items():
                 for row in np.nonzero(~np.isfinite(column))[0].tolist():
@@ -113,6 +114,9 @@ class Aggregator:
 
 
 def _to_host(column: Array, backend: Backend) -> Column:
+    """One reduced column to the host, as float64. Host-side by design (design doc §7.2): the reduction itself ran on the
+    backend's device over `(n, s)` arrays, and what leaves it is one number per candidate, the numbers an `Evaluation` holds
+    as Python floats and the recorder writes. It is one small transfer per name per batch, never one per scenario or episode."""
     host = np.asarray(backend.to_numpy(column), dtype=np.float64)
     if host.ndim != 1:
         raise ValueError(f"a reduction must produce one value per candidate (shape (n,)), got shape {host.shape}")

@@ -42,6 +42,19 @@ def test_a_state_round_trips_with_its_arrays_exactly(tmp_path: Path):
     assert not json.loads((directory / "state.json").read_text())["state"]["genomes"].get("data")  # the arrays are not in the JSON
 
 
+def test_the_arrays_of_a_backend_come_back_as_arrays_of_that_backend_with_their_dtype(tmp_path: Path, backend: Backend):
+    """Strategy state is made of the run's own arrays (floats and ids), and a resumed run must find them where the run keeps them."""
+    state: StateDict = {
+        "genomes": backend.asarray(np.arange(12).reshape(3, 4) / 7),
+        "ids": backend.asarray([5, 6, 7], dtype=backend.int_dtype),
+        "mask": backend.asarray([True, False, True], dtype=backend.bool_dtype),
+    }
+    _, back = checkpoints.read(checkpoints.write(tmp_path / "c", 9, state), backend)
+    for name in state:
+        assert backend.matches(back[name], state[name].dtype), name  # type: ignore[union-attr]
+        np.testing.assert_array_equal(backend.to_numpy(back[name]), backend.to_numpy(state[name]))  # type: ignore[arg-type]
+
+
 def test_there_is_no_pickle_anywhere(tmp_path: Path):
     with pytest.raises(StateDictError):
         checkpoints.write(tmp_path / "c", 1, {"a": np.array([object()], dtype=object)})

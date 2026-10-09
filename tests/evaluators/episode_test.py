@@ -49,16 +49,16 @@ def batch_of(n=3, backend=None):
 
 
 @pytest.mark.parametrize(("concurrency", "kind"), [(1, "inline"), (1, "thread"), (4, "inline"), (4, "thread"), (4, "process")])
-def test_the_per_episode_path_gives_the_same_evaluations_with_every_executor(concurrency: int, kind: str):
-    results = evaluate(make(), batch_of(5), concurrency=concurrency, kind=kind)
+def test_the_per_episode_path_gives_the_same_evaluations_with_every_executor(concurrency: int, kind: str, backend: Backend):
+    results = evaluate(make(), batch_of(5, backend), concurrency=concurrency, kind=kind, backend=backend)
     assert [e.candidate.id for e in results] == list(range(5))
     assert [e.status for e in results] == [Status.OK] * 5
     assert [e.objectives["value"] for e in results] == [1.0 + 3 * i for i in range(5)]  # the mean of one gene over the scenarios
     assert all(e.raw is not None and e.raw.key == f"episodes/{e.candidate.id}" for e in results)
 
 
-def test_the_episodes_of_every_candidate_and_scenario_travel_with_the_evaluations():
-    results = evaluate(make(), batch_of(3))
+def test_the_episodes_of_every_candidate_and_scenario_travel_with_the_evaluations(backend: Backend):
+    results = evaluate(make(), batch_of(3, backend), backend=backend)
     episodes = results.episodes
     assert episodes is not None
     assert (
@@ -118,8 +118,8 @@ def test_each_candidates_wall_time_is_the_time_of_its_episodes():
 # --- common random numbers ---
 
 
-def test_every_candidate_faces_the_same_world_but_has_its_own_agent_stream():
-    results = evaluate(make(), batch_of(3))
+def test_every_candidate_faces_the_same_world_but_has_its_own_agent_stream(backend: Backend):
+    results = evaluate(make(), batch_of(3, backend), backend=backend)
     episodes = results.episodes
     assert episodes is not None
     world = episodes.values[:, :, episodes.names.index("world")]
@@ -131,22 +131,22 @@ def test_every_candidate_faces_the_same_world_but_has_its_own_agent_stream():
     assert len(set(agent[0])) == 4  # and per scenario
 
 
-def test_the_world_depends_on_the_scenario_seed_and_the_agent_on_the_run_seed():
-    first = evaluate(make(), batch_of(2), seed=1).episodes
-    second = evaluate(make(), batch_of(2), seed=2).episodes
+def test_the_world_depends_on_the_scenario_seed_and_the_agent_on_the_run_seed(backend: Backend):
+    first = evaluate(make(), batch_of(2, backend), seed=1, backend=backend).episodes
+    second = evaluate(make(), batch_of(2, backend), seed=2, backend=backend).episodes
     assert first is not None and second is not None
     world, agent = first.names.index("world"), first.names.index("agent")
     np.testing.assert_array_equal(first.values[:, :, world], second.values[:, :, world])  # the run seed does not touch the world
     assert not np.array_equal(first.values[:, :, agent], second.values[:, :, agent])
-    again = evaluate(make(), batch_of(2), seed=1).episodes
+    again = evaluate(make(), batch_of(2, backend), seed=1, backend=backend).episodes
     assert again is not None
     np.testing.assert_array_equal(first.values, again.values)
 
 
 @pytest.mark.parametrize("kind", ["inline", "thread", "process"])
-def test_the_streams_are_the_same_whatever_the_executor(kind: str):
-    reference = evaluate(make(), batch_of(3)).episodes
-    other = evaluate(make(), batch_of(3), concurrency=3, kind=kind).episodes
+def test_the_streams_are_the_same_whatever_the_executor(kind: str, backend: Backend):
+    reference = evaluate(make(), batch_of(3, backend), backend=backend).episodes
+    other = evaluate(make(), batch_of(3, backend), concurrency=3, kind=kind, backend=backend).episodes
     assert reference is not None and other is not None
     np.testing.assert_array_equal(reference.values, other.values)
 
@@ -176,8 +176,8 @@ def test_the_error_lists_every_failing_scenario_and_counts_the_rest():
     assert "and in scenario(s) 's0003'" in error  # the first three are described, the rest named
 
 
-def test_the_measurements_of_the_successful_episodes_are_still_recorded():
-    results = evaluate(make(ep.Troubled(raises=("s0001",))), batch_of(2))
+def test_the_measurements_of_the_successful_episodes_are_still_recorded(backend: Backend):
+    results = evaluate(make(ep.Troubled(raises=("s0001",))), batch_of(2, backend), backend=backend)
     episodes = results.episodes
     assert episodes is not None and set(episodes.failures) == {(0, 1), (1, 1)}
     assert episodes.failures[(0, 1)][0] is Status.FAILED and "diverged" in episodes.failures[(0, 1)][1]
@@ -186,14 +186,14 @@ def test_the_measurements_of_the_successful_episodes_are_still_recorded():
     assert np.isnan(episodes.values[0, 1, scenario])  # the failed one has nothing to record
 
 
-def test_other_candidates_are_unaffected():
+def test_other_candidates_are_unaffected(backend: Backend):
     class OnlyFirst(ep.Probe):
         def run_episode(self, agents, scenario, rng):
             if agents["agent"][0] == 1.0 and scenario.index == 3:
                 raise RuntimeError("boom")
             return super().run_episode(agents, scenario, rng)
 
-    results = evaluate(make(OnlyFirst()), batch_of(3))
+    results = evaluate(make(OnlyFirst()), batch_of(3, backend), backend=backend)
     assert [e.status for e in results] == [Status.FAILED, Status.OK, Status.OK]
 
 
@@ -209,8 +209,8 @@ def test_a_returned_failure_is_left_to_the_driver_under_fail_fast():
     assert [e.status for e in results] == [Status.FAILED, Status.FAILED]
 
 
-def test_a_non_finite_aggregated_objective_fails_the_candidate_naming_the_objective():
-    results = evaluate(make(ep.Diverging(), aggregator=Aggregator({"value": mean("world")})), batch_of(2))
+def test_a_non_finite_aggregated_objective_fails_the_candidate_naming_the_objective(backend: Backend):
+    results = evaluate(make(ep.Diverging(), aggregator=Aggregator({"value": mean("world")})), batch_of(2, backend), backend=backend)
     assert all(e.status is Status.FAILED and "non-finite objective value: 'value' is nan" in (e.error or "") for e in results)
 
 
@@ -349,7 +349,7 @@ def test_the_batched_path_rejects_a_timeout():
         evaluate(pointmass_evaluator(), _gains_batch(Backend(), 2), timeout=5.0, spec=pm.problem())
 
 
-def test_the_batched_path_reports_a_failed_episode_per_candidate_and_scenario():
+def test_the_batched_path_reports_a_failed_episode_per_candidate_and_scenario(backend: Backend):
     class Failing(pm.PointMassEnvironment):
         def run_batch(self, agents, scenarios, rng):
             from auxein.environments import EpisodeBatchResult, EpisodeFailure
@@ -358,7 +358,7 @@ def test_the_batched_path_reports_a_failed_episode_per_candidate_and_scenario():
             return EpisodeBatchResult(dict(out.measurements), {(1, 2): EpisodeFailure(Status.TIMEOUT, "the simulator timed out")})
 
     evaluator = EpisodeEvaluator(pm.GainsDecoder(), Failing(), pm.scenario_set(6), pm.aggregator())
-    results = evaluate(evaluator, _gains_batch(Backend(), 3), spec=pm.problem())
+    results = evaluate(evaluator, _gains_batch(backend, 3), spec=pm.problem(), backend=backend)
     assert [e.status for e in results] == [Status.OK, Status.TIMEOUT, Status.OK]
     assert (
         "the simulator timed out" in (results[1].error or "")
@@ -367,19 +367,19 @@ def test_the_batched_path_reports_a_failed_episode_per_candidate_and_scenario():
     )
 
 
-def test_an_exception_in_run_batch_fails_every_candidate_or_stops_the_run():
+def test_an_exception_in_run_batch_fails_every_candidate_or_stops_the_run(backend: Backend):
     class Exploding(pm.PointMassEnvironment):
         def run_batch(self, agents, scenarios, rng):
             raise RuntimeError("the GPU simulator crashed")
 
     evaluator = EpisodeEvaluator(pm.GainsDecoder(), Exploding(), pm.scenario_set(6), pm.aggregator())
-    results = evaluate(evaluator, _gains_batch(Backend(), 3), spec=pm.problem())
+    results = evaluate(evaluator, _gains_batch(backend, 3), spec=pm.problem(), backend=backend)
     assert all(e.status is Status.FAILED and "the GPU simulator crashed" in (e.error or "") for e in results)
     with pytest.raises(EvaluationError):
-        evaluate(evaluator, _gains_batch(Backend(), 3), spec=pm.problem(), policy="fail_fast")
+        evaluate(evaluator, _gains_batch(backend, 3), spec=pm.problem(), policy="fail_fast", backend=backend)
 
 
-def test_run_batch_must_return_the_right_shape():
+def test_run_batch_must_return_the_right_shape(backend: Backend):
     class Short(pm.PointMassEnvironment):
         def run_batch(self, agents, scenarios, rng):
             out = super().run_batch(agents, scenarios, rng)
@@ -389,11 +389,11 @@ def test_run_batch_must_return_the_right_shape():
 
     with pytest.raises(ValueError, match="shape"):
         evaluate(
-            EpisodeEvaluator(pm.GainsDecoder(), Short(), pm.scenario_set(6), pm.aggregator()), _gains_batch(Backend(), 3), spec=pm.problem()
+            EpisodeEvaluator(pm.GainsDecoder(), Short(), pm.scenario_set(6), pm.aggregator()), _gains_batch(backend, 3), spec=pm.problem()
         )
 
 
-def test_the_batched_world_noise_is_the_same_for_every_candidate_and_the_stream_is_per_batch():
+def test_the_batched_world_noise_is_the_same_for_every_candidate_and_the_stream_is_per_batch(backend: Backend):
     seen: list[object] = []
 
     class Spy(pm.PointMassEnvironment):
@@ -402,11 +402,11 @@ def test_the_batched_world_noise_is_the_same_for_every_candidate_and_the_stream_
             return super().run_batch(agents, scenarios, rng)
 
     evaluator = EpisodeEvaluator(pm.GainsDecoder(), Spy(), pm.scenario_set(6), pm.aggregator())
-    one = _gains_batch(Backend(), 3)
-    evaluate(evaluator, one, spec=pm.problem(), seed=2)
-    evaluate(evaluator, one, spec=pm.problem(), seed=2)
+    one = _gains_batch(backend, 3)
+    evaluate(evaluator, one, spec=pm.problem(), seed=2, backend=backend)
+    evaluate(evaluator, one, spec=pm.problem(), seed=2, backend=backend)
     assert seen[0] == seen[1]  # derived from the first candidate's id and the run seed: reproducible
-    evaluate(evaluator, one, spec=pm.problem(), seed=3)
+    evaluate(evaluator, one, spec=pm.problem(), seed=3, backend=backend)
     assert seen[2] != seen[0]
 
 

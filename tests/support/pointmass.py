@@ -13,6 +13,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
+from array_api_compat import numpy as xp_numpy
 
 from auxein.aggregators import Aggregator, maximum, mean
 from auxein.backend import Array, Backend, backend_of
@@ -113,7 +114,7 @@ class PointMassEnvironment:
     def run_episode(self, agents: Mapping[str, Any], scenario: Scenario, rng: RandomStream) -> EpisodeResult:
         gains = np.asarray(agents["controller"], dtype=np.float64)[None, :]
         out = simulate(
-            np,
+            xp_numpy,  # numpy's array API namespace: plain `numpy` has `device=`, `bool` and `concat` only from 2.0, and 1.26 is supported
             gains,
             np.array([scenario.params["target"]], dtype=np.float64),
             np.array([scenario.params["drift"]], dtype=np.float64),

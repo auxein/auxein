@@ -98,6 +98,16 @@ def _tail(alpha: float) -> None:
         raise ValueError(f"alpha must be in (0, 1], got {alpha}")
 
 
+def _tail_size(alpha: float, scenarios: int) -> int:
+    """How many scenarios the tail holds: `ceil(alpha * s)`, at least 1 and at most `s`.
+
+    `alpha * s` is computed in binary floating point, where `0.07 * 100` is `7.000000000000001`, so a plain `ceil` would put
+    one scenario too many in the tail. A hair of tolerance (far below any `alpha` anyone writes, far above rounding) makes
+    the count the one the decimal arithmetic gives.
+    """
+    return min(scenarios, max(1, math.ceil(alpha * scenarios - 1e-9)))
+
+
 def cvar_upper(source: Source, alpha: float) -> Reduction:
     """CVaR of the **upper** tail: the mean of the largest `ceil(alpha * s)` values over `s` scenarios.
 
@@ -108,7 +118,7 @@ def cvar_upper(source: Source, alpha: float) -> Reduction:
 
     def reduce(values: Array, xp: ArrayNamespace) -> Array:
         s = values.shape[1]
-        k = min(s, max(1, math.ceil(alpha * s)))
+        k = _tail_size(alpha, s)
         return xp.mean(xp.sort(values, axis=1)[:, s - k :], axis=1)
 
     return Reduction(source, reduce, _label("cvar_upper", source, alpha))
@@ -124,7 +134,7 @@ def cvar_lower(source: Source, alpha: float) -> Reduction:
 
     def reduce(values: Array, xp: ArrayNamespace) -> Array:
         s = values.shape[1]
-        k = min(s, max(1, math.ceil(alpha * s)))
+        k = _tail_size(alpha, s)
         return xp.mean(xp.sort(values, axis=1)[:, :k], axis=1)
 
     return Reduction(source, reduce, _label("cvar_lower", source, alpha))

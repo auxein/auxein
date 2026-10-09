@@ -6,7 +6,8 @@ so the harness's counting semantics (every call counted, the trace at the checkp
 
 Parameters (all optional, in the benchmark config): `population_size` (mu, the name the overhead benchmark varies),
 `offspring_size` (lambda, or absent for the default), `selection`, `recombination`, `mutation`, `repair`,
-`crossover_probability` and `batch_size`. Operators are tables with a `type` and its parameters.
+`crossover_probability` and `batch_size`. Operators are tables with a `type` and its parameters. `backend`, `precision` and
+`device` choose the numeric backend of the run (default numpy, float64, cpu; see `backend_from`).
 """
 
 import warnings
@@ -14,7 +15,7 @@ from typing import Any
 
 import numpy as np
 
-from auxein.backend import Array
+from auxein.backend import Array, Backend
 from auxein.driver import Budget, RecordingDisabledWarning
 from auxein.driver import run as run_driver
 from auxein.evaluators import EvaluationError, VectorisedEvaluator
@@ -35,7 +36,7 @@ from auxein.strategies.ga import (
     TournamentSelection,
     UniformRecombination,
 )
-from benchmarks.adapters.base import RunInfo
+from benchmarks.adapters.base import RunInfo, backend_from
 from benchmarks.objective import BudgetExhausted, CountingObjective
 
 
@@ -106,9 +107,13 @@ def run(objective: CountingObjective, dim: int, seed: int, params: dict[str, Any
     strategy = build_strategy(params)
     batch_size = int(params.get("batch_size", strategy.offspring_size or 64))
     problem = objective.problem
+    backend = backend_from(params)
+
+    host = Backend()
 
     def evaluate(batch: Array) -> Array:
-        return np.array([objective(np.asarray(row)) for row in batch])
+        # the harness's objective is a per-point numpy function: the batch comes to the host once (a no-op for numpy)
+        return np.array([objective(row) for row in (batch if isinstance(batch, np.ndarray) else host.to_numpy(batch))])
 
     evaluations = 0
     stop_reason = "budget"
@@ -122,6 +127,7 @@ def run(objective: CountingObjective, dim: int, seed: int, params: dict[str, Any
                 budget=Budget(evaluations=objective.remaining),
                 seed=seed,
                 batch_size=batch_size,
+                backend=backend,
             )
         evaluations = result.evaluations_used
         stop_reason = "budget" if result.stop_reason == "budget:evaluations" else result.stop_reason
@@ -136,5 +142,10 @@ def run(objective: CountingObjective, dim: int, seed: int, params: dict[str, Any
         generations=generations,
         stop_reason=stop_reason,
         evals_per_generation=float(lam),  # lambda children: nothing is ever re-scored
-        extra={"initial_evals": min(mu, evaluations), "population_size": mu, "offspring_size": lam},
+        extra={
+            "initial_evals": min(mu, evaluations),
+            "population_size": mu,
+            "offspring_size": lam,
+            **({} if backend is None else {"backend": f"{backend.name}-{backend.device}-{backend.precision}"}),
+        },
     )

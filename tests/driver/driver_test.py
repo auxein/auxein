@@ -20,6 +20,10 @@ from auxein.evaluators import EvaluationError, FunctionEvaluator, VectorisedEval
 from auxein.spaces import Box
 from auxein.strategies import RandomSearch
 from tests.support.fakes import ManualClock, ScriptedStrategy
+from tests.support.fixtures import integration_backend
+
+pytestmark = pytest.mark.usefixtures("use_corner_backend")
+
 
 SPACE = Box(-5.0, 5.0, dim=3)
 IDENTITY = FunctionEvaluator(lambda genome: genome)  # the genome of a scripted candidate is its objective value
@@ -28,6 +32,7 @@ IDENTITY = FunctionEvaluator(lambda genome: genome)  # the genome of a scripted 
 def go(strategy=None, evaluator=None, budget: Budget | None = None, batch_size: int = 8, seed: int = 1, **kwargs):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RecordingDisabledWarning)
+        kwargs.setdefault("backend", integration_backend())
         return run(
             strategy=strategy or ScriptedStrategy(),
             evaluator=evaluator or IDENTITY,

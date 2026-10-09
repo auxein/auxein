@@ -3,8 +3,6 @@
 from collections.abc import Sequence
 from typing import Any, Generic, cast
 
-import numpy as np
-
 from auxein.backend import Array, is_array
 from auxein.core import (
     Batch,
@@ -252,7 +250,9 @@ class StructuredGeneticAlgorithm(Generic[G]):
         if len(options) == 1:
             return options[0][0]
         total = sum(weight for _, weight in options)
-        point = float(np.asarray(rng.uniform((1,)))[0]) * total
+        # one scalar draw decides on the host which operator runs; `to_numpy` is the way off any device (`np.asarray` of a CUDA or
+        # MPS tensor raises), and the same draw is made whichever way it is read
+        point = float(rng.backend.to_numpy(rng.uniform((1,)))[0]) * total
         for operator, weight in options:
             point -= weight
             if point < 0:

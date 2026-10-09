@@ -124,7 +124,7 @@ class EvaluationBatch(Generic[G]):
     def status_mask(self, status: Status, backend: Backend | None = None) -> Array:
         """An `(n,)` boolean array: which evaluations have this status.
 
-        Status is host metadata, so without a backend the mask is a numpy array on the host.
+        Status is host metadata (design doc §7.2), so without a backend the mask is a numpy array on the host.
         """
         mask = [e.status is status for e in self.evaluations]
         if backend is None:

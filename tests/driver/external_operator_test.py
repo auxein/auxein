@@ -28,9 +28,13 @@ from auxein.strategies.structured import (
 )
 from tests.driver.resume_test import comparable
 from tests.support import sequences as sq
+from tests.support.fixtures import integration_backend
 from tests.support.reading import peek
+from tests.support.resumable import backend_config
 
 ROOT = Path(__file__).resolve().parents[2]
+
+pytestmark = pytest.mark.usefixtures("use_corner_backend")
 
 
 def strategy(llm: sq.FakeLLM, **options: Any) -> auxein.StructuredGeneticAlgorithm[Any]:
@@ -48,6 +52,7 @@ def arguments(strategy_: Any, run_dir: Path | None, **over: Any) -> dict[str, An
         "seed": 3,
         "batch_size": 12,
         "run_dir": run_dir,
+        "backend": integration_backend(),
     }
     settings_.update(over)
     return settings_
@@ -272,7 +277,14 @@ def lines(path: Path) -> int:
 def test_a_killed_run_resumes_without_paying_twice_and_with_the_recorded_candidates(tmp_path: Path, delivery: str):
     total = 180
     run_dir = tmp_path / "run"
-    full = {"strategy": "structured-llm", "evaluator": "sequence", "run_dir": str(run_dir), "evaluations": total, "delivery": delivery}
+    full = {
+        "strategy": "structured-llm",
+        "evaluator": "sequence",
+        "run_dir": str(run_dir),
+        "evaluations": total,
+        "delivery": delivery,
+        "backend": backend_config(integration_backend()),
+    }
     first_log, second_log = tmp_path / "first.log", tmp_path / "second.log"
     victim = subprocess.Popen(
         [sys.executable, "-m", "tests.support.resume_cli", json.dumps(full)],

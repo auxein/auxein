@@ -24,6 +24,10 @@ from auxein.strategies import GeneticAlgorithm, RandomSearch
 from tests.support import workers
 from tests.support.eventlog import event_log
 from tests.support.fakes import ScriptedStrategy
+from tests.support.fixtures import integration_backend
+
+pytestmark = pytest.mark.usefixtures("use_corner_backend")
+
 
 SPACE = Box(-5.0, 5.0, dim=3)
 
@@ -31,6 +35,7 @@ SPACE = Box(-5.0, 5.0, dim=3)
 def go(strategy=None, evaluator=None, budget=None, batch_size=8, seed=1, **kwargs):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RecordingDisabledWarning)
+        kwargs.setdefault("backend", integration_backend())
         return run(
             strategy=strategy or RandomSearch(),
             evaluator=evaluator or FunctionEvaluator(workers.sphere),
