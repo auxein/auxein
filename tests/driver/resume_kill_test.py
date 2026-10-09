@@ -94,7 +94,14 @@ def test_a_killed_run_resumes_to_the_log_of_an_uninterrupted_run_and_repeats_no_
     kill_after: int,
 ):
     run_dir = tmp_path / "run"
-    config = {"strategy": strategy, "delivery": delivery, "executor": executor, "concurrency": concurrency, "run_dir": str(run_dir), "backend": backend_config(integration_backend())}
+    config = {
+        "strategy": strategy,
+        "delivery": delivery,
+        "executor": executor,
+        "concurrency": concurrency,
+        "run_dir": str(run_dir),
+        "backend": backend_config(integration_backend()),
+    }
     victim = launch({**config, "evaluations": EVALUATIONS}, None)
     deadline = time.monotonic() + 120
     try:
@@ -125,7 +132,14 @@ def test_a_killed_run_resumes_to_the_log_of_an_uninterrupted_run_and_repeats_no_
 
 def test_a_run_killed_twice_still_resumes_to_the_same_log(tmp_path: Path, references: References):
     run_dir = tmp_path / "run"
-    config = {"strategy": "ga", "delivery": "steady_state", "executor": "thread", "concurrency": 4, "run_dir": str(run_dir), "backend": backend_config(integration_backend())}
+    config = {
+        "strategy": "ga",
+        "delivery": "steady_state",
+        "executor": "thread",
+        "concurrency": 4,
+        "run_dir": str(run_dir),
+        "backend": backend_config(integration_backend()),
+    }
     for resume, kill_after in ((False, 30), (True, 120)):
         process = launch({**config, "evaluations": EVALUATIONS, "resume": resume}, None)
         deadline = time.monotonic() + 120

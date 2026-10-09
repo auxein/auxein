@@ -38,7 +38,10 @@ from tests.support.resumable import backend_config, settings
 ROOT = Path(__file__).resolve().parents[2]
 SELECTION, HELD_OUT = ScenarioSet.generate_split(pm.scenario_params, 8, 8, seed=3)
 
-pytestmark = [pytest.mark.filterwarnings("ignore::auxein.driver.errors.EvaluationFailureWarning"), pytest.mark.usefixtures("use_corner_backend")]
+pytestmark = [
+    pytest.mark.filterwarnings("ignore::auxein.driver.errors.EvaluationFailureWarning"),
+    pytest.mark.usefixtures("use_corner_backend"),
+]
 
 
 def evaluator(

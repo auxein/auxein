@@ -38,6 +38,12 @@ class _Block:
     steps: Array | None
 
 
+# Host-side by design (design doc §7.2), and once per `ask` or `tell`, never per candidate: the survivors' indices and the
+# parents' ids. A population is selected by indices whose number depends on the data (how many children survive), which the
+# array API cannot express without a boolean mask index, and the ids are lineage metadata that goes to the recorder as Python
+# ints. They are `mu` or `lambda` integers, not genomes: the genomes themselves are only ever gathered on the device.
+
+
 def _survivor_positions(keep: npt.NDArray[np.int64], members: int) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64]]:
     """Where the survivors sit in the new population, in rank order, and the inverse of that permutation.
 

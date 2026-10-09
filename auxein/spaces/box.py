@@ -1,4 +1,9 @@
-"""`Box`: a bounded real vector, with an optional log scale per dimension."""
+"""`Box`: a bounded real vector, with an optional log scale per dimension.
+
+Host-side by design (design doc §7.2): the bounds, their validation, the float32 rounding of the bounds and `contains` are
+numpy on the host, since a box is a small declaration (`d` numbers) and checking a genome is a recorded-data operation.
+Sampling is the hot path and runs on the backend: it moves the bounds to the device and draws there.
+"""
 
 from collections.abc import Sequence
 

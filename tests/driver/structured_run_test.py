@@ -156,7 +156,14 @@ def recorded(run_dir: Path) -> int:
 def test_a_killed_structured_run_resumes_to_the_identical_event_log(tmp_path: Path, config: dict[str, Any], kill_after: int):
     total = 220
     run_dir = tmp_path / "run"
-    full = {"strategy": "structured", "evaluator": "sequence", "run_dir": str(run_dir), "evaluations": total, "backend": backend_config(integration_backend()), **config}
+    full = {
+        "strategy": "structured",
+        "evaluator": "sequence",
+        "run_dir": str(run_dir),
+        "evaluations": total,
+        "backend": backend_config(integration_backend()),
+        **config,
+    }
     victim = subprocess.Popen(
         [sys.executable, "-m", "tests.support.resume_cli", json.dumps(full)],
         cwd=ROOT,

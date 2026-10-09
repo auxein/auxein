@@ -25,7 +25,10 @@ from tests.support.reading import peek
 
 ROOT = Path(__file__).resolve().parents[2]
 
-pytestmark = [pytest.mark.filterwarnings("ignore::auxein.driver.errors.EvaluationFailureWarning"), pytest.mark.usefixtures("use_corner_backend")]
+pytestmark = [
+    pytest.mark.filterwarnings("ignore::auxein.driver.errors.EvaluationFailureWarning"),
+    pytest.mark.usefixtures("use_corner_backend"),
+]
 
 
 def forget_checkpoints_after(run_dir: Path, keep: int) -> int:

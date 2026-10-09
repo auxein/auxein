@@ -23,14 +23,23 @@ from auxein.strategies import StructuredGeneticAlgorithm
 from auxein.strategies.ga import SigmaScalingSUS, TournamentSelection
 from auxein.strategies.structured import SequenceCrossover, SequenceMutation
 
-BACKEND = Backend()
+_BACKEND = [Backend()]
+
+
+@pytest.fixture(autouse=True)
+def current_backend(backend: Backend) -> None:
+    """Every test of this module runs on each backend and precision: the genomes are Python tuples, but the ranking, the
+    selection and the strategy's random stream are arrays on the backend."""
+    _BACKEND[0] = backend
+
+
 SPACE = SequenceSpace(tuple("abcdefgh"), 2, 8)
 VALUE = (Objective("value"),)
 
 
 def bind(ga: StructuredGeneticAlgorithm, space=SPACE, seed: int = 1, issuer: IdIssuer | None = None, constraints=("cpa",)):
     issuer = issuer or IdIssuer()
-    ctx = StrategyContext(RunSeed(seed).stream("strategy"), BACKEND, issuer.next)
+    ctx = StrategyContext(RunSeed(seed).stream("strategy", backend=_BACKEND[0]), _BACKEND[0], issuer.next)
     ga.bind(ProblemSpec(space, VALUE, tuple(constraints)), ctx)
     return ga, issuer
 
@@ -92,7 +101,8 @@ def test_it_is_single_objective_and_needs_a_codec_and_operators():
     with pytest.raises(ValueError, match="single-objective"):
         ga = StructuredGeneticAlgorithm()
         ga.bind(
-            ProblemSpec(SPACE, (Objective("a"), Objective("b"))), StrategyContext(RunSeed(1).stream("strategy"), BACKEND, IdIssuer().next)
+            ProblemSpec(SPACE, (Objective("a"), Objective("b"))),
+            StrategyContext(RunSeed(1).stream("strategy", backend=_BACKEND[0]), _BACKEND[0], IdIssuer().next),
         )
     with pytest.raises(TypeError, match="needs a search space with a codec"):
         bind(StructuredGeneticAlgorithm(), space=Box(0.0, 1.0, dim=2))
@@ -299,7 +309,7 @@ def test_state_round_trips_through_a_checkpoint_and_continues_identically(tmp_pa
     state = ga.state_dict()
     validate_state_dict(state)
     checkpoints.write(tmp_path / "c", 1, state)
-    _, restored_state = checkpoints.read(tmp_path / "c" / "ckpt-1", BACKEND)
+    _, restored_state = checkpoints.read(tmp_path / "c" / "ckpt-1", _BACKEND[0])
 
     restored, _ = fresh(IdIssuer(issuer.issued))
     restored.load_state_dict(restored_state)

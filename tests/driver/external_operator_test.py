@@ -277,7 +277,14 @@ def lines(path: Path) -> int:
 def test_a_killed_run_resumes_without_paying_twice_and_with_the_recorded_candidates(tmp_path: Path, delivery: str):
     total = 180
     run_dir = tmp_path / "run"
-    full = {"strategy": "structured-llm", "evaluator": "sequence", "run_dir": str(run_dir), "evaluations": total, "delivery": delivery, "backend": backend_config(integration_backend())}
+    full = {
+        "strategy": "structured-llm",
+        "evaluator": "sequence",
+        "run_dir": str(run_dir),
+        "evaluations": total,
+        "delivery": delivery,
+        "backend": backend_config(integration_backend()),
+    }
     first_log, second_log = tmp_path / "first.log", tmp_path / "second.log"
     victim = subprocess.Popen(
         [sys.executable, "-m", "tests.support.resume_cli", json.dumps(full)],

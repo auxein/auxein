@@ -18,7 +18,10 @@ from tests.support.eventlog import event_log
 from tests.support.fixtures import integration_backend
 from tests.support.reading import peek
 
-pytestmark = [pytest.mark.filterwarnings("ignore::auxein.driver.errors.EvaluationFailureWarning"), pytest.mark.usefixtures("use_corner_backend")]
+pytestmark = [
+    pytest.mark.filterwarnings("ignore::auxein.driver.errors.EvaluationFailureWarning"),
+    pytest.mark.usefixtures("use_corner_backend"),
+]
 
 
 def sphere(genome: np.ndarray) -> float:

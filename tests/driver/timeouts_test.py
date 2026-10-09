@@ -100,7 +100,13 @@ def test_a_process_that_times_out_is_killed_and_replaced_and_the_others_are_unaf
     timeout = 0.5 if integration_backend().name == "numpy" else 4.0
     t0 = time.perf_counter()
     result = go(
-        evaluator, timeout=timeout, concurrency=3, executor="process", delivery=delivery, run_dir=tmp_path / "r", budget=Budget(evaluations=30)
+        evaluator,
+        timeout=timeout,
+        concurrency=3,
+        executor="process",
+        delivery=delivery,
+        run_dir=tmp_path / "r",
+        budget=Budget(evaluations=30),
     )
     assert time.perf_counter() - t0 < 40  # nothing waited for the 60 s
     counts = result.status_counts

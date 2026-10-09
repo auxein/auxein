@@ -48,11 +48,11 @@ def test_the_default_configuration_solves_the_10d_sphere_within_20000_evaluation
     ],
     ids=["sus", "per-gene", "n-children"],
 )
-def test_other_configurations_also_solve_it(factory):
-    assert go(factory(), evaluations=20000).best.objectives["value"] < 1e-3  # type: ignore[union-attr]
+def test_other_configurations_also_solve_it(factory, backend: Backend):
+    assert go(factory(), evaluations=20000, backend=backend).best.objectives["value"] < 1e-3  # type: ignore[union-attr]
 
 
-def test_every_candidate_is_evaluated_exactly_once(tmp_path: Path):
+def test_every_candidate_is_evaluated_exactly_once(tmp_path: Path, backend: Backend):
     rows: list[int] = []
 
     def spy(X):
@@ -60,7 +60,12 @@ def test_every_candidate_is_evaluated_exactly_once(tmp_path: Path):
         return sphere(X)
 
     result = go(
-        GeneticAlgorithm(population_size=20, offspring_size=15), VectorisedEvaluator(spy), evaluations=500, dim=4, run_dir=tmp_path / "r"
+        GeneticAlgorithm(population_size=20, offspring_size=15),
+        VectorisedEvaluator(spy),
+        evaluations=500,
+        dim=4,
+        run_dir=tmp_path / "r",
+        backend=backend,
     )
     assert sum(rows) == result.evaluations_used == 500  # the population is never re-scored
     assert rows[0] == 20 and set(rows[1:-1]) == {15}  # the initial population, then exactly lambda children per generation
@@ -69,7 +74,7 @@ def test_every_candidate_is_evaluated_exactly_once(tmp_path: Path):
     assert ids == list(range(500))
 
 
-def test_an_oversized_final_generation_is_truncated_and_not_told(tmp_path: Path):
+def test_an_oversized_final_generation_is_truncated_and_not_told(tmp_path: Path, backend: Backend):
     told_sizes: list[int] = []
 
     class Spy(GeneticAlgorithm):
@@ -77,7 +82,7 @@ def test_an_oversized_final_generation_is_truncated_and_not_told(tmp_path: Path)
             told_sizes.append(len(results))
             super().tell(results)
 
-    result = go(Spy(population_size=10, offspring_size=8), evaluations=30, dim=3, run_dir=tmp_path / "r")
+    result = go(Spy(population_size=10, offspring_size=8), evaluations=30, dim=3, run_dir=tmp_path / "r", backend=backend)
     assert result.evaluations_used == 30 and told_sizes == [
         10,
         8,
@@ -87,7 +92,7 @@ def test_an_oversized_final_generation_is_truncated_and_not_told(tmp_path: Path)
         assert len(list(recorded.evaluations())) == 30
 
 
-def test_lineage_in_the_event_log_matches_the_parents_in_the_batches(tmp_path: Path):
+def test_lineage_in_the_event_log_matches_the_parents_in_the_batches(tmp_path: Path, backend: Backend):
     parents_asked: dict[int, tuple[int, ...]] = {}
 
     class Recording(GeneticAlgorithm):
@@ -97,7 +102,7 @@ def test_lineage_in_the_event_log_matches_the_parents_in_the_batches(tmp_path: P
                 parents_asked[int(c.id)] = tuple(int(p) for p in c.parents)
             return batch
 
-    result = go(Recording(population_size=12, offspring_size=9), evaluations=300, dim=3, run_dir=tmp_path / "r")
+    result = go(Recording(population_size=12, offspring_size=9), evaluations=300, dim=3, run_dir=tmp_path / "r", backend=backend)
     with open_run(tmp_path / "r") as recorded:
         evaluations = list(recorded.evaluations())
         assert {int(e.candidate_id): tuple(int(p) for p in e.parents) for e in evaluations} == {i: parents_asked[i] for i in range(300)}
@@ -125,42 +130,50 @@ def test_the_same_seed_gives_the_same_run_and_different_seeds_differ(backend: Ba
     assert a.trace != c.trace
 
 
-def test_constraints_are_respected_through_the_driver():
+def test_constraints_are_respected_through_the_driver(backend: Backend):
     # minimise the sum of squares, but x0 must be at least 1: the optimum is (1, 0, ...)
     def fn(X):
         return BatchResult({"value": (X * X).sum(axis=1)}, {"cpa": np.maximum(0.0, 1.0 - np.asarray(X[:, 0]))})
 
-    result = go(GeneticAlgorithm(), VectorisedEvaluator(fn), evaluations=10000, dim=4, constraints=["cpa"])
+    result = go(GeneticAlgorithm(), VectorisedEvaluator(fn), evaluations=10000, dim=4, constraints=["cpa"], backend=backend)
     assert result.best is not None and result.best.constraints["cpa"] == 0.0
     assert result.best.objectives["value"] == pytest.approx(1.0, abs=1e-2)
     assert all(e.constraints["cpa"] == 0.0 for e in result.pareto_front)
 
 
-def test_function_evaluators_work_too():
-    result = go(GeneticAlgorithm(population_size=20), FunctionEvaluator(lambda g: float((g * g).sum())), evaluations=4000, dim=3)
+def test_function_evaluators_work_too(backend: Backend):
+    result = go(
+        GeneticAlgorithm(population_size=20), FunctionEvaluator(lambda g: float((g * g).sum())), evaluations=4000, dim=3, backend=backend
+    )
     assert result.best is not None and result.best.objectives["value"] < 1e-3
 
 
-def test_maximisation_through_the_declared_direction():
+def test_maximisation_through_the_declared_direction(backend: Backend):
     result = go(
-        GeneticAlgorithm(), VectorisedEvaluator(lambda X: -sphere(X)), evaluations=6000, dim=4, objectives=[Objective("score", "maximise")]
+        GeneticAlgorithm(),
+        VectorisedEvaluator(lambda X: -sphere(X)),
+        evaluations=6000,
+        dim=4,
+        objectives=[Objective("score", "maximise")],
+        backend=backend,
     )
     assert result.best is not None and result.best.objectives["score"] > -1e-3  # the score is maximised towards its optimum, 0
 
 
-def test_noisy_objectives_do_not_break_the_selection():
+def test_noisy_objectives_do_not_break_the_selection(backend: Backend):
     def noisy(X, rng):
         return sphere(X) * (1.0 + 0.1 * rng.normal(X.shape[0]))
 
-    result = go(GeneticAlgorithm(), VectorisedEvaluator(noisy, uses_rng=True), evaluations=10000, dim=4)
+    result = go(GeneticAlgorithm(), VectorisedEvaluator(noisy, uses_rng=True), evaluations=10000, dim=4, backend=backend)
     assert result.best is not None and np.isfinite(result.best.objectives["value"])
 
 
-def test_a_result_object_with_cost_units_passes_through():
+def test_a_result_object_with_cost_units_passes_through(backend: Backend):
     result = go(
         GeneticAlgorithm(population_size=10),
         FunctionEvaluator(lambda g: Result({"value": float((g * g).sum())}, cost={"tokens": 2.0})),
         evaluations=60,
         dim=2,
+        backend=backend,
     )
     assert result.evaluations_used == 60

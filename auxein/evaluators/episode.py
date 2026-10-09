@@ -293,6 +293,9 @@ class EpisodeEvaluator(Generic[G]):
                     f"{first_seen[1]} reported {list(names)}"
                 )
         names = names or ()
+        # host-side by design (design doc §7.2): per-episode results are Python floats produced one at a time by user code, so
+        # they are collected on the host and moved to the backend once per measurement name, as the `(n, s)` arrays the
+        # aggregator reduces on the device
         grids = {name: np.full((n, s), np.nan) for name in names}
         for (row, scenario), result in results.items():
             if result.status is Status.OK:
@@ -355,6 +358,8 @@ class EpisodeEvaluator(Generic[G]):
         if not rows:
             return None
         s = len(self._scenario_list)
+        # host-side by design (design doc §7.2): the recorder writes the per-scenario measurements to SQLite, so this is the one
+        # place where the measurements of a batched run leave the device, once per batch
         host = [backend.to_numpy(outcome.arrays[name]) for name in outcome.names]
         values = np.stack(host, axis=-1) if host else np.zeros((len(candidates), s, 0))  # pyright: ignore[reportUnknownMemberType]
         values = np.asarray(values, dtype=np.float64)[rows]
@@ -371,7 +376,7 @@ def _zeroed(columns: Mapping[str, Any], invalid: Mapping[int, str]) -> dict[str,
     """The columns with the invalid rows set to zero: those candidates fail, and a `BatchResult` insists on finite values."""
     if not invalid:
         return dict(columns)
-    rows = list(invalid)
+    rows = list(invalid)  # the columns are the aggregator's host columns (see `Aggregator.aggregate`), so numpy is right here
     out: dict[str, Any] = {}
     for name, column in columns.items():
         copy = np.array(column, copy=True)
