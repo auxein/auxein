@@ -1,0 +1,45 @@
+# A smoke-sized multi-objective benchmark for CI: it checks that the harness works, not how well the algorithms do.
+kind = "multi-objective"
+name = "mo-quick"
+base_seed = 0
+runs = 2
+
+[report]
+references = ["auxein-nsga2"]
+
+[[problems]]
+name = "zdt1"
+budget = 2000
+
+[[problems]]
+name = "zdt3"
+budget = 2000
+
+[[problems]]
+name = "dtlz2"
+budget = 2000
+
+[[algorithms]]
+name = "auxein-nsga2"
+adapter = "auxein_nsga2"
+[algorithms.params]
+# explicit, and equal to pymoo's below: the textbook NSGA-II
+population_size = 100
+offspring_size = 100
+crossover_probability = 0.9
+sbx_eta = 15
+mutation_eta = 20
+
+[[algorithms]]
+name = "pymoo-nsga2"
+adapter = "pymoo_nsga2"
+[algorithms.params]
+population_size = 100
+offspring_size = 100
+crossover_probability = 0.9
+sbx_eta = 15
+mutation_eta = 20
+
+[[algorithms]]
+name = "random-search"
+adapter = "mo_random_search"

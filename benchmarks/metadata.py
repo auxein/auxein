@@ -7,9 +7,7 @@ import sys
 from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
-from typing import Any
-
-from benchmarks.config import Config
+from typing import Any, Protocol
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -54,7 +52,12 @@ def package_version(name: str) -> str | None:
         return None
 
 
-def collect_metadata(config: Config, workers: int) -> dict[str, Any]:
+class _HasRaw(Protocol):
+    @property
+    def raw(self) -> dict[str, Any]: ...
+
+
+def collect_metadata(config: _HasRaw, workers: int) -> dict[str, Any]:
     return {
         "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
         "git_sha": git_sha(),
@@ -64,6 +67,7 @@ def collect_metadata(config: Config, workers: int) -> dict[str, Any]:
             "auxein": package_version("auxein"),
             "numpy": package_version("numpy"),
             "cma": package_version("cma"),
+            "pymoo": package_version("pymoo"),
             "scipy": package_version("scipy"),
             "matplotlib": package_version("matplotlib"),
         },
