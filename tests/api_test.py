@@ -99,7 +99,9 @@ def test_the_old_engine_is_gone():
     for name in ("fitness", "mutations", "parents", "playgrounds", "population", "recombinations", "replacements"):
         with pytest.raises(ModuleNotFoundError):
             __import__(f"auxein.{name}")
-    assert not (ROOT / "notebooks").exists()
+    # the 0.x notebooks were removed in step 3b and rewritten for the new API in step 9: only the four new ones exist
+    notebooks = {path.stem for path in (ROOT / "notebooks").glob("*.ipynb")}
+    assert notebooks == {"rastrigin", "linear_regression", "logistic_regression", "polynomial_regression"}
 
 
 # --- the README quickstart ---

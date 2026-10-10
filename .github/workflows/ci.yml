@@ -78,3 +78,13 @@ jobs:
         with:
           name: benchmark-quick-results
           path: benchmarks/results/
+
+  notebooks:
+    # Executes the notebooks, so that the documentation cannot rot.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --group notebooks
+      - run: uv run --group notebooks pytest --nbmake notebooks/

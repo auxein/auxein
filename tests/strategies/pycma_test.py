@@ -357,3 +357,17 @@ def test_a_throughput_resume_without_checkpoints_starts_again_from_the_beginning
     assert resumed.evaluations_used == 400 and resumed.trace == fresh.trace
     with open_run(tmp_path / "a") as recorded:
         assert len(list(recorded.evaluations())) == 400
+
+
+def test_auxein_imports_without_pycma_at_all():
+    """Importing auxein and its strategies must not import pycma: it is an optional extra, needed only to build the strategy."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; sys.modules['cma'] = None; import auxein, auxein.strategies; "
+        "assert 'cma' not in [m for m in sys.modules if sys.modules[m] is not None]; "
+        "from auxein.strategies import PycmaStrategy"
+    )
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr
