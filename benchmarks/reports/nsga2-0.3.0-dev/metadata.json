@@ -1,0 +1,78 @@
+{
+  "timestamp": "2026-10-10T18:42:38+00:00",
+  "git_sha": "b599d73371b492d45579b92b6a893489bb0fd6f2",
+  "git_dirty": false,
+  "versions": {
+    "python": "3.12.13",
+    "auxein": "0.3.0.dev0",
+    "numpy": "2.5.3",
+    "cma": "4.5.0",
+    "pymoo": "0.6.2",
+    "scipy": "1.18.1",
+    "matplotlib": "3.11.2"
+  },
+  "cpu": {
+    "model": "Apple M4 Pro",
+    "machine": "arm64",
+    "system": "macOS-15.6.1-arm64-arm-64bit",
+    "logical_cpus": 12
+  },
+  "workers": 12,
+  "config": {
+    "kind": "multi-objective",
+    "name": "mo-full",
+    "base_seed": 0,
+    "runs": 25,
+    "report": {
+      "references": [
+        "auxein-nsga2"
+      ]
+    },
+    "problems": [
+      {
+        "name": "zdt1",
+        "budget": 25000
+      },
+      {
+        "name": "zdt2",
+        "budget": 25000
+      },
+      {
+        "name": "zdt3",
+        "budget": 25000
+      },
+      {
+        "name": "dtlz2",
+        "budget": 30000
+      }
+    ],
+    "algorithms": [
+      {
+        "name": "auxein-nsga2",
+        "adapter": "auxein_nsga2",
+        "params": {
+          "population_size": 100,
+          "offspring_size": 100,
+          "crossover_probability": 0.9,
+          "sbx_eta": 15,
+          "mutation_eta": 20
+        }
+      },
+      {
+        "name": "pymoo-nsga2",
+        "adapter": "pymoo_nsga2",
+        "params": {
+          "population_size": 100,
+          "offspring_size": 100,
+          "crossover_probability": 0.9,
+          "sbx_eta": 15,
+          "mutation_eta": 20
+        }
+      },
+      {
+        "name": "random-search",
+        "adapter": "mo_random_search"
+      }
+    ]
+  }
+}
