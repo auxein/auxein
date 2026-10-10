@@ -27,7 +27,16 @@ from auxein.environments import EpisodeResult, Scenario, ScenarioSet
 from auxein.evaluators import EpisodeEvaluator, FunctionEvaluator, VectorisedEvaluator
 from auxein.recording import open_run
 from auxein.spaces import Binary, BinarySpace, Box, Categorical, Integer, IntegerSpace, MixedSpace, Real, SequenceSpace
-from auxein.strategies import GeneticAlgorithm, RandomSearch, StructuredGeneticAlgorithm
+from auxein.strategies import (
+    NSGA2,
+    Chebyshev,
+    GeneticAlgorithm,
+    RandomSearch,
+    Scalarised,
+    StructuredGeneticAlgorithm,
+    WeightedSum,
+    best_by_scalarisation,
+)
 
 try:
     __version__ = metadata.version("auxein")
@@ -43,6 +52,7 @@ __all__ = [
     "Box",
     "Budget",
     "Categorical",
+    "Chebyshev",
     "EpisodeEvaluator",
     "EpisodeResult",
     "FunctionEvaluator",
@@ -50,6 +60,7 @@ __all__ = [
     "Integer",
     "IntegerSpace",
     "MixedSpace",
+    "NSGA2",
     "Objective",
     "RandomSearch",
     "Real",
@@ -57,14 +68,17 @@ __all__ = [
     "Result",
     "RunResult",
     "Scenario",
+    "Scalarised",
     "ScenarioSet",
     "SequenceSpace",
     "Status",
     "StructuredGeneticAlgorithm",
     "VectorisedEvaluator",
+    "WeightedSum",
     "__version__",
     "aresume",
     "arun",
+    "best_by_scalarisation",
     "open_run",
     "resume",
     "run",

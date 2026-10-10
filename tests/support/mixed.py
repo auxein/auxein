@@ -120,3 +120,14 @@ def evaluate_one(genome: Array, backend: Backend) -> Any:
     batch = evaluate(genome[None, :], backend)
     value = float(backend.to_numpy(batch.objectives["value"])[0])
     return Result({"value": value}, {"too_big": float(backend.to_numpy(batch.constraints["too_big"])[0])})
+
+
+def polynomial_objectives(X: Array, backend: Backend) -> Array:
+    """The two objectives of the polynomial problem, both minimised: the mean squared error, and the number of active terms."""
+    xp = backend.xp
+    x, y = polynomial_data()
+    powers = backend.asarray(np.stack([x**j for j in range(DEGREE + 1)], axis=1))
+    coefficients, switches = X[:, : DEGREE + 1], X[:, DEGREE + 1 :]
+    predicted = xp.matmul(coefficients * switches, xp.permute_dims(powers, (1, 0)))
+    error = xp.mean((predicted - backend.asarray(y)[None, :]) ** 2, axis=1)
+    return xp.stack([error, xp.sum(switches, axis=1)], axis=1)
