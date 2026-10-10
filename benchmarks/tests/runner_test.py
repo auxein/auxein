@@ -115,8 +115,9 @@ def test_the_shipped_configs_are_valid():
     assert full.overhead is not None and full.overhead.dims == (2, 10, 100) and full.overhead.population_sizes == (50, 200, 800)
 
     assert quick.runs == 3 and quick.dims == (2, 10) and len(quick.problems) == 5
-    # the quick config also runs the GA on torch, so that the CI benchmark job exercises that backend end to end
-    assert [a.name for a in quick.algorithms] == ["auxein-core-ga", "auxein-core-ga-torch", "auxein-core-random", "random-search", "cma-es"]
+    # the quick config also runs the GA on torch and CMA-ES through Auxein, so that the CI benchmark job exercises both end to end
+    names = ["auxein-core-ga", "auxein-core-ga-torch", "auxein-core-random", "random-search", "auxein-pycma", "cma-es"]
+    assert [a.name for a in quick.algorithms] == names
     assert quick.budget(10) == 5000
 
 
