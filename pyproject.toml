@@ -11,6 +11,8 @@ dependencies = ["numpy>=1.26", "array-api-compat>=1.9"]
 
 [project.optional-dependencies]
 torch = ["torch>=2.4"]
+cma = ["cma>=3.3"]
+gymnasium = ["gymnasium>=0.29"]
 
 [dependency-groups]
 dev = [
@@ -20,12 +22,19 @@ dev = [
     "pytest-timeout>=2.3",
     "ruff>=0.6",
     "pyright>=1.1.380",
+    "cma>=3.3",
+    "gymnasium>=0.29",
 ]
 bench = [
     "cma>=3.3",
     "matplotlib>=3.9",
     "pymoo>=0.6.2",
     "scipy>=1.11",
+]
+notebooks = [
+    "ipykernel>=6.29",
+    "matplotlib>=3.9",
+    "nbmake>=1.5",
 ]
 
 [tool.uv]
