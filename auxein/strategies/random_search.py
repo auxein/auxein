@@ -38,6 +38,9 @@ class RandomSearch(Generic[G]):
         return "RandomSearch()"
 
     def bind(self, problem: ProblemSpec[G], ctx: StrategyContext) -> None:
+        check = getattr(problem.space, "check_backend", None)
+        if callable(check):  # a mixed space refuses integer bounds the run's precision cannot hold, when the run starts
+            check(ctx.backend)
         self._problem, self._ctx = problem, ctx
 
     def _bound(self) -> tuple[ProblemSpec[G], StrategyContext]:
