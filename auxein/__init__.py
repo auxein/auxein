@@ -26,7 +26,7 @@ from auxein.driver import Budget, RecordingDisabledWarning, RunResult, aresume, 
 from auxein.environments import EpisodeResult, Scenario, ScenarioSet
 from auxein.evaluators import EpisodeEvaluator, FunctionEvaluator, VectorisedEvaluator
 from auxein.recording import open_run
-from auxein.spaces import Box, SequenceSpace
+from auxein.spaces import Binary, BinarySpace, Box, Categorical, Integer, IntegerSpace, MixedSpace, Real, SequenceSpace
 from auxein.strategies import GeneticAlgorithm, RandomSearch, StructuredGeneticAlgorithm
 
 try:
@@ -38,14 +38,21 @@ __all__ = [
     "Aggregator",
     "Backend",
     "BatchResult",
+    "Binary",
+    "BinarySpace",
     "Box",
     "Budget",
+    "Categorical",
     "EpisodeEvaluator",
     "EpisodeResult",
     "FunctionEvaluator",
     "GeneticAlgorithm",
+    "Integer",
+    "IntegerSpace",
+    "MixedSpace",
     "Objective",
     "RandomSearch",
+    "Real",
     "RecordingDisabledWarning",
     "Result",
     "RunResult",

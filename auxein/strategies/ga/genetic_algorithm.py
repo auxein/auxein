@@ -18,8 +18,9 @@ from auxein.core import (
 )
 from auxein.core.evaluation_batch import INFEASIBLE
 from auxein.core.ids import CandidateId
-from auxein.spaces import Box
+from auxein.spaces import Box, MixedSpace
 from auxein.strategies.ga.base import BoundsRepair, Mutation, ParentSelection, PopulationView, Recombination
+from auxein.strategies.ga.mixed import BitFlipMutation, CategoricalMutation, IntegerMutation, MixedVariation
 from auxein.strategies.ga.mutation import SelfAdaptiveMutation
 from auxein.strategies.ga.ranking import rank_order
 from auxein.strategies.ga.recombination import IntermediateRecombination, mix_genes, mix_steps
@@ -84,7 +85,14 @@ class GeneticAlgorithm:
     intermediate recombination, self-adaptive mutation with one step size per individual (initial step 10% of the box,
     floor 1e-12) and clipping to the bounds. See the design document (§3.3) for how this default was chosen by benchmark.
 
-    It is single-objective, supports constraints, and needs a `Box` search space.
+    It is single-objective, supports constraints, and needs a `Box` or a `MixedSpace` search space. **On a `Box` nothing
+    changes** (the code path is the one described above). **On a `MixedSpace`** the genome mixes real, integer, binary and
+    categorical genes, and each type gets its own operators: the real genes use `recombination`, `mutation` and `repair`
+    exactly as on a `Box` (on the real columns), integer genes `integer_mutation` (the difference of two geometric variables,
+    MIES), binary genes `binary_mutation` (bit flips) and categorical genes `categorical_mutation` (a jump to a different
+    category), and every discrete gene is recombined by taking it from one of the parents. The defaults are chosen from the
+    space; every operator can be replaced. The step sizes of the real genes and the integer mean step are strategy state
+    (design doc §3.3).
     """
 
     capabilities = StrategyCapabilities(max_objectives=1, supports_constraints=True, tell_mode="both")
@@ -100,6 +108,9 @@ class GeneticAlgorithm:
         repair: BoundsRepair | None = None,
         crossover_probability: float = 1.0,
         convergence_tolerance: float | None = None,
+        integer_mutation: IntegerMutation | None = None,
+        binary_mutation: BitFlipMutation | None = None,
+        categorical_mutation: CategoricalMutation | None = None,
     ) -> None:
         if population_size < 2:
             raise ValueError(f"population_size must be at least 2, got {population_size}")
@@ -115,13 +126,21 @@ class GeneticAlgorithm:
         self.repair: BoundsRepair = ClipRepair() if repair is None else repair
         self.crossover_probability = crossover_probability
         self.convergence_tolerance = convergence_tolerance
+        self._mixed_options = (integer_mutation, binary_mutation, categorical_mutation)
+        self.integer_mutation = IntegerMutation() if integer_mutation is None else integer_mutation
+        self.binary_mutation = BitFlipMutation() if binary_mutation is None else binary_mutation
+        self.categorical_mutation = CategoricalMutation() if categorical_mutation is None else categorical_mutation
         self._reset()
 
     def __repr__(self) -> str:
+        # the operators for the discrete types appear only when given: the description of a default GA, which a recorded run
+        # compares on resume, is the one it always had
+        names = ("integer_mutation", "binary_mutation", "categorical_mutation")
+        mixed = "".join(f", {name}={op!r}" for name, op in zip(names, self._mixed_options, strict=True) if op is not None)
         return (
             f"GeneticAlgorithm(population_size={self.population_size}, offspring_size={self.offspring_size}, selection={self.selection!r}, "
             f"recombination={self.recombination!r}, mutation={self.mutation!r}, repair={self.repair!r}, "
-            f"crossover_probability={self.crossover_probability})"
+            f"crossover_probability={self.crossover_probability}{mixed})"
         )
 
     # --- state ---
@@ -129,7 +148,8 @@ class GeneticAlgorithm:
     def _reset(self) -> None:
         self._problem: ProblemSpec[Array] | None = None
         self._ctx: StrategyContext | None = None
-        self._box: Box | None = None
+        self._box: Box | MixedSpace | None = None
+        self._variation: MixedVariation | None = None  # the per-type operators, only on a MixedSpace
         self._step = 0
         self._initial_asked = 0
         self._blocks: dict[int, _Block] = {}
@@ -146,7 +166,7 @@ class GeneticAlgorithm:
         self._rank: Array | None = None  # the rank of each member: the inverse permutation of the order
         self._ever_failed = False  # whether any evaluation told so far failed: only then do selections need to look for it
 
-    def _bound(self) -> tuple[ProblemSpec[Array], StrategyContext, Box]:
+    def _bound(self) -> tuple[ProblemSpec[Array], StrategyContext, Box | MixedSpace]:
         if self._problem is None or self._ctx is None or self._box is None:
             raise RuntimeError("GeneticAlgorithm must be bound to a problem before use: the driver calls bind() first")
         return self._problem, self._ctx, self._box
@@ -171,17 +191,32 @@ class GeneticAlgorithm:
                 f"GeneticAlgorithm is single-objective but the problem has {len(problem.objectives)} objectives ({names}): "
                 "use a single objective or a scalarisation"
             )
-        if not isinstance(problem.space, Box):
-            raise TypeError(f"GeneticAlgorithm needs a Box search space (a bounded real vector), got {type(problem.space).__name__}")
+        if not isinstance(problem.space, (Box, MixedSpace)):
+            raise TypeError(
+                "GeneticAlgorithm needs a Box search space (a bounded real vector) or a MixedSpace (real, integer, binary and "
+                f"categorical genes), got {type(problem.space).__name__}"
+            )
         self._reset()
         self._problem, self._ctx, self._box = problem, ctx, problem.space
         backend, dim = ctx.backend, problem.space.dim
         xp = backend.xp
+        if isinstance(problem.space, MixedSpace):
+            problem.space.check_backend(backend)  # integer bounds beyond what the precision holds exactly are refused now
+            self._variation = MixedVariation(
+                problem.space,
+                backend,
+                real_mutation=self.mutation,
+                real_recombination=self.recombination,
+                integer_mutation=self.integer_mutation,
+                binary_mutation=self.binary_mutation,
+                categorical_mutation=self.categorical_mutation,
+                repair=self.repair,
+            )
         self._ids_array = xp.zeros((0,), dtype=backend.int_dtype, device=backend.device)
         self._genomes = xp.zeros((0, dim), dtype=backend.dtype, device=backend.device)
         self._values = xp.zeros((0,), dtype=backend.dtype, device=backend.device)
         self._violation = xp.zeros((0,), dtype=backend.dtype, device=backend.device)
-        self._steps = self.mutation.initial_steps(0, dim, backend)
+        self._steps = self._initial_steps(0, dim, backend)
         self._order = self._rank = xp.zeros((0,), dtype=backend.int_dtype, device=backend.device)
 
     # --- ask ---
@@ -195,13 +230,13 @@ class GeneticAlgorithm:
             count, origin = self.population_size - self._initial_asked, "init"
             self._initial_asked += count
             genomes, parents = self._sample(box, ctx, count), [()] * count
-            steps = self.mutation.initial_steps(count, box.dim, backend)
+            steps = self._initial_steps(count, box.dim, backend)
             origins = [origin] * count
         elif self._breedable() < 2:
             # nothing to breed from yet (the initial candidates are still being evaluated, or all but one failed): sample at random
             count = n if self.offspring_size is None else self.offspring_size
             genomes, parents = self._sample(box, ctx, count), [()] * count
-            steps = self.mutation.initial_steps(count, box.dim, backend)
+            steps = self._initial_steps(count, box.dim, backend)
             origins = ["init"] * count
         else:
             count = n if self.offspring_size is None else self.offspring_size
@@ -225,10 +260,17 @@ class GeneticAlgorithm:
         xp = self._ctx.backend.xp
         return int(xp.sum(xp.astype(xp.isfinite(self._violation), self._ctx.backend.int_dtype)))
 
-    def _sample(self, box: Box, ctx: StrategyContext, count: int) -> Array:
+    def _initial_steps(self, count: int, dim: int, backend: Backend) -> Array | None:
+        if self._variation is not None:
+            return self._variation.initial_steps(count)
+        return self.mutation.initial_steps(count, dim, backend)
+
+    def _sample(self, box: Box | MixedSpace, ctx: StrategyContext, count: int) -> Array:
         return box.sample_genomes(count, ctx.rng, ctx.backend)
 
-    def _breed(self, box: Box, ctx: StrategyContext, count: int) -> tuple[Array, Array | None, list[tuple[int, ...]], list[str]]:
+    def _breed(
+        self, box: Box | MixedSpace, ctx: StrategyContext, count: int
+    ) -> tuple[Array, Array | None, list[tuple[int, ...]], list[str]]:
         backend, rng = ctx.backend, ctx.rng
         xp = backend.xp
         assert self._genomes is not None and self._values is not None and self._violation is not None and self._ids_array is not None
@@ -239,7 +281,11 @@ class GeneticAlgorithm:
 
         first, second = self.selection.select(view, count, rng)
         parents_a, parents_b = xp.take(self._genomes, first, axis=0), xp.take(self._genomes, second, axis=0)
-        weights = self.recombination.weights(count, box.dim, rng, backend)
+        variation = self._variation
+        if variation is None:
+            weights = self.recombination.weights(count, box.dim, rng, backend)
+        else:
+            weights = variation.weights(count, rng)
         if not self.recombination.sexual:
             copied = [True] * count
         elif self.crossover_probability < 1.0:  # the children that don't cross over copy their first parent
@@ -251,20 +297,30 @@ class GeneticAlgorithm:
         genomes = mix_genes(weights, parents_a, parents_b)
 
         steps = None
-        if self.mutation.adaptive:
-            assert self._steps is not None
-            steps = mix_steps(weights, xp.take(self._steps, first, axis=0), xp.take(self._steps, second, axis=0), backend)
-        width = backend.asarray(box.upper - box.lower)
-        genomes, steps = self.mutation.mutate(genomes, steps, width, rng, backend)
-        genomes = self.repair.repair(genomes, box)
+        if variation is not None:
+            if variation.adaptive:
+                assert self._steps is not None
+                steps = variation.mix_steps(weights, xp.take(self._steps, first, axis=0), xp.take(self._steps, second, axis=0))
+            genomes, steps = variation.mutate(genomes, steps, rng)
+            genomes = variation.repair(genomes)
+        else:
+            assert isinstance(box, Box)
+            if self.mutation.adaptive:
+                assert self._steps is not None
+                steps = mix_steps(weights, xp.take(self._steps, first, axis=0), xp.take(self._steps, second, axis=0), backend)
+            width = backend.asarray(box.upper - box.lower)
+            genomes, steps = self.mutation.mutate(genomes, steps, width, rng, backend)
+            genomes = self.repair.repair(genomes, box)
 
         first_ids = backend.to_numpy(xp.take(self._ids_array, first, axis=0)).tolist()
         second_ids = backend.to_numpy(xp.take(self._ids_array, second, axis=0)).tolist()
         parents: list[tuple[int, ...]] = [
             (int(a),) if c else (int(a), int(b)) for a, b, c in zip(first_ids, second_ids, copied, strict=True)
         ]
-        base = f"{self.selection.name}+%s+{self.mutation.name}"
-        origins = [base % ("copy" if c else self.recombination.name) for c in copied]
+        mutation_name = self.mutation.name if variation is None else variation.mutation_name
+        recombination_name = self.recombination.name if variation is None else variation.recombination_name
+        base = f"{self.selection.name}+%s+{mutation_name}"
+        origins = [base % ("copy" if c else recombination_name) for c in copied]
         return genomes, steps, parents, origins
 
     # --- tell ---
@@ -369,6 +425,12 @@ class GeneticAlgorithm:
         spread = xp.max(xp.where(valid, self._values, -xp.inf)) - xp.min(xp.where(valid, self._values, xp.inf))
         if float(spread) >= self.convergence_tolerance:
             return False
+        if self._variation is not None:
+            floors = self._variation.floors()
+            if floors is not None:  # every adapted step (real and integer) at its own floor
+                assert self._steps is not None
+                return bool(xp.all(self._steps <= floors * (1.0 + 1e-9)))
+            return True
         if self.mutation.adaptive and self.mutation.min_step is not None:
             assert self._steps is not None
             return bool(xp.all(self._steps <= self.mutation.min_step * (1.0 + 1e-9)))

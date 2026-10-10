@@ -12,9 +12,10 @@ from typing import Any
 import numpy as np
 
 import auxein
+from auxein.backend import backend_of
 from auxein.strategies.ga import GeneticAlgorithm
 from auxein.strategies.structured import ExternalMutation, SequenceMutation
-from tests.support import pointmass, sequences
+from tests.support import mixed, pointmass, sequences
 from tests.support.pointmass import PointMassEnvironment
 from tests.support.sequences import FakeLLM
 
@@ -27,6 +28,16 @@ def logged_sphere(genome: np.ndarray) -> float:
             handle.write("x\n")
     time.sleep(0.003)
     return float((genome * genome).sum())
+
+
+def logged_mixed(genome: Any) -> Any:
+    """The mixed-variable fixture for one genome, taking about 3 ms and logging each call like `logged_sphere`."""
+    path = os.environ.get("AUXEIN_CALL_LOG")
+    if path:
+        with open(path, "a") as handle:
+            handle.write("x\n")
+    time.sleep(0.003)
+    return mixed.evaluate_one(genome, backend_of(genome))
 
 
 class LoggedPointMass(PointMassEnvironment):
@@ -76,6 +87,9 @@ def settings(config: dict[str, Any]) -> dict[str, Any]:
             "constraints": ["overshoot"],
             "descriptors": ["success_rate"],
         }
+    elif config.get("evaluator") == "mixed":
+        evaluator = auxein.FunctionEvaluator(logged_mixed)
+        problem = {"space": mixed.SPACE, "objectives": [auxein.Objective("value")], "constraints": ["too_big"]}
     elif config.get("evaluator") == "sequence":
         evaluator = auxein.FunctionEvaluator(sequences.distance)
         problem = {"space": sequences.SPACE, "objectives": [auxein.Objective("distance")], "constraints": ["too_long"]}
