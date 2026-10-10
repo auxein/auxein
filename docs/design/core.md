@@ -891,7 +891,7 @@ notebooks/         # the four executed notebooks: the introductory documentation
 ## 13. Versioning
 
 - **No backward compatibility** with 0.x. The 0.x engine was removed in step 3b, and the git tag **`v0.2.0`** is its reference: the fixed engine, its notebooks and its documentation stay available there, and its benchmark results are kept, frozen, in `benchmarks/reports/baseline-0.2.0/`.
-- The new core is versioned **0.3.0** onwards (`0.3.0.dev0` until it is released), and stays on **0.x** until the acceptance criteria (§11.4) are met and the API has settled. Nothing is published to PyPI yet, and there is no release workflow.
+- The new core is versioned **0.3.0** onwards and stays on **0.x** until the API has settled. **0.3.0 is released** (PyPI, with the extras `torch`, `cma` and `gymnasium`), with one acceptance item still open: the CUDA run of the GPU smoke suite (§11.4, criterion 5), whose report is committed when it has been made. A release is a GitHub release of a `v<version>` tag: the release workflow builds the package and publishes it with PyPI trusted publishing.
 
 ---
 

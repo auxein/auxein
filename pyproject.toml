@@ -1,6 +1,6 @@
 [project]
 name = "auxein"
-version = "0.3.0.dev0"
+version = "0.3.0"
 description = "Auxein is a Python framework for evolving agents that act in environments."
 readme = "README.md"
 license = "Apache-2.0"

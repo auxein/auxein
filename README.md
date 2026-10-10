@@ -4,13 +4,13 @@
 
 ## Status
 
-Auxein is a **0.x development version**: the API may change, and it isn't published to PyPI yet. Install it from the repository with [uv](https://docs.astral.sh/uv/):
+Auxein is a **0.x version**: the API may change before 1.0. Install it with `pip install auxein` (add the extras you need, for example `pip install "auxein[torch,cma]"`), or work on it from the repository with [uv](https://docs.astral.sh/uv/):
 
 ```
 git clone https://github.com/auxein/auxein && cd auxein && uv sync
 ```
 
-The design is in [`docs/design/core.md`](docs/design/core.md), together with what is built, how each part was validated and what is left open. The optional dependencies are extras: `auxein[torch]` (PyTorch, for GPUs), `auxein[cma]` (pycma, for `PycmaStrategy`) and `auxein[gymnasium]` (Gymnasium, for the reinforcement-learning adapter); `import auxein` needs none of them.
+The design is in [`docs/design/core.md`](https://github.com/auxein/auxein/blob/master/docs/design/core.md), together with what is built, how each part was validated and what is left open. The optional dependencies are extras: `auxein[torch]` (PyTorch, for GPUs), `auxein[cma]` (pycma, for `PycmaStrategy`) and `auxein[gymnasium]` (Gymnasium, for the reinforcement-learning adapter); `import auxein` needs none of them.
 
 This is a rewrite: **there is no backward compatibility with 0.x**. The earlier engine remains at the git tag [`v0.2.0`](https://github.com/auxein/auxein/tree/v0.2.0).
 
@@ -56,18 +56,18 @@ print(result.best.objectives["value"], result.best.candidate.genome)
 
 Four short notebooks, executed, with their outputs, introduce the API ([view them on nbviewer](https://nbviewer.org/github/auxein/auxein/tree/master/notebooks/)):
 
-- [Rastrigin](notebooks/rastrigin.ipynb): three strategies at equal budgets, a recorded run and the ancestry of its best candidate
-- [Linear regression](notebooks/linear_regression.ipynb): evolved coefficients against the closed-form solution
-- [Logistic regression](notebooks/logistic_regression.ipynb): a maximised log-likelihood, against the known true coefficients
-- [Polynomial regression](notebooks/polynomial_regression.ipynb): structure genes in a mixed space, the Pareto front of error against complexity with `NSGA2`, and one trade-off chosen with `Scalarised`
+- [Rastrigin](https://github.com/auxein/auxein/blob/master/notebooks/rastrigin.ipynb): three strategies at equal budgets, a recorded run and the ancestry of its best candidate
+- [Linear regression](https://github.com/auxein/auxein/blob/master/notebooks/linear_regression.ipynb): evolved coefficients against the closed-form solution
+- [Logistic regression](https://github.com/auxein/auxein/blob/master/notebooks/logistic_regression.ipynb): a maximised log-likelihood, against the known true coefficients
+- [Polynomial regression](https://github.com/auxein/auxein/blob/master/notebooks/polynomial_regression.ipynb): structure genes in a mixed space, the Pareto front of error against complexity with `NSGA2`, and one trade-off chosen with `Scalarised`
 
-The [design document](docs/design/core.md) is the reference, and the [benchmark reports](benchmarks/README.md) show how the algorithms compare.
+The [design document](https://github.com/auxein/auxein/blob/master/docs/design/core.md) is the reference, and the [benchmark reports](https://github.com/auxein/auxein/blob/master/benchmarks/README.md) show how the algorithms compare.
 
 ## Links
 
-- [Design document](docs/design/core.md)
-- [Benchmark harness](benchmarks/README.md), its [0.2.0 baseline](benchmarks/reports/baseline-0.2.0/report.md) and the [comparison of the new genetic algorithm with it](benchmarks/reports/core-ga-0.3.0-dev/report.md)
-- [Changelog](CHANGELOG.md)
+- [Design document](https://github.com/auxein/auxein/blob/master/docs/design/core.md)
+- [Benchmark harness](https://github.com/auxein/auxein/blob/master/benchmarks/README.md), its [0.2.0 baseline](https://github.com/auxein/auxein/blob/master/benchmarks/reports/baseline-0.2.0/report.md) and the [comparison of the new genetic algorithm with it](https://github.com/auxein/auxein/blob/master/benchmarks/reports/core-ga-0.3.0-dev/report.md)
+- [Changelog](https://github.com/auxein/auxein/blob/master/CHANGELOG.md)
 - [`v0.2.0`](https://github.com/auxein/auxein/tree/v0.2.0): the previous engine, its notebooks and documentation
 
 ## Development

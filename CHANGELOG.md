@@ -1,11 +1,11 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.3.0 (2026-10-10)
 
 Auxein is rewritten around a new core, designed as a framework for evolving agents that act in environments (see the
 [design document](docs/design/core.md)). **There is no backward compatibility with 0.x**: the old engine, its API and its
 notebooks are gone from the repository, and remain available at the git tag [`v0.2.0`](https://github.com/auxein/auxein/tree/v0.2.0).
-Nothing is published to PyPI yet, and the release workflow was removed.
+This is the first release of the new core, published to PyPI. Known gap: the GPU smoke suite has been run on Apple Metal and on the CPU but not yet on CUDA (design doc §11.4, criterion 5).
 
 What exists now:
 
