@@ -45,6 +45,14 @@ name = "random-search"
 adapter = "random_search"
 
 [[algorithms]]
+# CMA-ES through Auxein (PycmaStrategy), with the same start and step size as the raw pycma entry below
+name = "auxein-pycma"
+adapter = "auxein_pycma"
+[algorithms.params]
+sigma0 = 2.0
+x0_range = 4.0
+
+[[algorithms]]
 name = "cma-es"
 adapter = "cmaes"
 [algorithms.params]

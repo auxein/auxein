@@ -246,7 +246,9 @@ class Driver(Generic[G]):
         self._resume = resume
         # checkpoints and resuming (design doc §10.4)
         self._checkpoint_every, self._checkpoint_every_evaluations = checkpoint_every, checkpoint_every_evaluations
-        self._keep_checkpoints = keep_checkpoints if run_dir is not None else 0
+        # a strategy that cannot save its state exactly (supports_checkpoints=False) has none taken: a resume replays from the start
+        can_checkpoint = strategy.capabilities.supports_checkpoints
+        self._keep_checkpoints = keep_checkpoints if run_dir is not None and can_checkpoint else 0
         self._last_checkpoint_time = 0.0
         self._last_checkpoint_used = 0
         self._consistent = True

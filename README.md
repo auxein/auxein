@@ -10,9 +10,18 @@ Auxein is a **0.x development version**: the API may change, and it isn't publis
 git clone https://github.com/auxein/auxein && cd auxein && uv sync
 ```
 
-The design is in [`docs/design/core.md`](docs/design/core.md), together with what is built so far and what comes next. Today that is the core (candidates, batches, evaluations, search spaces, a numpy and PyTorch backend with reproducible random streams), a driver with budgets and recording, function and vectorised evaluators, and two strategies: `RandomSearch` and a composable `GeneticAlgorithm`.
+The design is in [`docs/design/core.md`](docs/design/core.md), together with what is built, how each part was validated and what is left open. The optional dependencies are extras: `auxein[torch]` (PyTorch, for GPUs), `auxein[cma]` (pycma, for `PycmaStrategy`) and `auxein[gymnasium]` (Gymnasium, for the reinforcement-learning adapter); `import auxein` needs none of them.
 
 This is a rewrite: **there is no backward compatibility with 0.x**. The earlier engine remains at the git tag [`v0.2.0`](https://github.com/auxein/auxein/tree/v0.2.0).
+
+## What Auxein offers
+
+- **Strategies** that propose candidates and learn from the results: `RandomSearch`; a composable `GeneticAlgorithm` (tournament and SUS selection, intermediate, uniform and simulated binary crossover, Gaussian, self-adaptive and polynomial mutation) with type-aware operators for integer, binary and categorical genes; `StructuredGeneticAlgorithm` for genomes that are not arrays, with recorded and replayed LLM-style operators; `NSGA2` for several objectives, with constraints; `PycmaStrategy`, CMA-ES from pycma; and `Scalarised`, which runs any single-objective strategy on a multi-objective problem.
+- **Search spaces:** `Box` (with log scale), `MixedSpace` of real, integer, binary and categorical dimensions (also `IntegerSpace` and `BinarySpace`), and `SequenceSpace` for variable-length sequences; your own through a small codec protocol.
+- **Evaluators and the agent layer:** plain functions (`FunctionEvaluator`), vectorised ones on whole populations (`VectorisedEvaluator`), and `EpisodeEvaluator`, which runs agents in every scenario of a seeded `ScenarioSet` and turns the measurements into objectives, constraints and descriptors with an `Aggregator` (mean, worst case, quantile, CVaR). Step-level worlds, a Gymnasium adapter (`GymnasiumEnvironment`, `LinearPolicy`) and held-out evaluation are included. Directions are explicit per objective, and constraints are violation amounts.
+- **Concurrency, failures and timeouts:** concurrent evaluation in threads or worker processes, steady-state or generation delivery, deterministic mode (the same event log whatever the number of workers), `async def` evaluators, per-evaluation timeouts, and failures that are recorded and ranked last instead of stopping the run.
+- **Recording, checkpoints and resume:** with a `run_dir`, every candidate, its lineage, its evaluations and its per-scenario measurements go into an SQLite file, read back with `open_run`. Checkpoints are written without pickle, and `resume` continues an interrupted, killed or finished run as if it had never stopped, or extends it with a larger budget.
+- **Backends and GPUs:** numpy and PyTorch, float64 and float32, on the CPU, on CUDA and on Apple Metal, with reproducible random streams derived from one seed. The GPU smoke suite is run by hand (`tests/gpu/README.md`).
 
 ## Quickstart
 
@@ -43,6 +52,17 @@ print(result.best.objectives["value"], result.best.candidate.genome)
 
 `result.best` is the best evaluation found. The same seed gives the same run. Pass `run_dir` to record the run, and read it back with `auxein.open_run`. A recorded run keeps checkpoints, so if it is interrupted, killed or finishes with too little budget, run the same script with `auxein.resume` (and a larger `Budget` to extend it) and it carries on as if it had never stopped.
 
+## Documentation
+
+Four short notebooks, executed, with their outputs, introduce the API ([view them on nbviewer](https://nbviewer.org/github/auxein/auxein/tree/master/notebooks/)):
+
+- [Rastrigin](notebooks/rastrigin.ipynb): three strategies at equal budgets, a recorded run and the ancestry of its best candidate
+- [Linear regression](notebooks/linear_regression.ipynb): evolved coefficients against the closed-form solution
+- [Logistic regression](notebooks/logistic_regression.ipynb): a maximised log-likelihood, against the known true coefficients
+- [Polynomial regression](notebooks/polynomial_regression.ipynb): structure genes in a mixed space, the Pareto front of error against complexity with `NSGA2`, and one trade-off chosen with `Scalarised`
+
+The [design document](docs/design/core.md) is the reference, and the [benchmark reports](benchmarks/README.md) show how the algorithms compare.
+
 ## Links
 
 - [Design document](docs/design/core.md)
@@ -55,6 +75,7 @@ print(result.best.objectives["value"], result.best.candidate.genome)
 ```
 uv sync                                     # install the project with its development dependencies
 uv run pytest                               # tests
+uv run --group notebooks pytest --nbmake notebooks/                      # the notebooks, executed
 uv run pytest -m gpu --device mps           # the GPU smoke suite, by hand: mps, cuda or cpu (tests/gpu/README.md)
 uv run ruff check                           # lint
 uv run ruff format --check                  # formatting

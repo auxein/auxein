@@ -54,11 +54,11 @@ x86-64. The band guards against gross shifts (a precision bug, a broken operator
 it cannot see a 10% difference."""
 
 
-def final_errors_of(adapter: str, params: dict, problem: str, dim: int) -> list[float]:
+def final_errors_of(adapter: str, params: dict, problem: str, dim: int, first: int = FIRST_RUN, exact: bool = True) -> list[float]:
     errors = []
-    for k in range(FIRST_RUN, FIRST_RUN + RUNS):
+    for k in range(first, first + RUNS):
         objective, _, _ = run_one(adapter, params, problem, dim, instance=k, seed=k, budget=QUICK_BUDGET_PER_DIM * dim)
-        assert objective.evals == QUICK_BUDGET_PER_DIM * dim
+        assert not exact or objective.evals == QUICK_BUDGET_PER_DIM * dim  # CMA-ES stops early once it has converged
         errors.append(objective.best_error)
     return errors
 
@@ -80,3 +80,18 @@ def test_random_search_on_torch_float32_is_statistically_indistinguishable_from_
     torch_errors = final_errors_of("auxein_core_random", TORCH_FLOAT32, "sphere", dim)
     a12 = vargha_delaney(torch_errors, numpy_errors)
     assert 0.35 <= a12 <= 0.65, f"A12 = {a12:.3f} on the {dim}-D sphere"
+
+
+# --- the pycma wrapper against raw pycma ---
+
+
+@pytest.mark.parametrize("problem", ["sphere", "rastrigin"])
+def test_the_pycma_strategy_is_statistically_indistinguishable_from_raw_pycma(problem: str):
+    """Both are pycma started from the same kind of point with the same step size; only the random streams differ (the wrapper
+    draws from Auxein's stream, raw pycma from its own seeded generator), and the wrapper adds the box as pycma bounds. A
+    wrapper that changed what pycma does (a wrong failure substitution, a mis-ordered tell, bounds that bite) would shift the
+    distribution of the final errors, and A12 would leave the band."""
+    wrapper = final_errors_of("auxein_pycma", {}, problem, 10, first=0, exact=False)
+    raw = final_errors_of("cmaes", {}, problem, 10, first=0, exact=False)
+    a12 = vargha_delaney(wrapper, raw)
+    assert 0.35 <= a12 <= 0.65, f"A12 = {a12:.3f} on the 10-D {problem}"

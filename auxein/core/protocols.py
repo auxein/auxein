@@ -35,6 +35,10 @@ class StrategyCapabilities:
     supports_constraints: bool
     tell_mode: TellMode
     """`generation`: all results of a batch together. `steady_state`: one at a time, as they arrive. `both`: either."""
+    supports_checkpoints: bool = True
+    """False for a strategy whose state cannot be saved exactly without pickle (an external one, such as pycma's): the driver
+    then writes no checkpoints for the run, and a resumed run rebuilds the strategy by replaying the recording from the start
+    (design doc §10.4)."""
 
     def __post_init__(self) -> None:
         if self.max_objectives is not None and self.max_objectives < 1:
