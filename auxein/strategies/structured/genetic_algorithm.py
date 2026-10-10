@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Any, Generic, cast
 
-from auxein.backend import Array, is_array
+from auxein.backend import Array, Backend, is_array
 from auxein.core import (
     Batch,
     Candidate,
@@ -117,12 +117,24 @@ class StructuredGeneticAlgorithm(Generic[G]):
 
     # --- binding ---
 
-    def bind(self, problem: ProblemSpec[G], ctx: StrategyContext) -> None:
+    # --- the ranking policy: what `NSGA2` replaces (design doc §3.3); the defaults are the single-objective ones ---
+
+    def _check_objectives(self, problem: ProblemSpec[G]) -> None:
         if len(problem.objectives) != 1:
             names = tuple(o.name for o in problem.objectives)
             raise ValueError(
                 f"StructuredGeneticAlgorithm is single-objective but the problem has {len(problem.objectives)} objectives {names}"
             )
+
+    def _told_values(self, results: EvaluationBatch[G], problem: ProblemSpec[G], backend: Backend) -> Array:
+        return results.minimisation_matrix(problem.objectives, backend)[:, 0]
+
+    def _pool_order(self, values: Array, violation: Array, ids: Array, backend: Backend) -> Array:
+        """Member indices of a pool (the population followed by the told children), best first."""
+        return rank_order(values, violation, ids, backend)
+
+    def bind(self, problem: ProblemSpec[G], ctx: StrategyContext) -> None:
+        self._check_objectives(problem)
         codec = cast("GenomeCodec[G] | None", codec_of(problem.space))
         if codec is None:
             raise TypeError(
@@ -274,7 +286,7 @@ class StructuredGeneticAlgorithm(Generic[G]):
         if unknown:
             raise ValueError(f"tell() was called with candidates that are not pending (never asked for, or already told): {unknown[:5]}")
         genomes = [self._pending.pop(cid) for cid in told]
-        values = results.minimisation_matrix(problem.objectives, backend)[:, 0]
+        values = self._told_values(results, problem, backend)
         totals = results.violation_list()
         violation = backend.asarray(totals)
         if not self._ever_failed and INFEASIBLE in totals:
@@ -287,7 +299,7 @@ class StructuredGeneticAlgorithm(Generic[G]):
             pooled_values, pooled_violation = values, violation
         else:
             pooled_values, pooled_violation = xp.concat([self._values, values], axis=0), xp.concat([self._violation, violation], axis=0)
-        keep = backend.to_numpy(rank_order(pooled_values, pooled_violation, index, backend)[: self.population_size])
+        keep = backend.to_numpy(self._pool_order(pooled_values, pooled_violation, index, backend)[: self.population_size])
         keep_index = backend.asarray(keep, dtype=backend.int_dtype)
         self._ids = [ids[i] for i in keep.tolist()]
         self._genomes = [pooled_genomes[i] for i in keep.tolist()]

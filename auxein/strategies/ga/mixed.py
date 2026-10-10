@@ -19,6 +19,7 @@ from auxein.random import RandomStream
 from auxein.spaces import Box
 from auxein.spaces.mixed import BINARY, CATEGORICAL, INTEGER, REAL, MixedSpace
 from auxein.strategies.ga.base import BoundsRepair, Mutation, Recombination
+from auxein.strategies.ga.mutation import with_bounds
 
 
 def _check_probability(probability: float | None) -> None:
@@ -190,10 +191,12 @@ class MixedVariation:
         )  # the inverse permutation
         self._real_box: Box | None = None
         self._real_width: Array | None = None
+        self._real_operator = real_mutation
         if REAL in self._kinds:
             columns = list(space.indices(REAL))
             self._real_box = Box(low[columns], high[columns], log_scale=space.log_scale[columns].tolist())
             self._real_width = backend.asarray(high[columns] - low[columns])
+            self._real_operator = with_bounds(real_mutation, self._kinds[REAL].lower, self._kinds[REAL].upper)
         self._real_steps = 0  # the width of the real step sizes in the packed array: 0 (none), 1 (per individual) or the real genes
         if REAL in self._kinds:
             sample = real_mutation.initial_steps(0, self._kinds[REAL].count, backend)
@@ -314,7 +317,7 @@ class MixedVariation:
             if self._real_steps:
                 assert steps is not None
                 real_steps = steps[:, 0] if self._real_steps == 1 else steps[:, : self._real_steps]
-            mutated, stepped = self.real_mutation.mutate(self._take(genomes, REAL), real_steps, self._real_width, rng, backend)
+            mutated, stepped = self._real_operator.mutate(self._take(genomes, REAL), real_steps, self._real_width, rng, backend)
             parts[REAL] = mutated
             if stepped is not None:
                 new_steps.append(stepped[:, None] if stepped.ndim == 1 else stepped)

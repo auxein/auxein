@@ -3,9 +3,16 @@
 from auxein.strategies.ga.base import BoundsRepair, Mutation, ParentSelection, PopulationView, Recombination
 from auxein.strategies.ga.genetic_algorithm import GeneticAlgorithm
 from auxein.strategies.ga.mixed import BitFlipMutation, CategoricalMutation, IntegerMutation, MixedVariation
-from auxein.strategies.ga.mutation import GaussianMutation, SelfAdaptiveMutation
+from auxein.strategies.ga.mutation import GaussianMutation, PolynomialMutation, SelfAdaptiveMutation
 from auxein.strategies.ga.ranking import rank_order, view_of
-from auxein.strategies.ga.recombination import IntermediateRecombination, NoRecombination, UniformRecombination, mix_genes, mix_steps
+from auxein.strategies.ga.recombination import (
+    IntermediateRecombination,
+    NoRecombination,
+    SimulatedBinaryCrossover,
+    UniformRecombination,
+    mix_genes,
+    mix_steps,
+)
 from auxein.strategies.ga.repair import ClipRepair, ReflectRepair
 from auxein.strategies.ga.selection import SigmaScalingSUS, TournamentSelection
 
@@ -21,12 +28,14 @@ __all__ = [
     "MixedVariation",
     "Mutation",
     "NoRecombination",
+    "PolynomialMutation",
     "ParentSelection",
     "PopulationView",
     "Recombination",
     "ReflectRepair",
     "SelfAdaptiveMutation",
     "SigmaScalingSUS",
+    "SimulatedBinaryCrossover",
     "TournamentSelection",
     "UniformRecombination",
     "mix_genes",

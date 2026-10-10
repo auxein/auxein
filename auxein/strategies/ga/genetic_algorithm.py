@@ -21,7 +21,7 @@ from auxein.core.ids import CandidateId
 from auxein.spaces import Box, MixedSpace
 from auxein.strategies.ga.base import BoundsRepair, Mutation, ParentSelection, PopulationView, Recombination
 from auxein.strategies.ga.mixed import BitFlipMutation, CategoricalMutation, IntegerMutation, MixedVariation
-from auxein.strategies.ga.mutation import SelfAdaptiveMutation
+from auxein.strategies.ga.mutation import SelfAdaptiveMutation, with_bounds
 from auxein.strategies.ga.ranking import rank_order
 from auxein.strategies.ga.recombination import IntermediateRecombination, mix_genes, mix_steps
 from auxein.strategies.ga.repair import ClipRepair
@@ -97,6 +97,13 @@ class GeneticAlgorithm:
 
     capabilities = StrategyCapabilities(max_objectives=1, supports_constraints=True, tell_mode="both")
 
+    _extra_keys: tuple[str, ...] = ()
+    """The keys a subclass adds to the state (see `_extra_state`)."""
+
+    _skip_unchanged_tell = True
+    """Whether a `tell` after which no child survives leaves the population untouched. A subclass whose ranking depends on the
+    whole pool (NSGA-II's fronts and crowding distances) must refresh the ranking even then."""
+
     def __init__(
         self,
         population_size: int = DEFAULT_POPULATION_SIZE,
@@ -150,6 +157,7 @@ class GeneticAlgorithm:
         self._ctx: StrategyContext | None = None
         self._box: Box | MixedSpace | None = None
         self._variation: MixedVariation | None = None  # the per-type operators, only on a MixedSpace
+        self._real_operator: Mutation = self.mutation  # the real mutation, with the box's bounds if it needs them
         self._step = 0
         self._initial_asked = 0
         self._blocks: dict[int, _Block] = {}
@@ -181,16 +189,46 @@ class GeneticAlgorithm:
         if self._ctx is None or self._ids_array is None or self._values is None or self._violation is None:
             return []
         backend = self._ctx.backend
-        order = rank_order(self._values, self._violation, self._ids_array, backend)
+        order = self._population_order()
         return [int(i) for i in backend.to_numpy(backend.xp.take(self._ids_array, order, axis=0)).tolist()]
 
-    def bind(self, problem: ProblemSpec[Array], ctx: StrategyContext) -> None:
+    # --- the ranking policy: what `NSGA2` replaces (design doc §3.3) ---
+    #
+    # The algorithm's machinery (breeding, pending children, plus survivor selection, state) only needs a few answers from the
+    # ranking: how the objectives of the population are stored, the order of a pool of members, and the order of the population.
+    # The defaults are the single-objective ones, and the numeric results are exactly what they were before these hooks existed.
+
+    def _check_objectives(self, problem: ProblemSpec[Array]) -> None:
         if len(problem.objectives) != 1:
             names = ", ".join(repr(o.name) for o in problem.objectives)
             raise ValueError(
                 f"GeneticAlgorithm is single-objective but the problem has {len(problem.objectives)} objectives ({names}): "
                 "use a single objective or a scalarisation"
             )
+
+    def _empty_values(self, backend: Backend) -> Array:
+        return backend.xp.zeros((0,), dtype=backend.dtype, device=backend.device)
+
+    def _told_values(self, results: EvaluationBatch[Array], problem: ProblemSpec[Array], backend: Backend) -> Array:
+        return results.minimisation_matrix(problem.objectives, backend)[:, 0]
+
+    def _pool_order(self, values: Array, violation: Array, ids: Array, backend: Backend) -> Array:
+        """Member indices of a pool (the population followed by the told children), best first."""
+        return rank_order(values, violation, ids, backend)
+
+    def _population_order(self) -> Array:
+        """Member indices of the current population, best first (recomputed, when a state is loaded)."""
+        assert self._values is not None and self._violation is not None and self._ids_array is not None and self._ctx is not None
+        return rank_order(self._values, self._violation, self._ids_array, self._ctx.backend)
+
+    def _extra_state(self) -> StateDict:
+        return {}
+
+    def _load_extra_state(self, state: StateDict) -> None:
+        return None
+
+    def bind(self, problem: ProblemSpec[Array], ctx: StrategyContext) -> None:
+        self._check_objectives(problem)
         if not isinstance(problem.space, (Box, MixedSpace)):
             raise TypeError(
                 "GeneticAlgorithm needs a Box search space (a bounded real vector) or a MixedSpace (real, integer, binary and "
@@ -200,6 +238,8 @@ class GeneticAlgorithm:
         self._problem, self._ctx, self._box = problem, ctx, problem.space
         backend, dim = ctx.backend, problem.space.dim
         xp = backend.xp
+        if isinstance(problem.space, Box):
+            self._real_operator = with_bounds(self.mutation, backend.asarray(problem.space.lower), backend.asarray(problem.space.upper))
         if isinstance(problem.space, MixedSpace):
             problem.space.check_backend(backend)  # integer bounds beyond what the precision holds exactly are refused now
             self._variation = MixedVariation(
@@ -214,7 +254,7 @@ class GeneticAlgorithm:
             )
         self._ids_array = xp.zeros((0,), dtype=backend.int_dtype, device=backend.device)
         self._genomes = xp.zeros((0, dim), dtype=backend.dtype, device=backend.device)
-        self._values = xp.zeros((0,), dtype=backend.dtype, device=backend.device)
+        self._values = self._empty_values(backend)
         self._violation = xp.zeros((0,), dtype=backend.dtype, device=backend.device)
         self._steps = self._initial_steps(0, dim, backend)
         self._order = self._rank = xp.zeros((0,), dtype=backend.int_dtype, device=backend.device)
@@ -309,7 +349,7 @@ class GeneticAlgorithm:
                 assert self._steps is not None
                 steps = mix_steps(weights, xp.take(self._steps, first, axis=0), xp.take(self._steps, second, axis=0), backend)
             width = backend.asarray(box.upper - box.lower)
-            genomes, steps = self.mutation.mutate(genomes, steps, width, rng, backend)
+            genomes, steps = self._real_operator.mutate(genomes, steps, width, rng, backend)
             genomes = self.repair.repair(genomes, box)
 
         first_ids = backend.to_numpy(xp.take(self._ids_array, first, axis=0)).tolist()
@@ -339,7 +379,7 @@ class GeneticAlgorithm:
             raise ValueError(f"tell() was called with candidates that are not pending (never asked for, or already told): {unknown[:5]}")
 
         genomes, steps, positions = self._take_pending(told, backend)
-        values = results.minimisation_matrix(problem.objectives, backend)[:, 0]
+        values = self._told_values(results, problem, backend)
         totals = results.violation_list()
         violation = backend.asarray(totals)
         if not self._ever_failed and INFEASIBLE in totals:  # a failed evaluation has infinite violation
@@ -355,9 +395,9 @@ class GeneticAlgorithm:
         ranking_ids = xp.concat([self._ids_array, new_ids], axis=0)
         ranking_values = xp.concat([self._values, values], axis=0)
         ranking_violation = xp.concat([self._violation, violation], axis=0)
-        keep = backend.to_numpy(rank_order(ranking_values, ranking_violation, ranking_ids, backend)[: self.population_size])
+        keep = backend.to_numpy(self._pool_order(ranking_values, ranking_violation, ranking_ids, backend)[: self.population_size])
         kept_old, kept_new = keep[keep < members], keep[keep >= members] - members
-        if kept_new.size == 0 and kept_old.size == members:
+        if self._skip_unchanged_tell and kept_new.size == 0 and kept_old.size == members:
             return  # no child survives: the population is unchanged, and nothing needs copying
 
         # gather the survivors straight from the population and from the children: the big arrays are copied once
@@ -465,12 +505,13 @@ class GeneticAlgorithm:
             "violation": self._violation,
             "steps": self._steps,
             "pending": cast("list[Array]", blocks),
+            **self._extra_state(),
         }
 
     def load_state_dict(self, state: StateDict) -> None:
         problem, ctx, box = self._bound()
         backend = ctx.backend
-        expected = {"stream", "step", "initial_asked", "ids", "genomes", "values", "violation", "steps", "pending"}
+        expected = {"stream", "step", "initial_asked", "ids", "genomes", "values", "violation", "steps", "pending", *self._extra_keys}
         if set(state) != expected:
             raise ValueError(f"invalid GeneticAlgorithm state: expected keys {sorted(expected)}, got {sorted(state)}")
         ctx.rng.load_state_dict(cast("dict[str, object]", state["stream"]))
@@ -481,7 +522,8 @@ class GeneticAlgorithm:
         self._values = backend.asarray(state["values"])
         self._violation = backend.asarray(state["violation"])
         self._steps = None if state["steps"] is None else backend.asarray(state["steps"])
-        self._order = rank_order(self._values, self._violation, self._ids_array, backend)
+        self._load_extra_state(state)
+        self._order = self._population_order()
         self._rank = backend.xp.argsort(self._order)
         self._ever_failed = bool(backend.xp.any(backend.xp.isinf(self._violation)))
         self._blocks, self._pending, self._next_block = {}, {}, 0
