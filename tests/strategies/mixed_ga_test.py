@@ -49,7 +49,7 @@ def solve(strategy: Any, backend: Backend, evaluations: int = 6000, seed: int = 
 def test_it_accepts_a_box_or_a_mixed_space_and_nothing_else(backend: Backend):
     bind(auxein.GeneticAlgorithm(), backend, space=mx.SPACE)
     bind(auxein.GeneticAlgorithm(), backend, space=auxein.Box(-1.0, 1.0, dim=3))
-    with pytest.raises(TypeError, match="Box or a MixedSpace"):
+    with pytest.raises(TypeError, match="needs a Box search space.*or a MixedSpace"):
         bind(auxein.GeneticAlgorithm(), backend, space=auxein.SequenceSpace(("a", "b"), 1, 3))
 
 

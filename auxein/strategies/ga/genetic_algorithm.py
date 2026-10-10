@@ -193,7 +193,8 @@ class GeneticAlgorithm:
             )
         if not isinstance(problem.space, (Box, MixedSpace)):
             raise TypeError(
-                f"GeneticAlgorithm needs a Box or a MixedSpace search space (an array of bounded genes), got {type(problem.space).__name__}"
+                "GeneticAlgorithm needs a Box search space (a bounded real vector) or a MixedSpace (real, integer, binary and "
+                f"categorical genes), got {type(problem.space).__name__}"
             )
         self._reset()
         self._problem, self._ctx, self._box = problem, ctx, problem.space
