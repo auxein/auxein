@@ -46,12 +46,14 @@ Then read the current code, particularly:
 2. **A `MixedSpace` built from named dimensions**, e.g.:
 
    ```python
-   MixedSpace({
-       "lr": Real(1e-5, 1e-1, log=True),
-       "layers": Integer(1, 8),
-       "dropout": Binary(),
-       "optimiser": Categorical(["sgd", "adam"]),
-   })
+   MixedSpace(
+       {
+           "lr": Real(1e-5, 1e-1, log=True),
+           "layers": Integer(1, 8),
+           "dropout": Binary(),
+           "optimiser": Categorical(["sgd", "adam"]),
+       }
+   )
    ```
 
    - Dimensions keep their declared order.

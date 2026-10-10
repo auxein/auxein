@@ -111,3 +111,12 @@ def polynomial_problem() -> ProblemSpec[Any]:
 def active_terms(genome: Array) -> tuple[int, ...]:
     values = POLY_SPACE.values(genome)
     return tuple(j for j in range(DEGREE + 1) if values[f"on{j}"])
+
+
+def evaluate_one(genome: Array, backend: Backend) -> Any:
+    """The same objective for one genome, as a `Result` (for `FunctionEvaluator`, and so for steady-state delivery)."""
+    from auxein.core import Result
+
+    batch = evaluate(genome[None, :], backend)
+    value = float(backend.to_numpy(batch.objectives["value"])[0])
+    return Result({"value": value}, {"too_big": float(backend.to_numpy(batch.constraints["too_big"])[0])})
