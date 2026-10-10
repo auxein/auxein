@@ -169,7 +169,7 @@ def summary_table(results: MOResults, problem: str) -> str:
         g1, gm, g3 = np.percentile(igd, [25, 50, 75])
         rows.append(
             f"| {algorithm} | {hm:.4f} [{h1:.4f}, {h3:.4f}] | {hm / best:.1%} | {fmt(gm)} [{fmt(g1)}, {fmt(g3)}] | "
-            f"{statistics.median(len(r['front']) for r in records):g} |"
+            f"{statistics.median(r['n_front'] for r in records):g} |"
         )
     return "\n".join(rows)
 

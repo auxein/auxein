@@ -209,10 +209,11 @@ def test_a_run_writes_the_records_and_the_metadata(tiny_results: Path):
     runs = read_jsonl(tiny_results / "runs.jsonl")
     assert len(runs) == 2 * 3 * 2 and [r["task"] for r in runs] == list(range(12))
     record = runs[0]
-    assert {"algorithm", "problem", "seed", "budget", "evals", "final_hv", "final_igd_plus", "trace_hv", "trace_igd_plus", "front"} <= set(
-        record
-    )
-    assert record["evals"] == 500 and record["trace_hv"][-1][0] == 500 and len(record["front"]) >= 1
+    fields = ["algorithm", "problem", "seed", "budget", "evals", "final_hv", "final_igd_plus"]
+    fields += ["trace_hv", "trace_igd_plus", "front", "n_front"]
+    assert set(fields) <= set(record)
+    assert record["evals"] == 500 and record["trace_hv"][-1][0] == 500 and len(record["front"]) == record["n_front"] >= 1
+    assert runs[1]["front"] is None and runs[1]["n_front"] >= 1  # only the first run of a cell carries its front
     metadata = json.loads((tiny_results / "metadata.json").read_text())
     assert metadata["config"]["kind"] == KIND and metadata["versions"]["pymoo"]
 

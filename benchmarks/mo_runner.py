@@ -32,6 +32,7 @@ class MOTask:
     problem: str
     seed: int
     budget: int
+    keep_front: bool  # whether the record carries the final front itself (the first run of each cell: the plots need one)
 
 
 def build_mo_tasks(config: MOConfig) -> list[MOTask]:
@@ -39,10 +40,9 @@ def build_mo_tasks(config: MOConfig) -> list[MOTask]:
     for problem in config.problems:
         for algorithm in config.algorithms:
             for k in range(config.runs):
+                seed = config.base_seed + k
                 tasks.append(
-                    MOTask(
-                        len(tasks), algorithm.name, algorithm.adapter, algorithm.params, problem.name, config.base_seed + k, problem.budget
-                    )
+                    MOTask(len(tasks), algorithm.name, algorithm.adapter, algorithm.params, problem.name, seed, problem.budget, k == 0)
                 )
     return tasks
 
@@ -73,7 +73,8 @@ def execute_mo_task(task: MOTask) -> dict[str, Any]:
         "final_igd_plus": objective.final_igd_plus,
         "trace_hv": [[evals, hv] for evals, hv, _ in trace],
         "trace_igd_plus": [[evals, igd] for evals, _, igd in trace],
-        "front": front.tolist(),
+        "n_front": len(front),
+        "front": front.tolist() if task.keep_front else None,
         "info": info.to_dict(),
     }
 
