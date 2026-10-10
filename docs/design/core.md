@@ -97,6 +97,7 @@ class StrategyCapabilities:
     max_objectives: int | None      # 1 = single-objective; None = any number
     supports_constraints: bool
     tell_mode: Literal["generation", "steady_state", "both"]
+    supports_checkpoints: bool = True   # False: the strategy's state cannot be saved exactly without pickle (§10.4)
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,7 @@ class StrategyContext:
 ```
 
 - **`StateDict`** is the type of everything saved by `state_dict()`: a dict with string keys whose values are JSON scalars (`None`, `bool`, `int`, `float`, `str`), lists, dicts with string keys, or arrays of a supported backend (numpy arrays that aren't of dtype `object`, torch tensors). Tuples, sets, numpy scalars and any other object are rejected by `validate_state_dict()`, so a state survives a JSON round trip unchanged. There is no pickle (§10.4).
+- **`supports_checkpoints`** is true for every strategy except those that wrap an algorithm whose internal state cannot be saved exactly without pickle (`PycmaStrategy`, §3.4). When it is false the driver writes **no checkpoints** for the run, and a resumed run rebuilds the strategy by replaying the recording from the start (§10.4).
 - **`tell_mode`** tells the driver how to deliver results:
   - `generation`: all results of a batch together (e.g. CMA-ES, generational GA)
   - `steady_state`: results one at a time as they arrive
@@ -190,7 +192,14 @@ The operator ideas from 0.x are re-implemented, not ported, and the limitations 
 - `GeneticAlgorithm`: composable, as above, supporting both tell modes (done in step 3a).
 - `StructuredGeneticAlgorithm`: the same algorithm for structured genomes, with `SequenceSpace` as the built-in space (done in step 6b).
 - `NSGA2`: the multi-objective strategy, on `Box`, `MixedSpace` and `SequenceSpace`; and `Scalarised(strategy, scalarisation)`, which runs any single-objective strategy on a multi-objective problem (§5.4) (done in step 8b).
-- `PycmaStrategy`: a wrapper around pycma, as an optional extra. Its purpose is to prove that external algorithms fit the contract.
+- **`PycmaStrategy`** (step 9): CMA-ES from pycma, wrapped as a strategy, installed with `pip install auxein[cma]` (`import auxein` never imports pycma; building the strategy without it is an `ImportError` that names the extra). It is a thin, faithful wrapper whose purpose is to prove that an external algorithm fits the contract.
+  - **Restrictions, checked at `bind`:** single-objective (several objectives go through `Scalarised`); a `Box` with no log-scale dimension (CMA-ES adapts a Gaussian in the genome's own coordinates; a `MixedSpace` needs `GeneticAlgorithm`); no constraints (`supports_constraints=False`: pycma has none). `tell_mode="generation"`: pycma needs a whole generation, in the order it asked it, so `ask` returns pycma's own population whatever `n` says and a `tell` with a missing or foreign candidate is an error.
+  - **Start, step size and bounds.** `x0` defaults to the centre of the box and `sigma0` to `sigma_fraction` (0.3) of its mean width; when the widths differ pycma gets a per-variable scaling (`CMA_stds`). Bounds use pycma's own `bounds` option, so every candidate lies in the box, and are clipped once more to the box rounded inward to the run's precision. The other pycma options pass through `options`, except those the strategy owns (`seed`, `randn`, `bounds`, `popsize`, `CMA_stds`, `verbose`). `should_stop` is pycma's own `stop()`.
+  - **Randomness: none of it is global.** All of pycma's random numbers come from the strategy's Auxein stream, through pycma's `randn` option; the `seed` option, which seeds numpy's *global* generator, is never used and is refused if given. A test leaves numpy's and Python's global state untouched around a run and gets identical runs for the same seed. (In pycma 4.5, by reading its source, the other uses of the global generator are in code the strategy does not reach: its own restarts, `fmin`, and a stochastic rounding for integer variables.)
+  - **Failed evaluations.** pycma cannot be told NaN or infinity, and a failed candidate must rank last: it is told the worst finite value of its generation plus a margin (the spread of the finite values, or `max(1, |worst|)` when they are all equal); a generation in which everything failed is told one large constant (`1e30`) for every candidate. A non-finite objective counts as a failure. The substitution is a function (`substitute_failures`) with its own tests.
+  - **No checkpoints, because pycma cannot be saved exactly without pickle.** Its state is a covariance matrix, evolution paths, a history and its own bookkeeping, and Auxein forbids pickle (§10.4). So `supports_checkpoints=False`, `state_dict` and `load_state_dict` raise `NotImplementedError` (the driver never calls them), and **a resumed run is rebuilt by replaying the recording from the start**: in deterministic mode the strategy is fed the recorded evaluations, so no evaluation is repeated, but pycma's internal computation runs again, which takes a while for a long run; in throughput mode the run restarts from the beginning. The `repr` includes every option, so a resume with changed options is refused.
+  - **Precision.** pycma computes in float64: candidates are converted to the run's backend and precision for evaluation, and pycma is told the float64 points it asked for with the values of the (rounded) candidates that were evaluated.
+  - **Cross-check and cost.** On the 10-D sphere and Rastrigin, 30 paired runs with the quick budget, `auxein-pycma` is statistically indistinguishable from the harness's raw `cma-es` adapter (A₁₂ 0.43 and 0.54, inside [0.35, 0.65]; both are pycma with different random streams, and the wrapper adds the box as bounds). The overhead per evaluation is 38 to 44 µs against 17 to 25 µs for raw pycma on the harness's negligible-cost objective; of the difference, about 7 µs is pycma's own bound handling (measured with raw pycma and the `bounds` option), and the rest is the wrapper and the driver around each generation.
 
 More algorithms (native CMA-ES, MAP-Elites and others) are added later on top of the same contract.
 
@@ -450,7 +459,13 @@ class EpisodeBatchResult:
 
 - **The core contract is a whole episode**, plus an optional batched variant. Real simulators often own their own loop (external processes, co-simulation, ROS), LLM agents run their own multi-turn loops, and batched GPU simulators run a population in one call. `IdentityDecoder` is the decoder for environments that take the genome directly (a batch of agents is then the genome array).
 - **Environments return raw measurements, not scores.** What counts as good is decided by the aggregator, so runs can be re-judged without re-simulating. A failed or timed-out `EpisodeResult` has a status other than `OK` and an `error`; a measurement that is NaN in a successful episode shows up as a non-finite objective (a failed evaluation).
-- **Step-level environments** (`reset`/`step`) plug in through `StepEnvironment(world_factory, role=, max_steps=, last=)`. The world has `reset(scenario, rng) -> observation` and `step(action) -> (observation, measurement_updates, done)`; the agent has `act(observation) -> action` and optionally `reset(rng)` (called with its episode stream). The adapter builds a new world for every episode, loops until `done` or `max_steps`, **sums** the measurement updates over the episode (except the names listed in `last`, whose last value is kept) and adds two measurements itself, `steps` and `done`. It is small on purpose; the Gymnasium adapter (step 9) builds on it, and Gymnasium is not a core dependency.
+- **Step-level environments** (`reset`/`step`) plug in through `StepEnvironment(world_factory, role=, max_steps=, last=)`. The world has `reset(scenario, rng) -> observation` and `step(action) -> (observation, measurement_updates, done)`; the agent has `act(observation) -> action` and optionally `reset(rng)` (called with its episode stream). The adapter builds a new world for every episode, loops until `done` or `max_steps`, **sums** the measurement updates over the episode (except the names listed in `last`, whose last value is kept) and adds two measurements itself, `steps` and `done`. It is small on purpose; the Gymnasium adapter below builds on it.
+- **The Gymnasium adapter and `LinearPolicy`** (step 9, `auxein.environments`; `pip install auxein[gymnasium]`, imported lazily, so `import auxein` needs no Gymnasium and a missing install is an `ImportError` that names the extra). `GymnasiumEnvironment(env, max_steps=None, info_fields=(), last_info_fields=(), make_kwargs=None)` is an `Environment` built on `StepEnvironment`: `env` is an environment id (`"CartPole-v1"`, made with `gymnasium.make`) or a **picklable factory**, a new environment is made for every episode, and the object itself pickles by configuration, so episodes run in worker processes.
+  - **Common random numbers.** Each episode calls `env.reset(seed=...)` with a seed drawn from the **scenario's own stream** (`scenario.rng()`), so it depends on the scenario alone: every candidate evaluated in a scenario starts from the same state, and different scenarios from different ones.
+  - **Measurements.** `return` (the sum of the rewards), `steps` and `done` (from the adapter), `terminated` and `truncated` (the last values of Gymnasium's two flags, kept apart), and the numeric entries of `info` named by `info_fields` (summed) or `last_info_fields` (last value). Agents are anything with `act(observation) -> action`, as `StepEnvironment` expects.
+  - **Episode length.** `max_steps` is the adapter's limit and defaults to the environment's `max_episode_steps` (500 for CartPole; an environment without one needs it). If the adapter's limit is the smaller, the adapter cuts the episode (`done` 0, `truncated` 0); if Gymnasium's is smaller or equal, the environment truncates (`truncated` and `done` 1).
+  - **`LinearPolicy(environment)`** is a minimal decoder for tests and notebooks: the genome is the weight matrix (`outputs × observation size`, row by row) then the bias, of length `dim`, and the action is `argmax(W·o + b)` for a discrete action space and `W·o + b` clipped to the bounds for a `Box`; other spaces are an error, and `space(bound)` is the `Box` of its genomes. A test evolves one with `GeneticAlgorithm` on five CartPole scenarios (1,000 evaluations, a few seconds) to a mean return of 475 or more on 20 held-out scenarios, as `evaluate_held_out` reports it (in the eight seeds tried the held-out mean return was 498.9 or more).
+  - Vectorised Gymnasium environments (`gymnasium.vector`) and PettingZoo are not covered (§15).
 - **Which randomness is which.** `run_episode` receives the **agent's** stream for this candidate and scenario. The **world's** randomness must come from `scenario.rng()`, which depends on the scenario's seed alone (§6.4, §8).
 
 ### 6.3 Multiple agents and roles
@@ -738,6 +753,7 @@ runs/<name>/
 - **Contents.** A format version and the event sequence number it is consistent with, plus:
   - the strategy's `state_dict` (random-generator state included);
   - the driver's state: the id issuer, the ids issued but never carried by a batch, the last step, evaluations used, cost totals, the failure counters, the guard's state and the first failure, the cumulative wall time, the largest ask so far, and for steady-state delivery the window: the queued and in-flight candidates, in ask order, with their ids, lineage, origins and genomes.
+- **Strategies that cannot be checkpointed.** A strategy whose capabilities say `supports_checkpoints=False` (`PycmaStrategy`, §3.4) gets **no checkpoints at all**: the driver skips the periodic, end-of-run, interrupt and budget-pressure ones, whatever `checkpoint_every` says. Resuming such a run uses the rules for a run without checkpoints that follow: in deterministic mode the strategy is built afresh and replayed from the start (no evaluation is repeated, but the strategy's own computation is: for pycma, a long run takes a while to replay), and in throughput mode the run restarts from the beginning.
 - **Not in a checkpoint.** The result tracker (`best`, `pareto_front`, `trace`) is **rebuilt from the recording** on resume, which is fast and keeps one source of truth (cost totals for the units of the budget are recomputed the same way, so a new unit counts what was spent before). Results that finished but were not told yet (held back in deterministic steady-state mode, or waiting in throughput mode) are not saved: those candidates are evaluated again.
 - **Format.** One directory per checkpoint, `checkpoints/ckpt-<event seq>/`, with `state.json` (everything but arrays, with a reference where an array was) and `arrays.npz` (the arrays; torch tensors go through numpy and come back on the run's device). **No pickle anywhere**: arrays are loaded with `allow_pickle=False`, and `validate_state_dict` rejects anything that could only be saved with it. A checkpoint is written to a temporary directory, flushed to disk and renamed into place, then registered in the `checkpoints` table; the oldest beyond `keep_checkpoints` are deleted. A crash while writing leaves the previous checkpoints untouched, and a leftover temporary directory is removed on the next resume. A damaged newest checkpoint is skipped with a warning, and the one before is used.
 - **The budget shapes the run, so checkpoints stop.** A checkpoint can be continued with a larger budget into the run that budget would have made only if the budget had not yet changed anything the run did. It changes things at the end: the last ask is smaller than `batch_size`, a surplus is dropped (§9.3), queued candidates are dropped on a stop. So when the remaining evaluation budget comes within the size of one ask, the driver writes one more checkpoint, still clean, and once the budget has shaped the run it takes **no more** (not periodic, not at the end, not on interrupt). A run that ends exactly on its budget has not been shaped and checkpoints at its end. This is what makes extension exact.
@@ -798,9 +814,27 @@ Features are validated by **small, purpose-built test fixtures** (tiny determini
 - Linear and logistic regression.
 - Polynomial regression with a fixed maximum degree, structure genes and a complexity objective (§4.4).
 
-These are rewritten as four notebooks for the new core (step 9): Rastrigin, linear regression, logistic regression and polynomial regression.
+These are the four notebooks of `notebooks/` (step 9), **the introductory documentation**, executed with their outputs committed and run in CI (`pytest --nbmake notebooks/`, a job of its own, with the `notebooks` dependency group) so that they cannot rot; each takes a few seconds:
+
+- `rastrigin.ipynb`: 2-D and 10-D Rastrigin with a `VectorisedEvaluator`; `GeneticAlgorithm`, `PycmaStrategy` and `RandomSearch` at equal budgets (the median convergence of five fixed seeds, read from `RunResult.trace`); a recorded run read back with `open_run`, its evaluated points on the landscape coloured by generation, and the ancestry of the best candidate.
+- `linear_regression.ipynb`: synthetic data, the mean squared error as a vectorised objective, the evolved coefficients against the closed-form least squares (they agree to 10⁻⁸), and the convergence read from the recording.
+- `logistic_regression.ipynb`: the log-likelihood as a **maximised** objective (an explicit direction), against the true coefficients and the maximum-likelihood solution by Newton's method.
+- `polynomial_regression.ipynb`: a `MixedSpace` of coefficients and binary term switches; `NSGA2` with error and number of terms, its Pareto front containing the true model; then `GeneticAlgorithm` under `Scalarised` with three weights, each landing where the front predicts.
 
 ### 11.4 Acceptance criteria
+
+**Status at the end of the roadmap (step 9).**
+
+| # | Criterion | Status |
+|---|---|---|
+| 1 | Generality | **Deferred** with the toy domains (§11.2); validated by fixtures instead (agent layer, structured genomes, mixed spaces) |
+| 2 | Benchmark against 0.2.0 | **Met** (step 3a) |
+| 3 | Determinism | **Met** (step 4a): the same seed gives the same event log across executors, workers and sync or async evaluators; extended by resume (criterion 4) |
+| 4 | Resume | **Met** (step 5) |
+| 5 | Backends | **CPU met** (step 7); **GPU pending**: the smoke suite passes on Apple Metal (author's run) and on the CPU as a dry run, and a CUDA run is still to be recorded |
+| 6 | Failures | **Met** (step 4b) |
+| 7 | Multi-objective | **Met** (step 8b) |
+
 
 1. **Generality:** *deferred* together with the toy domains (§11.2). It said that both toy domains and all problems in §11.3 run on the same core, with no special cases in the core. The agent layer (step 6a) and structured genomes (step 6b) are validated by test fixtures instead.
 2. **Benchmark:** with a harness adapter for the new core, the `GeneticAlgorithm` strategy at equal evaluation budgets is **not statistically worse than the `v0.2.0` baseline** on any problem and dimension of the benchmark suite. Its **overhead per evaluation is lower**.
@@ -819,7 +853,7 @@ These are rewritten as four notebooks for the new core (step 9): Rastrigin, line
 
 ## 12. Package layout
 
-What exists after step 8b (the packages marked "later" are planned):
+What exists at the end of the roadmap (step 9):
 
 ```
 auxein/
@@ -834,20 +868,22 @@ auxein/
     random_search.py
     scalarisation.py  # Scalarised, WeightedSum, Chebyshev, best_by_scalarisation
     nsga2/         # NSGA2 (with its engines), non-dominated sorting and crowding distance
+    external/      # PycmaStrategy (pycma, an optional extra)
     ga/            # GeneticAlgorithm and its operators (selection, recombination incl. SBX, mutation incl. polynomial mutation, bounds repair; integer, binary and categorical mutation)
     structured/    # StructuredGeneticAlgorithm, the sequence operators, external proposal operators and their recorded calls
-  environments/    # Scenario, ScenarioSet, EpisodeResult, the Environment/BatchedEnvironment/Decoder interfaces, StepEnvironment
+  environments/    # Scenario, ScenarioSet, EpisodeResult, the Environment/BatchedEnvironment/Decoder interfaces, StepEnvironment,
+                   # GymnasiumEnvironment and LinearPolicy (Gymnasium, an optional extra)
   aggregators/     # Aggregator and its reductions (mean, minimum, maximum, total, quantile, cvar_upper, cvar_lower)
   evaluators/      # FunctionEvaluator, VectorisedEvaluator, EpisodeEvaluator
   recording/       # Recorder protocol, SQLiteRecorder run directory, genome encoding, checkpoint files, the writer lock, replay, a reader
-  # later: strategies/external/ (PycmaStrategy), a multi-objective strategy (8), recording (export)
+  # later: recording (export)
 benchmarks/        # the benchmark harness (single- and multi-objective, with pymoo as a benchmark-only reference), its configs, and the committed
                    # reports (frozen results are history)
 tests/             # tests of the package: unit tests on four backend configurations, integration tests on two corners (§7.4);
                    # tests/gpu is the GPU smoke suite (skipped unless --device is given), tests/support the shared fixtures
 docs/gpu-smoke/    # the reports of GPU smoke runs, one file per device and day
 docs/design/core.md
-# later: examples/ (the four rewritten notebooks, step 9)
+notebooks/         # the four executed notebooks: the introductory documentation (§11.3)
 ```
 
 ---
@@ -879,7 +915,10 @@ Each step ends with passing tests and is a candidate for its own Claude Code pro
 8. **Mixed spaces and multi-objective**, in two steps:
    - **8a, mixed search spaces (done):** `MixedSpace` with real, integer, binary and categorical dimensions in one array genome, type-aware operators in the numeric `GeneticAlgorithm` (MIES-style integer mutation, bit flips, categorical resampling, discrete recombination), `RandomSearch` on them, and two fixtures: a mixed-variable problem with a known optimum, and a polynomial regression with structure genes.
    - **8b, multi-objective (done):** `NSGA2` (non-dominated sorting with constrained domination, crowding distance, the crowded tournament through `PopulationView`) on `Box`, `MixedSpace` and `SequenceSpace`, SBX and polynomial mutation, scalarisation (`Scalarised`, `WeightedSum`, `Chebyshev`), and a multi-objective benchmark (ZDT1-3 and DTLZ2 against pymoo's NSGA-II and random search, by hypervolume and IGD+).
-9. **External strategies, adapters and examples:** `PycmaStrategy`, the Gymnasium adapter, and the four rewritten notebooks: Rastrigin, linear regression, logistic regression, polynomial regression (formerly step 9; the polynomial one depends on step 8).
+9. **External strategies, adapters and notebooks (done):** `PycmaStrategy` (pycma through the ask/tell contract, with the strategy's own random stream, failure substitution, and no checkpoints: the `supports_checkpoints` capability), the Gymnasium adapter (`GymnasiumEnvironment`, built on `StepEnvironment`, with seeds derived from the scenarios) and `LinearPolicy`, and the four notebooks (Rastrigin, linear regression, logistic regression, polynomial regression), executed in CI.
+
+
+**The roadmap is complete.** What comes next is in the open questions below (§15), in the toy domains that were deferred (§11.2: the two-ship encounter and the prompt-evolution domain, which would exercise the agent layer and structured genomes end to end beyond the test fixtures), and in the CUDA run of the GPU smoke suite that is still pending (§11.4, criterion 5), after which a first release can be considered. Nothing is published, tagged or versioned yet (§13).
 
 ---
 
@@ -908,3 +947,6 @@ Each step ends with passing tests and is a candidate for its own Claude Code pro
 - **NSGA-II on structure genes:** on the polynomial fixture `NSGA2` recovers the true model's terms on the front in 6 to 7 seeds of 10 and refines its coefficients slowly (§4.4): no step-size adaptation, and a population spread over the levels of complexity. Whether a self-adaptive real mutation (the numeric GA's) or a larger population should be the default for mixed spaces is a question for a benchmark.
 - **A mixed-variable multi-objective benchmark:** the benchmark has only real-valued multi-objective problems. A small set with discrete or mixed variables (a knapsack, a bi-objective feature selection) would test the discrete operators of `NSGA2`.
 - **The driver's archive on very large fronts:** it is vectorised but still compares each new point with the whole archive, so a run that produces tens of thousands of non-dominated points pays for it; a spatial index or periodic pruning would help. The strategies do not depend on it.
+- **Vectorised Gymnasium environments and multi-agent environments:** the adapter runs one environment per episode through `StepEnvironment`. `gymnasium.vector` (many environments stepped in one call, which would fit `BatchedEnvironment`) and PettingZoo (several agents, so several roles) are not covered.
+- **A native CMA-ES:** `PycmaStrategy` cannot be checkpointed or replayed cheaply (§3.4), is single-objective, `Box`-only and constraint-free, and its random numbers go through a per-call conversion from the strategy's stream. A native implementation, with a state that can be saved exactly, would remove those limits; it is not in the core, and pycma's integer-variable handling is not exposed.
+- **Replaying a long pycma run:** a resume replays from the start, re-running pycma's own computation for every generation (tens of microseconds per evaluation here, so a million evaluations take well under a minute): fine for the runs this framework is built for, where evaluations dominate, but a reason to prefer a strategy that checkpoints when evaluations are cheap.
