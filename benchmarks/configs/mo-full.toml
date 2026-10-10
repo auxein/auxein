@@ -1,0 +1,50 @@
+# The full multi-objective benchmark: NSGA-II (Auxein) against pymoo's NSGA-II and random search, on ZDT1, ZDT2, ZDT3 and DTLZ2.
+kind = "multi-objective"
+name = "mo-full"
+base_seed = 0
+runs = 25
+
+[report]
+references = ["auxein-nsga2"]
+
+# 25,000 evaluations for the two-objective ZDT problems (250 generations of 100), 30,000 for DTLZ2 (three objectives, 300 generations)
+[[problems]]
+name = "zdt1"
+budget = 25000
+
+[[problems]]
+name = "zdt2"
+budget = 25000
+
+[[problems]]
+name = "zdt3"
+budget = 25000
+
+[[problems]]
+name = "dtlz2"
+budget = 30000
+
+[[algorithms]]
+name = "auxein-nsga2"
+adapter = "auxein_nsga2"
+[algorithms.params]
+# explicit, and equal to pymoo's below: the textbook NSGA-II
+population_size = 100
+offspring_size = 100
+crossover_probability = 0.9
+sbx_eta = 15
+mutation_eta = 20
+
+[[algorithms]]
+name = "pymoo-nsga2"
+adapter = "pymoo_nsga2"
+[algorithms.params]
+population_size = 100
+offspring_size = 100
+crossover_probability = 0.9
+sbx_eta = 15
+mutation_eta = 20
+
+[[algorithms]]
+name = "random-search"
+adapter = "mo_random_search"

@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Generic
 
+import numpy as np
+import numpy.typing as npt
+
 from auxein.core import Evaluation, Objective, Status
 from auxein.core._typing import G
 
@@ -40,10 +43,6 @@ class RunResult(Generic[G]):
     """How many evaluations ended in each status (`ok`, `failed`, `timeout`), counting only those that were told."""
 
 
-def _dominates(a: tuple[float, ...], b: tuple[float, ...]) -> bool:
-    return all(x <= y for x, y in zip(a, b, strict=True)) and any(x < y for x, y in zip(a, b, strict=True))
-
-
 class ResultTracker(Generic[G]):
     """Keeps the best evaluation, the Pareto archive and the trace incrementally.
 
@@ -60,6 +59,7 @@ class ResultTracker(Generic[G]):
         self._best: Evaluation[G] | None = None
         self._best_key: tuple[int, float, float, int] | None = None
         self._front: list[tuple[tuple[float, ...], Evaluation[G]]] = []
+        self._points: npt.NDArray[np.float64] | None = None  # the objective values of the archive, one row per member
         self._trace: list[tuple[int, float]] = []
 
     @property
@@ -111,8 +111,22 @@ class ResultTracker(Generic[G]):
                 self._front = [((value,), evaluation)]
 
     def _archive(self, values: tuple[float, ...], evaluation: Evaluation[G]) -> None:
-        for member, _ in self._front:
-            if member == values or _dominates(member, values):
-                return  # dominated, or equal to an earlier one: the earliest candidate keeps the place
-        self._front = [(m, e) for m, e in self._front if not _dominates(values, m)]
+        """Add a point to the archive of non-dominated points, unless something covers it (dominates it or equals it: the
+        earliest candidate keeps the place), and drop what it dominates.
+
+        The comparison against the whole archive is one numpy expression, since an archive of a many-objective or a
+        well-converged run holds thousands of points and a Python loop over it per evaluation made the driver, not the
+        strategy, the cost of a multi-objective run."""
+        point = np.asarray(values, dtype=np.float64)
+        members = self._points
+        if members is not None and members.shape[0]:
+            if bool((members <= point).all(axis=1).any()):  # a member dominates the point or equals it
+                return
+            dominated = (point <= members).all(axis=1) & (point < members).any(axis=1)
+            if bool(dominated.any()):
+                keep = ~dominated
+                self._front = [item for item, kept in zip(self._front, keep.tolist(), strict=True) if kept]
+                members = members[keep]
         self._front.append((values, evaluation))
+        row: npt.NDArray[np.float64] = point[None, :]
+        self._points = row if members is None or not members.shape[0] else np.concatenate((members, row), axis=0)  # pyright: ignore[reportUnknownMemberType]

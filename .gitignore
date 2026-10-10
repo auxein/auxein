@@ -107,3 +107,6 @@ config.toml
 
 # Benchmark runs (committed baselines live in benchmarks/reports/)
 benchmarks/results/
+
+# Step prompts: instructions for the assistant, not part of the repository
+/auxein-*-prompt.md

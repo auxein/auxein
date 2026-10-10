@@ -15,7 +15,7 @@ import auxein
 from auxein.backend import backend_of
 from auxein.strategies.ga import GeneticAlgorithm
 from auxein.strategies.structured import ExternalMutation, SequenceMutation
-from tests.support import mixed, pointmass, sequences
+from tests.support import mixed, multiobjective, pointmass, sequences
 from tests.support.pointmass import PointMassEnvironment
 from tests.support.sequences import FakeLLM
 
@@ -40,6 +40,17 @@ def logged_mixed(genome: Any) -> Any:
     return mixed.evaluate_one(genome, backend_of(genome))
 
 
+def logged_zdt1(genome: Any) -> Any:
+    """ZDT1 for one genome (two objectives), taking about 3 ms and logging each call like `logged_sphere`."""
+    path = os.environ.get("AUXEIN_CALL_LOG")
+    if path:
+        with open(path, "a") as handle:
+            handle.write("x\n")
+    time.sleep(0.003)
+    f1, f2 = multiobjective.zdt1(backend_of(genome).to_numpy(genome)[None, :])[0]
+    return auxein.Result({"f1": float(f1), "f2": float(f2)})
+
+
 class LoggedPointMass(PointMassEnvironment):
     """The point mass, logging each episode it really runs (see `AUXEIN_CALL_LOG`), and taking a moment so that runs can be killed."""
 
@@ -58,6 +69,8 @@ class LoggedPointMass(PointMassEnvironment):
 def strategy_for(name: str) -> Any:
     if name == "random":
         return auxein.RandomSearch()
+    if name == "nsga2":
+        return auxein.NSGA2(population_size=12, offspring_size=12)
     if name == "structured":
         return auxein.StructuredGeneticAlgorithm(population_size=12, offspring_size=12)
     if name == "structured-llm":
@@ -87,6 +100,9 @@ def settings(config: dict[str, Any]) -> dict[str, Any]:
             "constraints": ["overshoot"],
             "descriptors": ["success_rate"],
         }
+    elif config.get("evaluator") == "biobjective":
+        evaluator = auxein.FunctionEvaluator(logged_zdt1)
+        problem = {"space": multiobjective.ZDT_SPACE, "objectives": [multiobjective.F1, multiobjective.F2]}
     elif config.get("evaluator") == "mixed":
         evaluator = auxein.FunctionEvaluator(logged_mixed)
         problem = {"space": mixed.SPACE, "objectives": [auxein.Objective("value")], "constraints": ["too_big"]}

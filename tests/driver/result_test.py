@@ -1,5 +1,8 @@
 import math
 
+import numpy as np
+import pytest
+
 from auxein.backend import Backend
 from auxein.core import Candidate, CandidateId, Cost, Evaluation, Objective, Result, Status
 from auxein.driver import Budget, RecordingDisabledWarning, RunResult, run
@@ -128,6 +131,35 @@ def test_a_new_point_removes_the_points_it_dominates():
     assert ids(tracker.pareto_front) == [3]
     tracker.add([ev(4, 0.4, 9.0, names=("loss", "time"))], 4)
     assert ids(tracker.pareto_front) == [3, 4]
+
+
+@pytest.mark.parametrize("objectives", [2, 3, 4])
+def test_the_archive_equals_the_one_a_plain_loop_over_all_pairs_would_keep(objectives: int):
+    """The archive is compared with the whole front in one numpy expression: it must keep exactly what the definition keeps,
+    with ties, duplicate points, constraints and failures, however the evaluations are grouped."""
+    rng = np.random.default_rng(objectives)
+    names = tuple(f"o{i}" for i in range(objectives))
+    tracker = ResultTracker([Objective(n) for n in names])
+    everything = []
+    for batch in range(30):
+        evaluations = []
+        for i in range(20):
+            number = batch * 20 + i
+            values = tuple(float(v) for v in rng.integers(0, 6, objectives))  # many ties and duplicates
+            violation = float(rng.integers(1, 3)) if rng.random() < 0.2 else 0.0
+            status = Status.FAILED if rng.random() < 0.05 else Status.OK
+            evaluations.append(ev(number, *values, violation=violation, status=status, names=names))
+        tracker.add(evaluations, batch * 20)
+        everything.extend(evaluations)
+        feasible = [e for e in everything if e.status is Status.OK and sum(e.constraints.values()) == 0]
+        points = {e.candidate.id: tuple(e.objectives[n] for n in names) for e in feasible}
+        expected = []
+        for cid, p in points.items():
+            covered = any(q != p and all(a <= b for a, b in zip(q, p, strict=True)) for q in points.values())
+            earlier_twin = any(q == p and other < cid for other, q in points.items())
+            if not covered and not earlier_twin:
+                expected.append(cid)
+        assert ids(tracker.pareto_front) == sorted(expected)
 
 
 def test_mixed_directions_are_handled_in_minimisation_form():

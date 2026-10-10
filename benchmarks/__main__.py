@@ -27,15 +27,30 @@ def main(argv: list[str] | None = None) -> None:
 
     args = parser.parse_args(argv)
     if args.command == "run":
-        from benchmarks.config import load_config
-        from benchmarks.runner import run_benchmark
+        from benchmarks.mo_config import KIND, config_kind
 
-        out_dir = run_benchmark(load_config(args.config), args.results_root, args.workers, args.skip_overhead)
-        print(out_dir)
+        if config_kind(args.config) == KIND:
+            from benchmarks.mo_config import load_mo_config
+            from benchmarks.mo_runner import run_mo_benchmark
+
+            print(run_mo_benchmark(load_mo_config(args.config), args.results_root, args.workers))
+        else:
+            from benchmarks.config import load_config
+            from benchmarks.runner import run_benchmark
+
+            print(run_benchmark(load_config(args.config), args.results_root, args.workers, args.skip_overhead))
     else:
-        from benchmarks.report import build_report
+        import json
 
-        print(build_report(args.results_dir))
+        metadata = json.loads((args.results_dir / "metadata.json").read_text())
+        if metadata["config"].get("kind") == "multi-objective":
+            from benchmarks.mo_report import build_mo_report
+
+            print(build_mo_report(args.results_dir))
+        else:
+            from benchmarks.report import build_report
+
+            print(build_report(args.results_dir))
 
 
 if __name__ == "__main__":

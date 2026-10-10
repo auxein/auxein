@@ -8,7 +8,7 @@ It exists so that changes to Auxein can be judged against stored results. The co
 
 The 0.x engine was removed from the repository in step 3b of the redesign (it remains at the git tag `v0.2.0`), so the harness no longer runs it. Its results are kept as they were committed. A new version of Auxein is compared against them, which is valid because the instances and seeds of `configs/full.toml` are fixed: run `full.toml` on the new version, and compare its runs with the stored `runs.jsonl` per problem and dimension. To reproduce the 0.2.0 results themselves, check out the commit recorded in `reports/baseline-0.2.0/metadata.json` (`git_sha`): the tag `v0.2.0` has the engine but predates the harness, while that commit has both. Timing figures depend on the machine; compare them only with results produced on the same one.
 
-It measures two things:
+It measures two things (and, for the multi-objective family below, a third):
 
 1. **Quality**: the best (true) error each algorithm finds for a fixed budget of fitness evaluations, on five problems, in 2, 10 and 30 dimensions, over many paired runs.
 2. **Engine overhead**: wall-clock time per evaluation on a negligible-cost objective, for different dimensions and population sizes.
@@ -105,3 +105,12 @@ To benchmark another version of Auxein, install it in the environment and run th
 ## Checks of the harness itself
 
 `benchmarks/tests/sanity_test.py` (and the "Sanity checks" section of the report) confirm that the harness is right, not just the algorithms: CMA-ES must reach 10⁻⁶ on the 10-D sphere and ellipsoid within the full budget in at least 90% of runs, and random search must not reach 10⁻³ on the 10-D sphere. If one fails, suspect the harness first.
+
+## Multi-objective benchmarks
+
+A second family, with its own problems, objective, runner and report (`mo_*.py`), for multi-objective algorithms. It is added next to the single-objective one and changes none of it: the problems are **ZDT1, ZDT2, ZDT3** (two objectives, 30 variables) and **DTLZ2** (three objectives, 12 variables), all on [0, 1]^d, each with its known Pareto front as a dense reference set.
+
+- **What is measured.** `MOCountingObjective` counts evaluations, enforces the budget and keeps the **non-dominated set of everything the run has evaluated** (so algorithms are compared on what they found, not on what they kept). At log-spaced evaluation counts it records the **hypervolume** of that set against a fixed reference point (1.1 times the nadir of the true front) and **IGD+** to the true front, both computed by pymoo, which only the benchmarks use (the `bench` group; `auxein` never imports it).
+- **Algorithms:** `auxein-nsga2` (`NSGA2`), `pymoo-nsga2` (pymoo's NSGA-II with the same population, operators and parameters; the remaining differences are listed in the report) and `random-search`.
+- **Running it:** `configs/mo-full.toml` (25 runs; 25,000 evaluations for ZDT, 30,000 for DTLZ2; about a minute on 12 cores) and `configs/mo-quick.toml` (the CI smoke run). `python -m benchmarks run --config ...` chooses the family from the config's `kind = "multi-objective"`, and `report` from the results' metadata. The report has hypervolume convergence plots, the final fronts of the first run against the true front, summary tables, Mann–Whitney tests with Holm correction and A₁₂ (the probability that the reference has the higher hypervolume), the acceptance criteria and the methodology. Only the first run of each cell keeps its final front in `runs.jsonl`.
+- The committed result is [`reports/nsga2-0.3.0-dev/`](reports/nsga2-0.3.0-dev/report.md).
