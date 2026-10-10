@@ -72,7 +72,7 @@ def problem() -> ProblemSpec[Any]:
 def optimum_genome(backend: Backend) -> Array:
     """The genome with value 0, as a `(d,)` array on the backend."""
     mode, bits = BEST["mode"], np.array(BEST["bits"], dtype=np.float64)
-    t = targets(np, np.array([mode]), bits[None, :], np.float64)[0]
+    t = targets(Backend().xp, np.array([mode]), bits[None, :], np.float64)[0]  # numpy's array API namespace: 1.26 has no `np.astype`
     return backend.asarray(np.array([t[0], t[1], t[2], BEST["k"], BEST["m"], *BEST["bits"], mode], dtype=np.float64))
 
 

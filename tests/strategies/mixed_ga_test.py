@@ -269,3 +269,11 @@ def test_unused_terms_are_not_kept_for_free():
     spurious[7 + 4] = 1.0  # a zero coefficient switched on: same fit, a higher price
     assert float(mx.polynomial_evaluate(backend.asarray(spurious[None, :]), backend)[0]) == pytest.approx(0.08, abs=1e-9)
     _ = genome, warnings
+
+
+def test_the_optimum_genome_of_the_fixture_is_valid_and_has_value_zero(backend: Backend):
+    genome = mx.optimum_genome(backend)
+    assert mx.SPACE.contains(genome)
+    result = mx.evaluate(genome[None, :], backend)
+    assert float(backend.to_numpy(result.objectives["value"])[0]) == pytest.approx(0.0, abs=1e-6)
+    assert float(backend.to_numpy(result.constraints["too_big"])[0]) == 0.0
