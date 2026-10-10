@@ -206,7 +206,7 @@ class NSGA2(Generic[G]):
     def _array_operator(given: object, what: str, default: Any) -> Any:
         if given is None:
             return default
-        if hasattr(given, "mutate") and not hasattr(given, "weights") and what == "recombination":
+        if what == "recombination" and not hasattr(given, "weights"):
             raise TypeError(f"{what} {given!r} is a structured operator, but the space is made of arrays")
         if what == "mutation" and not hasattr(given, "adaptive"):
             raise TypeError(f"{what} {given!r} is not a mutation of the numeric genetic algorithm, but the space is made of arrays")

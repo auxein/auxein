@@ -92,7 +92,7 @@ class SimulatedBinaryCrossover:
         # a crossed gene lands on either side of the midpoint, with a fair coin per gene: w = (1 +/- beta) / 2. This is what makes
         # SBX contract a population (the children of a pair are centred on the parents' midpoint), unlike a child that is always
         # on its first parent's side
-        side = xp.where(rng.uniform((count, dim)) < 0.5, 1.0, -1.0)
+        side = 2.0 * xp.astype(rng.uniform((count, dim)) < 0.5, backend.dtype) - 1.0  # +1 or -1, in the backend's dtype
         crossed_weight = (1.0 + side * beta) / 2.0
         # a gene that is not crossed comes from one parent, the same for the whole child: the first or the second of the pair
         first_child = rng.uniform((count, 1)) < 0.5
