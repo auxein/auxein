@@ -1,6 +1,6 @@
 """The new Auxein core: the driver with `RandomSearch`, on a `Box`, evaluating the harness's counting objective.
 
-It exists to cross-check the new driver against the harness: with `RandomSearch` it must be statistically
+It exists to cross-check the driver against the harness: with `RandomSearch` it must be statistically
 indistinguishable from the harness's own random search (see benchmarks/tests/crosscheck_test.py).
 
 `backend`, `precision` and `device` in the params choose the numeric backend of the run (default numpy, float64, cpu).

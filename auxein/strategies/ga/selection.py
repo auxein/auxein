@@ -8,7 +8,7 @@ from auxein.strategies.ga.base import PopulationView
 def distinct_partners(first: Array, second: Array, population_size: int, rng: RandomStream, view: PopulationView) -> Array:
     """The second parents, with any that equals its first parent replaced by a uniformly random *other* member.
 
-    This is what keeps the parents of a child distinct (the 0.x engine allowed self-mating). It needs at least two members.
+    This is what keeps the parents of a child distinct (no self-mating). It needs at least two members.
     """
     xp = view.backend.xp
     valid = view.valid

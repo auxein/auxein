@@ -41,7 +41,7 @@ class SelfAdaptiveMutation:
       learning rates `tau' = 1/sqrt(2d)` (global) and `tau = 1/sqrt(2 sqrt(d))` (per gene).
 
     The genes then move by `sigma' * width * N(0, 1)`. Step sizes are relative to the box width and bounded below by
-    `min_step`, so that they can't collapse to zero (the 0.x implementation had no bound). They are strategy state keyed
+    `min_step`, so that they can't collapse to zero. They are strategy state keyed
     by candidate id, not part of the genome (design doc §4.1).
     """
 

@@ -8,7 +8,7 @@
 
 **Auxein is a Python framework for evolving agents that act in environments.** It searches over agent designs (genomes), which can be numeric parameters, structures or text. It does this by proposing candidates, evaluating them in an environment across a set of scenarios, and selecting on the outcomes. It works with any type of genome and any environment, and treats evaluation as the expensive step: evaluations are budgeted and batched, and may be asynchronous or noisy. Function optimisation, regression and model fitting are supported directly.
 
-This document defines the core architecture of the next version of Auxein. It replaces the 0.x design entirely: **no backward compatibility is kept**. The fixed 0.x engine is tagged `v0.2.0` and kept only as the reference point for benchmark comparisons.
+This document defines the core architecture of Auxein: what it is, how each part works, how it was validated and what is left open.
 
 ### 1.1 Design principles
 
@@ -56,9 +56,9 @@ This document defines the core architecture of the next version of Auxein. It re
 
 ### 3.1 Why
 
-In 0.x the playground owned the loop and called the fitness function from several places (population building, replacement, `Population.update()`). The algorithm decided when evaluation happened and waited for each one.
+An algorithm that calls the fitness function itself decides when evaluation happens and waits for each call, so evaluation cannot be made concurrent, recorded or budgeted from outside.
 
-In the new core, **strategies never call evaluators**. A strategy proposes candidates (`ask`) and receives evaluations (`tell`). A separate **driver** runs the loop. This separation is what makes the following possible without changes to the core:
+In Auxein, **strategies never call evaluators**. A strategy proposes candidates (`ask`) and receives evaluations (`tell`). A separate **driver** runs the loop. This separation is what makes the following possible without changes to the core:
 
 - synchronous generations, steady-state, asynchronous and distributed evaluation
 - evaluations of very different cost: microsecond functions, GPU batches, long simulations, rate-limited LLM calls
@@ -134,7 +134,7 @@ Auxein keeps its character as a toolkit of interchangeable operators. A `Genetic
 - **bounds repair**: clip and reflect
 - **initialisation**: sampling from the search space
 
-The operator ideas from 0.x are re-implemented, not ported, and the limitations of 0.x are fixed by design: the number of offspring is exact, the two parents of a child are distinct members, every candidate is evaluated exactly once (the population is never re-scored), and step sizes have a lower bound.
+The operators avoid the usual pitfalls by design: the number of offspring is exact, the two parents of a child are distinct members, every candidate is evaluated exactly once (the population is never re-scored), and step sizes have a lower bound.
 
 **Failed candidates (§6.6)** have infinite violation and rank last, so a failed child never displaces a member that did not fail, and **a member that failed is never chosen as a parent while any other exists**: tournaments are drawn from the members that did not fail, SUS gives failed members no weight, and a partner is always another such member. With fewer than two of them, the GA samples random candidates instead of breeding, as it does at the start. Failed members never count in the convergence test.
 
@@ -142,7 +142,7 @@ The operator ideas from 0.x are re-implemented, not ported, and the limitations 
 
 **One ranking is used everywhere** (survivors, tournaments, elites): feasible before infeasible, then a lower total violation, then a lower objective in minimisation form, then a lower candidate id. Failed and timed-out evaluations appear as NaN objectives and infinite violation, so they rank last without a special case.
 
-**Breeding.** Parent selection, recombination, mutation, bounds repair, in that order: recombine first, then mutate (unlike 0.x).
+**Breeding.** Parent selection, recombination, mutation, bounds repair, in that order: recombine first, then mutate.
 
 - *Tournament:* each parent is the best of `k` members drawn uniformly at random. *SUS:* the weight of a feasible member is `max(g − (mean(g) − c·std(g)), 0)` with goodness `g = −value` and `c = 2`; infeasible members have weight 0 unless none is feasible, when the weights come from a lower violation in the same way; if the weights are all zero or not finite the selection is uniform. A feasible member whose objective is not finite *in the precision of the run* (a value beyond float32's range) has no goodness to weigh and gets weight 0 too, instead of making the scale infinite and every weight NaN (step 7).
 - *Distinct parents:* when the second parent of a child equals the first, it is replaced by a uniformly random other member (at least two members are needed to breed).
@@ -154,7 +154,7 @@ The operator ideas from 0.x are re-implemented, not ported, and the limitations 
 
 **The ask/tell behaviour.** The first `ask` returns the whole initial population (origin `"init"`), whatever `n` the driver suggests. Afterwards `ask` returns exactly λ children (`offspring_size`), or exactly `n` when it is `None`, with their parents recorded and origins that name the operators, e.g. `"tournament+intermediate+self_adaptive"` (`copy` stands for the recombination of a child that copies a parent). Children that were asked for and not yet told are pending, with their parents' step sizes inherited; asking again before results arrive is allowed, and children are bred from the population as it is. Children that are never told (budget truncation) are dropped. If fewer than two members exist, because the initial candidates are still being evaluated, `ask` returns more random candidates. `tell` accepts any grouping of pending children. The strategy is single-objective, supports constraints, needs a `Box` or a `MixedSpace` (below), and `should_stop` is false unless a convergence tolerance is given (the objective spread of a full population is below it, and every step size is at its floor).
 
-**The default configuration** (`GeneticAlgorithm()`) was chosen by benchmark among three candidates on instances other than those of the comparison with 0.2.0: μ = λ = 50, tournament selection (k = 2), intermediate recombination, one self-adaptive step size per individual (initial step 0.1 of the box width, floor 10⁻¹²) and clipping. The candidates (A: this one; B: as A with one step size per gene; C: as A with SUS and sigma scaling) ended within 0.5 of each other in mean rank of the median final error (C 1.70, A 2.10, B 2.20; an earlier run of the same selection gave A 1.80, B 2.10, C 2.10), a near tie, so the simplest configuration was chosen. The results are in `benchmarks/reports/ga-default-selection/`.
+**The default configuration** (`GeneticAlgorithm()`) was chosen by benchmark among three candidates on instances other than those of the reference comparison (§11.4, criterion 2): μ = λ = 50, tournament selection (k = 2), intermediate recombination, one self-adaptive step size per individual (initial step 0.1 of the box width, floor 10⁻¹²) and clipping. The candidates (A: this one; B: as A with one step size per gene; C: as A with SUS and sigma scaling) ended within 0.5 of each other in mean rank of the median final error (C 1.70, A 2.10, B 2.20; an earlier run of the same selection gave A 1.80, B 2.10, C 2.10), a near tie, so the simplest configuration was chosen. The results are in `benchmarks/reports/ga-default-selection/`.
 
 **Mixed spaces (step 8a).** On a `MixedSpace` (§4.5) the genome is one float array with real, integer, binary and categorical columns, and the GA applies **type-aware operators**, following mixed-integer evolution strategies (MIES, Li et al.). On a `Box` the GA runs exactly the code described above: its results for a given seed are byte-identical to before, pinned by the golden test, and the mixed support is additive (a `MixedVariation` object that exists only when the space is mixed).
 
@@ -828,7 +828,7 @@ These are the four notebooks of `notebooks/` (step 9), **the introductory docume
 | # | Criterion | Status |
 |---|---|---|
 | 1 | Generality | **Deferred** with the toy domains (§11.2); validated by fixtures instead (agent layer, structured genomes, mixed spaces) |
-| 2 | Benchmark against 0.2.0 | **Met** (step 3a) |
+| 2 | Benchmark against the stored reference results | **Met** (step 3a) |
 | 3 | Determinism | **Met** (step 4a): the same seed gives the same event log across executors, workers and sync or async evaluators; extended by resume (criterion 4) |
 | 4 | Resume | **Met** (step 5) |
 | 5 | Backends | **CPU met** (step 7); **GPU pending**: the smoke suite passes on Apple Metal (author's run) and on the CPU as a dry run, and a CUDA run is still to be recorded |
@@ -837,8 +837,8 @@ These are the four notebooks of `notebooks/` (step 9), **the introductory docume
 
 
 1. **Generality:** *deferred* together with the toy domains (§11.2). It said that both toy domains and all problems in §11.3 run on the same core, with no special cases in the core. The agent layer (step 6a) and structured genomes (step 6b) are validated by test fixtures instead.
-2. **Benchmark:** with a harness adapter for the new core, the `GeneticAlgorithm` strategy at equal evaluation budgets is **not statistically worse than the `v0.2.0` baseline** on any problem and dimension of the benchmark suite. Its **overhead per evaluation is lower**.
-   *Outcome (step 3a, [`benchmarks/reports/core-ga-0.3.0-dev/`](../../benchmarks/reports/core-ga-0.3.0-dev/report.md)):* **met.** The default `GeneticAlgorithm` is better than the 0.2.0 default on all 15 problem × dimension cells of the suite (large effect, Holm-adjusted p ≤ 10⁻⁷), and its time per evaluation is lower at every population size and dimension of the overhead benchmark (4.9 to 7.6 µs against 9.2 to 12.1 µs), after an optimisation of the driver and the strategy that the first run of the comparison called for.
+2. **Benchmark:** with a harness adapter for the core, the `GeneticAlgorithm` strategy at equal evaluation budgets is **not statistically worse than the stored reference results** (frozen in `benchmarks/reports/`) on any problem and dimension of the benchmark suite. Its **overhead per evaluation is lower**.
+   *Outcome (step 3a, [`benchmarks/reports/core-ga-0.3.0-dev/`](../../benchmarks/reports/core-ga-0.3.0-dev/report.md)):* **met.** The default `GeneticAlgorithm` is better than the reference on all 15 problem × dimension cells of the suite (large effect, Holm-adjusted p ≤ 10⁻⁷), and its time per evaluation is lower at every population size and dimension of the overhead benchmark (4.9 to 7.6 µs against 9.2 to 12.1 µs for the reference), after an optimisation of the driver and the strategy that the first run of the comparison called for.
 3. **Determinism:** in deterministic mode, the same seed produces an identical event log across synchronous and asynchronous evaluators and any worker count.
 4. **Resume:** a run killed and resumed from a checkpoint produces the same event log as an uninterrupted run.
    *Outcome (step 5):* **met.** Tests kill runs with `SIGKILL` at three points (before the first checkpoint, between checkpoints, near the end) in both delivery modes, with inline, thread and process executors, `concurrency` 1 and 4, and `RandomSearch` and `GeneticAlgorithm`, and resume them: the event log equals the uninterrupted run's, and the evaluation function runs only for the evaluations that were not recorded. A run killed twice, an interrupted run, a crash between recording a batch and telling it, replay with and without checkpoints, and a run extended from 2,000 to 5,000 evaluations all give the same log as the run that was never stopped; extension is also tested on numpy float32 and PyTorch in both precisions.
@@ -890,8 +890,7 @@ notebooks/         # the four executed notebooks: the introductory documentation
 
 ## 13. Versioning
 
-- **No backward compatibility** with 0.x. The 0.x engine was removed in step 3b, and the git tag **`v0.2.0`** is its reference: the fixed engine, its notebooks and its documentation stay available there, and its benchmark results are kept, frozen, in `benchmarks/reports/baseline-0.2.0/`.
-- The new core is versioned **0.3.0** onwards and stays on **0.x** until the API has settled. **0.3.0 is released** (PyPI, with the extras `torch`, `cma` and `gymnasium`), with one acceptance item still open: the CUDA run of the GPU smoke suite (§11.4, criterion 5), whose report is committed when it has been made. A release is a GitHub release of a `v<version>` tag: the release workflow builds the package and publishes it with PyPI trusted publishing.
+- The current version is **0.3.0**, and the project stays on **0.x** until the API has settled. **0.3.0 is released** (PyPI, with the extras `torch`, `cma` and `gymnasium`), with one acceptance item still open: the CUDA run of the GPU smoke suite (§11.4, criterion 5), whose report is committed when it has been made. A release is a GitHub release of a `v<version>` tag: the release workflow builds the package and publishes it with PyPI trusted publishing.
 
 ---
 
@@ -902,8 +901,8 @@ Each step ends with passing tests and is a candidate for its own Claude Code pro
 1. **Foundations (done):** core types, `Space`/`Box`, backend, random streams, deterministic ids. The backend and random layers are tested on numpy and PyTorch (CPU) from the start, so the abstraction is proven on two backends early.
 2. **Minimal driver (done):** synchronous generation mode, `FunctionEvaluator`, `VectorisedEvaluator`, budgets, SQLite recorder (metadata + event log), and `RandomSearch`, cross-checked against the benchmark harness's own random search.
 3. **Strategies (done):**
-   - **3a:** `GeneticAlgorithm` with array-based operators, its benchmark-harness adapter, the choice of its default configuration, and the first comparison with the `v0.2.0` baseline.
-   - **3b:** removing the 0.x engine, and switching the public API (`auxein/__init__.py`) to the new core.
+   - **3a:** `GeneticAlgorithm` with array-based operators, its benchmark-harness adapter, the choice of its default configuration, and the first comparison with the stored reference results.
+   - **3b:** the public API (`auxein/__init__.py`) is the core's, and nothing else is importable from the package.
 4. **Asynchrony (done):**
    - **4a (done):** concurrent evaluation (`concurrency`, `executor`), steady-state delivery, deterministic mode and throughput mode, numpy-backed per-candidate streams.
    - **4b (done):** failure policies, the first-failure warning and the all-failures guard, timeouts (hard for `async def` and processes, soft for threads), Auxein's own process pool with crash handling, and failure-aware parent selection in the GA.

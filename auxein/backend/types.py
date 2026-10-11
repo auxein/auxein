@@ -1,7 +1,7 @@
 """Type aliases for arrays.
 
 numpy arrays and torch tensors have no common static type, and the array API standard is a runtime contract rather
-than a class hierarchy. Both aliases are therefore `Any`. This is the one place in the new core where `Any` is
+than a class hierarchy. Both aliases are therefore `Any`. This is the one place in the package where `Any` is
 unavoidable; everything else is typed in terms of these aliases, which keeps the exception visible and in one place.
 """
 

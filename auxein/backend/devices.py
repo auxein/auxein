@@ -32,7 +32,7 @@ def torch_installed() -> bool:
 
 
 def import_torch() -> Any:
-    """Import torch lazily. It is optional, and typed as `Any` so that the new core type-checks without it."""
+    """Import torch lazily. It is optional, and typed as `Any` so that the package type-checks without it."""
     return importlib.import_module("torch")
 
 

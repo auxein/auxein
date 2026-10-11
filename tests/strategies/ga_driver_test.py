@@ -35,7 +35,7 @@ def go(strategy, evaluator=None, evaluations: int = 20000, dim: int = 10, seed: 
 def test_the_default_configuration_solves_the_10d_sphere_within_20000_evaluations(backend: Backend):
     result = go(GeneticAlgorithm(), backend=backend)
     assert result.evaluations_used == 20000 and result.stop_reason == "budget:evaluations"
-    assert result.best is not None and result.best.objectives["value"] < 1e-6  # 0.2.0's default ended around 2 (sphere benchmark)
+    assert result.best is not None and result.best.objectives["value"] < 1e-6
     assert [v for _, v in result.trace] == sorted((v for _, v in result.trace), reverse=True)
 
 

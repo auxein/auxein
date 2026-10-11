@@ -1,4 +1,4 @@
-"""Fixtures shared by the tests of the new core: every test that takes `backend` runs on each available backend and precision."""
+"""Fixtures shared by the tests: every test that takes `backend` runs on each available backend and precision."""
 
 from collections.abc import Iterator
 
