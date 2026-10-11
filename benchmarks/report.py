@@ -18,7 +18,7 @@ from benchmarks.runner import read_jsonl  # noqa: E402
 
 ERROR_FLOOR = 1e-10  # errors are clipped here in the plots, so that exact zeros fit on a log axis
 
-# the colours of the algorithms of the committed 0.2.0 results are kept, so that those reports can still be regenerated
+# the colours of the algorithms of the committed reports are kept, so that those reports can still be regenerated
 # categorical slots 1, 2, 3, 7, 5 of the reference palette (validated light-mode set), assigned by algorithm
 COLORS = {
     "auxein-default": "#2a78d6",

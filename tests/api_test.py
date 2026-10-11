@@ -1,5 +1,6 @@
 """The public API of the `auxein` package, and the README quickstart (which must keep running)."""
 
+import pkgutil
 import re
 import subprocess
 import sys
@@ -95,11 +96,26 @@ def test_importing_auxein_does_not_configure_logging():
     assert result.stdout.split() == ["30", "0"]  # the root logger is untouched: WARNING and no handlers
 
 
-def test_the_old_engine_is_gone():
-    for name in ("fitness", "mutations", "parents", "playgrounds", "population", "recombinations", "replacements"):
-        with pytest.raises(ModuleNotFoundError):
-            __import__(f"auxein.{name}")
-    # the 0.x notebooks were removed in step 3b and rewritten for the new API in step 9: only the four new ones exist
+def test_the_package_has_exactly_the_documented_subpackages():
+    subpackages = {module.name for module in pkgutil.iter_modules(auxein.__path__) if module.ispkg}
+    expected = {
+        "aggregators",
+        "backend",
+        "core",
+        "driver",
+        "environments",
+        "evaluators",
+        "execution",
+        "random",
+        "recording",
+        "spaces",
+        "strategies",
+    }
+    assert subpackages == expected
+    assert not [module.name for module in pkgutil.iter_modules(auxein.__path__) if not module.ispkg]
+
+
+def test_the_notebooks_directory_holds_exactly_the_four_introductory_notebooks():
     notebooks = {path.stem for path in (ROOT / "notebooks").glob("*.ipynb")}
     assert notebooks == {"rastrigin", "linear_regression", "logistic_regression", "polynomial_regression"}
 

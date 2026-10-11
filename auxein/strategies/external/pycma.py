@@ -81,6 +81,13 @@ class PycmaStrategy:
 
     **Precision.** pycma computes in float64. Candidates are converted to the run's backend and precision for evaluation, and
     pycma is told the float64 points it asked for, with the values of the (rounded) candidates that were evaluated.
+
+    References:
+        Hansen, N. and Ostermeier, A. (2001). Completely derandomized self-adaptation in evolution strategies.
+            Evolutionary Computation, 9(2), 159-195.
+        Hansen, N. (2016). The CMA evolution strategy: a tutorial. arXiv:1604.00772.
+        Hansen, N., Akimoto, Y. and Baudis, P. (2019). CMA-ES/pycma on GitHub. Zenodo.
+            https://doi.org/10.5281/zenodo.2559634
     """
 
     capabilities = StrategyCapabilities(max_objectives=1, supports_constraints=False, tell_mode="generation", supports_checkpoints=False)

@@ -36,6 +36,12 @@ class IntegerMutation:
     `τ = 1/√k` for `k` integer genes) and is kept in `[min_step, range]`. The lower bound is what keeps an integer gene
     from ever freezing: at `min_step` a mutated gene still moves with probability `2·min_step/(1 + 2·min_step)`.
     The result is clipped to the bounds. `probability` defaults to `1/k`, the usual MIES rate.
+
+    References:
+        Rudolph, G. (1994). An evolutionary algorithm for integer programming. In Parallel Problem Solving from Nature
+            (PPSN III), LNCS 866, pp. 139-148. Springer.
+        Li, R., Emmerich, M. T. M., Eggermont, J., Bäck, T., Schütz, M., Dijkstra, J. and Reiber, J. H. C. (2013).
+            Mixed integer evolution strategies for parameter optimization. Evolutionary Computation, 21(1), 29-64.
     """
 
     name = "geometric"

@@ -41,8 +41,13 @@ class SelfAdaptiveMutation:
       learning rates `tau' = 1/sqrt(2d)` (global) and `tau = 1/sqrt(2 sqrt(d))` (per gene).
 
     The genes then move by `sigma' * width * N(0, 1)`. Step sizes are relative to the box width and bounded below by
-    `min_step`, so that they can't collapse to zero (the 0.x implementation had no bound). They are strategy state keyed
+    `min_step`, so that they can't collapse to zero. They are strategy state keyed
     by candidate id, not part of the genome (design doc §4.1).
+
+    References:
+        Schwefel, H.-P. (1981). Numerical Optimization of Computer Models. Wiley.
+        Beyer, H.-G. and Schwefel, H.-P. (2002). Evolution strategies: a comprehensive introduction. Natural
+            Computing, 1(1), 3-52. https://doi.org/10.1023/A:1015059928466
     """
 
     adaptive = True
@@ -97,7 +102,7 @@ class SelfAdaptiveMutation:
 
 
 class PolynomialMutation:
-    """Bounded polynomial mutation (Deb), the standard real-coded mutation of NSGA-II: non-adaptive, with a distribution index.
+    """Bounded polynomial mutation, the standard real-coded mutation of NSGA-II: non-adaptive, with a distribution index.
 
     A mutated gene moves by a random fraction of the box width drawn from a polynomial distribution around its current value,
     **truncated at the bounds**: the distribution is built from the gene's distance to each bound, so a gene near a wall
@@ -107,6 +112,11 @@ class PolynomialMutation:
 
     It needs the bounds, which a mutation protocol call does not carry (it gets the width only), so the strategy binds them
     with `bounded(lower, upper)`, which returns a copy: an operator object is never changed, and can be shared.
+
+    References:
+        Deb, K. and Goyal, M. (1996). A combined genetic adaptive search (GeneAS) for engineering design. Computer
+            Science and Informatics, 26(4), 30-45.
+        Deb, K. (2001). Multi-Objective Optimization using Evolutionary Algorithms. Wiley.
     """
 
     name = "polynomial"

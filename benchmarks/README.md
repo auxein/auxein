@@ -2,11 +2,11 @@
 
 A harness to measure, repeatably and fairly, how good the solutions found by Auxein (and by other algorithms) are, and how much time the framework itself spends per fitness evaluation. It is not part of the installed package: it lives in `benchmarks/` and its dependencies are in the `bench` dependency group (installed by a plain `uv sync`).
 
-It exists so that changes to Auxein can be judged against stored results. The committed results are history and are never edited: the baseline of the 0.2.0 engine, [`reports/baseline-0.2.0/`](reports/baseline-0.2.0/report.md); the first comparison of the new core's `GeneticAlgorithm` with it, [`reports/core-ga-0.3.0-dev/`](reports/core-ga-0.3.0-dev/report.md); and how the default configuration of that strategy was chosen, [`reports/ga-default-selection/`](reports/ga-default-selection/report.md).
+It exists so that changes to Auxein can be judged against stored results. The committed reports in [`reports/`](reports/) are history and are never edited: the reference results that later runs are compared with; the first comparison of the `GeneticAlgorithm` with them, [`reports/core-ga-0.3.0-dev/`](reports/core-ga-0.3.0-dev/report.md); and how the default configuration of that strategy was chosen, [`reports/ga-default-selection/`](reports/ga-default-selection/report.md).
 
-## The 0.2.0 results are a frozen baseline
+## The stored results are a frozen reference
 
-The 0.x engine was removed from the repository in step 3b of the redesign (it remains at the git tag `v0.2.0`), so the harness no longer runs it. Its results are kept as they were committed. A new version of Auxein is compared against them, which is valid because the instances and seeds of `configs/full.toml` are fixed: run `full.toml` on the new version, and compare its runs with the stored `runs.jsonl` per problem and dimension. To reproduce the 0.2.0 results themselves, check out the commit recorded in `reports/baseline-0.2.0/metadata.json` (`git_sha`): the tag `v0.2.0` has the engine but predates the harness, while that commit has both. Timing figures depend on the machine; compare them only with results produced on the same one.
+The reference results are kept as they were committed. A version of Auxein is compared against them, which is valid because the instances and seeds of `configs/full.toml` are fixed: run `full.toml` on that version, and compare its runs with the stored `runs.jsonl` per problem and dimension. To reproduce a stored report itself, check out the commit recorded in its `metadata.json` (`git_sha`). Timing figures depend on the machine; compare them only with results produced on the same one.
 
 It measures two things (and, for the multi-objective family below, a third):
 
@@ -15,7 +15,7 @@ It measures two things (and, for the multi-objective family below, a third):
 
 ## Why the budget is in evaluations
 
-Generations differ in size between algorithms. An Auxein generation with population 200 costs 204 evaluations, because `Population.update()` re-scores everyone, while a CMA-ES generation in 10-D costs about 10. Comparing algorithms after the same number of generations would compare very different amounts of work. So every algorithm gets the same number of fitness evaluations, and progress is always plotted against evaluations.
+Generations differ in size between algorithms. A `GeneticAlgorithm` generation costs its offspring size (50 evaluations by default), while a CMA-ES generation in 10-D costs about 10. Comparing algorithms after the same number of generations would compare very different amounts of work. So every algorithm gets the same number of fitness evaluations, and progress is always plotted against evaluations.
 
 The budget is enforced outside the algorithms. `CountingObjective` (`objective.py`) wraps a problem, counts every call, records the best *true* error so far at log-spaced evaluation counts, and raises `BudgetExhausted` on the call that would exceed the budget, so no algorithm can overspend. The initial population counts against the budget, and a partial generation is fine. On noisy problems the algorithm sees the noisy value, but the trace records the noise-free error of the evaluated point, so what is measured is quality, not luck.
 
@@ -46,7 +46,7 @@ TOML files in `configs/`: the problems, dimensions, number of runs, the budget p
 |---|---|
 | `problems.py` | the `Problem` interface and the five problems (sphere, ellipsoid, Rosenbrock, Rastrigin, noisy sphere) |
 | `objective.py` | `CountingObjective`, `BudgetExhausted` and the trace checkpoints |
-| `adapters/` | one module per algorithm: random search, CMA-ES, the new core's driver with `RandomSearch` (`auxein_core_random`, a cross-check of the driver) and with `GeneticAlgorithm` (`auxein_core_ga`, configured by operator tables) |
+| `adapters/` | one module per algorithm: random search, CMA-ES, Auxein's driver with `RandomSearch` (`auxein_core_random`, a cross-check of the driver) and with `GeneticAlgorithm` (`auxein_core_ga`, configured by operator tables) |
 | `runner.py`, `config.py`, `metadata.py` | parallel runs, the overhead benchmark, configs and result metadata |
 | `report.py`, `stats.py` | the report: plots, tables and statistics |
 | `tests/` | tests of the harness, run by the main `uv run pytest` |

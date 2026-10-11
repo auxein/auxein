@@ -83,6 +83,11 @@ class WeightedSum:
     A maximised objective enters with the sign of its direction (so a positive weight always means "more of this is worse"
     for a minimised objective and "less of this is worse" for a maximised one). The weights are named, not positional. A
     weighted sum with positive weights can only find points on the *convex* part of a Pareto front.
+
+    References:
+        Zadeh, L. A. (1963). Optimality and non-scalar-valued performance criteria. IEEE Transactions on Automatic
+            Control, 8(1), 59-60.
+        Miettinen, K. (1999). Nonlinear Multiobjective Optimization. Kluwer Academic Publishers.
     """
 
     weights: Mapping[str, float]
@@ -111,6 +116,11 @@ class Chebyshev:
     does) would be comparing numbers on different scales. A fixed reference point makes the scalarisation stationary. Unlike
     the weighted sum, minimising it can reach every point of a Pareto front, convex or not, by choosing the weights and the
     reference point; a reference point that dominates the front gives the textbook form.
+
+    References:
+        Steuer, R. E. and Choo, E.-U. (1983). An interactive weighted Tchebycheff procedure for multiple objective
+            programming. Mathematical Programming, 26, 326-344.
+        Miettinen, K. (1999). Nonlinear Multiobjective Optimization. Kluwer Academic Publishers.
     """
 
     weights: Mapping[str, float]

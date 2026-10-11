@@ -15,6 +15,12 @@ The domination relation is a boolean `(n, n)` matrix, built with an `(n, n, k)` 
 the pooled population (population plus offspring). That is fine to a few thousand members (4,000 members and 3 objectives
 take about 50 MB for the broadcast) and is the documented limit of this implementation. The only Python loop is over the
 *fronts*.
+
+References:
+    Deb, K., Pratap, A., Agarwal, S. and Meyarivan, T. (2002). A fast and elitist multiobjective genetic algorithm:
+        NSGA-II. IEEE Transactions on Evolutionary Computation, 6(2), 182-197. https://doi.org/10.1109/4235.996017
+    Deb, K. (2000). An efficient constraint handling method for genetic algorithms. Computer Methods in Applied
+        Mechanics and Engineering, 186(2-4), 311-338. https://doi.org/10.1016/S0045-7825(99)00389-8
 """
 
 from auxein.backend import Array, Backend

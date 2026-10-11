@@ -34,7 +34,7 @@ recombination = { type = "intermediate" }
 mutation = { type = "self_adaptive", per_gene = true }
 repair = "clip"
 
-# C: stochastic universal sampling with sigma scaling, the closest in spirit to 0.2.0's default
+# C: stochastic universal sampling with sigma scaling
 [[algorithms]]
 name = "ga-c"
 adapter = "auxein_core_ga"

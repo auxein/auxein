@@ -43,6 +43,10 @@ class RandomStream:
     sequences can end up with the same torch stream. The chance is negligible for the handful of streams a run
     needs, but it becomes likely around 65,000 torch streams (e.g. one per candidate evaluation). numpy streams use the
     full 128 bits of entropy. Generators on CUDA and Metal use the full 64-bit seed.
+
+    References:
+        O'Neill, M. E. (2014). PCG: a family of simple fast space-efficient statistically good algorithms for random
+            number generation. Technical report HMC-CS-2014-0905, Harvey Mudd College.
     """
 
     def __init__(self, seed_sequence: np.random.SeedSequence, backend: Backend | None = None) -> None:

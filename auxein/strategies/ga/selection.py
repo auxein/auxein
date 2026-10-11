@@ -8,7 +8,7 @@ from auxein.strategies.ga.base import PopulationView
 def distinct_partners(first: Array, second: Array, population_size: int, rng: RandomStream, view: PopulationView) -> Array:
     """The second parents, with any that equals its first parent replaced by a uniformly random *other* member.
 
-    This is what keeps the parents of a child distinct (the 0.x engine allowed self-mating). It needs at least two members.
+    This is what keeps the parents of a child distinct (no self-mating). It needs at least two members.
     """
     xp = view.backend.xp
     valid = view.valid
@@ -27,6 +27,10 @@ class TournamentSelection:
     Tournaments only look at ranks, so the selection pressure doesn't depend on the scale of the objective, and infeasible
     members lose to feasible ones without any special case. Members that failed are not drawn at all while any other
     member exists, so a tournament of failed members can never produce a parent.
+
+    References:
+        Goldberg, D. E. and Deb, K. (1991). A comparative analysis of selection schemes used in genetic algorithms. In
+            Foundations of Genetic Algorithms (FOGA 1), pp. 69-93. Morgan Kaufmann.
     """
 
     name = "tournament"
@@ -64,6 +68,12 @@ class SigmaScalingSUS:
 
     All the pointers of one call are equally spaced from one random start, which keeps the sample close to the expected
     counts; the sample is then shuffled so that the first and second parents are paired at random.
+
+    References:
+        Baker, J. E. (1987). Reducing bias and inefficiency in the selection algorithm. In Proceedings of the Second
+            International Conference on Genetic Algorithms (ICGA 2), pp. 14-21. Lawrence Erlbaum.
+        Goldberg, D. E. (1989). Genetic Algorithms in Search, Optimization and Machine Learning. Addison-Wesley.
+        Mitchell, M. (1996). An Introduction to Genetic Algorithms, section 5.4 (sigma scaling). MIT Press.
     """
 
     name = "sus"

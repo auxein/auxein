@@ -1,4 +1,4 @@
-"""`NSGA2`: the non-dominated sorting genetic algorithm (Deb et al., 2002) on arrays and on structured genomes."""
+"""`NSGA2`: the non-dominated sorting genetic algorithm on arrays and on structured genomes."""
 
 from collections.abc import Sequence
 from typing import Any, Generic, cast
@@ -91,7 +91,7 @@ class _StructuredEngine(StructuredGeneticAlgorithm[Any]):
 
 
 class NSGA2(Generic[G]):
-    """NSGA-II, the standard multi-objective genetic algorithm (Deb, Pratap, Agarwal and Meyarivan, 2002).
+    """NSGA-II, the standard multi-objective genetic algorithm.
 
     **Survivors.** "Plus" selection: the population (μ members) is pooled with the told children and the best μ are kept by
     **non-dominated sorting**, then by **crowding distance** within the last front that fits. Dominance is *constrained*
@@ -121,6 +121,13 @@ class NSGA2(Generic[G]):
     **Limit.** The domination relation is an `(n, n)` boolean matrix over the pool (population plus offspring), so memory
     grows with the square of the pool: fine to a few thousand members (about 50 MB for 4,000 members and 3 objectives).
     Sorting and crowding run on the backend; the only Python loop is over the fronts.
+
+    References:
+        Deb, K., Pratap, A., Agarwal, S. and Meyarivan, T. (2002). A fast and elitist multiobjective genetic
+            algorithm: NSGA-II. IEEE Transactions on Evolutionary Computation, 6(2), 182-197.
+            https://doi.org/10.1109/4235.996017
+        Deb, K. (2000). An efficient constraint handling method for genetic algorithms. Computer Methods in Applied
+            Mechanics and Engineering, 186(2-4), 311-338. https://doi.org/10.1016/S0045-7825(99)00389-8
     """
 
     capabilities = StrategyCapabilities(max_objectives=None, supports_constraints=True, tell_mode="both")

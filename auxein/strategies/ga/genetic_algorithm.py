@@ -93,6 +93,13 @@ class GeneticAlgorithm:
     category), and every discrete gene is recombined by taking it from one of the parents. The defaults are chosen from the
     space; every operator can be replaced. The step sizes of the real genes and the integer mean step are strategy state
     (design doc §3.3).
+
+    References:
+        Holland, J. H. (1975). Adaptation in Natural and Artificial Systems. University of Michigan Press.
+        Eiben, A. E. and Smith, J. E. (2015). Introduction to Evolutionary Computing, 2nd ed. Springer.
+        Schwefel, H.-P. (1981). Numerical Optimization of Computer Models. Wiley.
+        Beyer, H.-G. and Schwefel, H.-P. (2002). Evolution strategies: a comprehensive introduction. Natural
+            Computing, 1(1), 3-52. https://doi.org/10.1023/A:1015059928466
     """
 
     capabilities = StrategyCapabilities(max_objectives=1, supports_constraints=True, tell_mode="both")
