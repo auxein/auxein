@@ -23,7 +23,16 @@ def mix_steps(weights: Array, first: Array, second: Array, backend: Backend) -> 
 
 
 class IntermediateRecombination:
-    """Child = `a * parent1 + (1 - a) * parent2`, with `a ~ U(0, 1)` drawn per child (or per gene with `per_gene=True`)."""
+    """Child = `a * parent1 + (1 - a) * parent2`, with `a ~ U(0, 1)` drawn per child (or per gene with `per_gene=True`).
+
+    This is the intermediate recombination of evolution strategies and the breeder GA, in the form that stays between the
+    parents (the breeder GA's extended form draws `a` from a wider interval).
+
+    References:
+        Mühlenbein, H. and Schlierkamp-Voosen, D. (1993). Predictive models for the breeder genetic algorithm I:
+            continuous parameter optimization. Evolutionary Computation, 1(1), 25-49.
+        Schwefel, H.-P. (1995). Evolution and Optimum Seeking. Wiley.
+    """
 
     name = "intermediate"
     sexual = True
@@ -39,7 +48,12 @@ class IntermediateRecombination:
 
 
 class UniformRecombination:
-    """Each gene comes from either parent with probability 0.5."""
+    """Each gene comes from either parent with probability 0.5.
+
+    References:
+        Syswerda, G. (1989). Uniform crossover in genetic algorithms. In Proceedings of the Third International
+            Conference on Genetic Algorithms (ICGA 3), pp. 2-9. Morgan Kaufmann.
+    """
 
     name = "uniform"
     sexual = True
@@ -52,7 +66,7 @@ class UniformRecombination:
 
 
 class SimulatedBinaryCrossover:
-    """Simulated binary crossover (SBX, Deb and Agrawal), the standard real-coded crossover of NSGA-II.
+    """Simulated binary crossover (SBX), the standard real-coded crossover of NSGA-II.
 
     SBX makes two children that sit symmetrically around their parents' midpoint, spread by a factor `beta` whose
     distribution has the shape of the spread of a single-point crossover on binary strings, controlled by the *distribution
@@ -65,6 +79,11 @@ class SimulatedBinaryCrossover:
     `w = (1 ± beta)/2`. A weight **outside [0, 1]** is how SBX extrapolates beyond its parents, so the child can leave the box; the
     bounds repair of the strategy brings it back (this is the unbounded form of SBX; the bounded form of the reference code differs
     near the bounds). As in the usual implementation, each gene is crossed with probability `variable_probability` (default 0.5).
+
+    References:
+        Deb, K. and Agrawal, R. B. (1995). Simulated binary crossover for continuous search space. Complex Systems,
+            9(2), 115-148.
+        Deb, K. (2001). Multi-Objective Optimization using Evolutionary Algorithms. Wiley.
     """
 
     name = "sbx"

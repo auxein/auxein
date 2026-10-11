@@ -24,6 +24,11 @@ class RandomSearch(Generic[G]):
     one at a time. Tracking the best results is the driver's job, so `tell` only checks that the results are for
     candidates this strategy asked for. For array spaces such as `Box`, `ask` returns an array-backed batch; for other
     spaces, a general one.
+
+    References:
+        Brooks, S. H. (1958). A discussion of random methods for seeking maxima. Operations Research, 6(2), 244-251.
+        Rastrigin, L. A. (1963). The convergence of the random search method in the extremal control of a many
+            parameter system. Automation and Remote Control, 24(10), 1337-1342.
     """
 
     capabilities = StrategyCapabilities(max_objectives=None, supports_constraints=True, tell_mode="both")

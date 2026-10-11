@@ -79,7 +79,12 @@ def total(source: Source) -> Reduction:
 
 
 def quantile(source: Source, q: float) -> Reduction:
-    """The `q`-quantile over scenarios, `q` in [0, 1], by linear interpolation between the sorted values (as numpy's default)."""
+    """The `q`-quantile over scenarios, `q` in [0, 1], by linear interpolation between the sorted values (as numpy's default).
+
+    References:
+        Hyndman, R. J. and Fan, Y. (1996). Sample quantiles in statistical packages. The American Statistician, 50(4),
+            361-365 (definition 7). https://doi.org/10.2307/2684934
+    """
     if not 0.0 <= q <= 1.0:
         raise ValueError(f"q must be in [0, 1], got {q}")
 
@@ -113,6 +118,10 @@ def cvar_upper(source: Source, alpha: float) -> Reduction:
 
     This is the "worst α fraction" of something where **higher is worse** (fuel, time, a constraint violation, cost).
     `alpha=1` is the mean, and a very small `alpha` is the maximum.
+
+    References:
+        Rockafellar, R. T. and Uryasev, S. (2000). Optimization of conditional value-at-risk. The Journal of Risk,
+            2(3), 21-41.
     """
     _tail(alpha)
 
@@ -129,6 +138,10 @@ def cvar_lower(source: Source, alpha: float) -> Reduction:
 
     This is the "worst α fraction" of something where **lower is worse** (a reward, a success rate, a safety margin).
     `alpha=1` is the mean, and a very small `alpha` is the minimum.
+
+    References:
+        Rockafellar, R. T. and Uryasev, S. (2000). Optimization of conditional value-at-risk. The Journal of Risk,
+            2(3), 21-41.
     """
     _tail(alpha)
 

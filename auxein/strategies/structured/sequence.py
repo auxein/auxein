@@ -36,6 +36,9 @@ class SequenceMutation:
     insert at the maximum, and in a `unique` space inserts and replacements need an item that is not yet there), with
     probabilities proportional to `insert`, `delete`, `replace` and `swap`. A child gets `edits` edits in a row. A replacement
     always changes the item (when the vocabulary has another), and a swap exchanges two different positions.
+
+    References:
+        Eiben, A. E. and Smith, J. E. (2015). Introduction to Evolutionary Computing, 2nd ed. Springer.
     """
 
     name = "sequence"
@@ -112,6 +115,11 @@ class SequenceCrossover:
     are drawn separately, the child's length can be anything, so it is **repaired**: duplicates are removed in a `unique` space
     (the first occurrence stays), a child longer than `max_length` is cut at `max_length`, and one shorter than `min_length` is
     filled up with items of the two parents that are not in it yet, then with random items of the vocabulary.
+
+    References:
+        Holland, J. H. (1975). Adaptation in Natural and Artificial Systems. University of Michigan Press.
+        Goldberg, D. E., Korb, B. and Deb, K. (1989). Messy genetic algorithms: motivation, analysis, and first
+            results. Complex Systems, 3(5), 493-530 (cut and splice).
     """
 
     def __init__(self, kind: str = "one_point") -> None:
