@@ -130,7 +130,7 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
     ]
     for nodeid, outcome, duration in _results:
         lines.append(f"| `{nodeid.split('tests/gpu/', 1)[1]}` | {outcome} | {duration:.2f} |")
-    lines += ["", *probe.probe_section(), ""]
+    lines += ["", *probe.probe_section(), "", *probe.policy_section(), ""]
     target.write_text("\n".join(lines))
     print(f"\nGPU smoke report written to {target.relative_to(ROOT)}")
 
@@ -138,4 +138,5 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
 @pytest.fixture(scope="session", autouse=True)
 def _reset_report() -> Iterator[None]:
     probe.PROBE_ROWS.clear()
+    probe.POLICY_ROWS.clear()
     yield
