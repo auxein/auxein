@@ -133,4 +133,10 @@ def test_without_backend_params_the_core_adapters_are_the_numpy_float64_default(
     from benchmarks.adapters.base import backend_from
 
     assert backend_from({}) is None and backend_from({"population_size": 50}) is None
+
+
+def test_the_torch_backend_param_alone_means_float64():
+    pytest.importorskip("torch")
+    from benchmarks.adapters.base import backend_from
+
     assert backend_from({"backend": "torch"}).precision == "float64"  # type: ignore[union-attr]

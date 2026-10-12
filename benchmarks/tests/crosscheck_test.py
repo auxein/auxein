@@ -8,10 +8,12 @@ test is deterministic.
 
 import pytest
 
+from auxein.backend.devices import torch_installed
 from benchmarks.runner import run_one
 from benchmarks.stats import vargha_delaney
 
 RUNS = 30
+needs_torch = pytest.mark.skipif(not torch_installed(), reason="torch is not installed")
 QUICK_BUDGET_PER_DIM = 500
 
 
@@ -63,6 +65,7 @@ def final_errors_of(adapter: str, params: dict, problem: str, dim: int, first: i
     return errors
 
 
+@needs_torch
 @pytest.mark.parametrize("dim", [2, 10])
 @pytest.mark.parametrize("problem", ["sphere", "rastrigin"])
 def test_the_genetic_algorithm_on_torch_float32_is_statistically_indistinguishable_from_numpy_float64(problem: str, dim: int):
@@ -74,6 +77,7 @@ def test_the_genetic_algorithm_on_torch_float32_is_statistically_indistinguishab
     assert 0.35 <= a12 <= 0.65, f"A12 = {a12:.3f} on the {dim}-D {problem}"
 
 
+@needs_torch
 @pytest.mark.parametrize("dim", [2, 10])
 def test_random_search_on_torch_float32_is_statistically_indistinguishable_from_numpy_float64(dim: int):
     numpy_errors = final_errors_of("auxein_core_random", {}, "sphere", dim)

@@ -14,6 +14,41 @@ class ProbeRow:
 PROBE_ROWS: list[ProbeRow] = []
 
 
+@dataclass(frozen=True)
+class PolicyRow:
+    network: str
+    configuration: str
+    milliseconds_per_decode: float
+    milliseconds_per_act: float
+
+
+POLICY_ROWS: list[PolicyRow] = []
+
+
+def policy_section() -> list[str]:
+    """The `MLPPolicy` probe's table: time per `decode_batch` and per `act_batch` call, and the speed-up over numpy."""
+    if not POLICY_ROWS:
+        return ["## MLP policy probe", "", "The probe did not run."]
+    lines = [
+        "## MLP policy probe (informational, nothing is asserted)",
+        "",
+        "One call of `MLPPolicy.decode_batch` and of `act_batch` for 100 candidates, each acting on 10 scenarios × 40 agents "
+        "(400 observations of size 16, 2 outputs), median of 20 calls after a warm-up and after the device has finished its queue.",
+        "",
+        "| Network | Configuration | ms per `decode_batch` | ms per `act_batch` | Speed-up of `act_batch` over numpy float64 (CPU) |",
+        "|---|---|---|---|---|",
+    ]
+    for network in dict.fromkeys(row.network for row in POLICY_ROWS):
+        rows = [r for r in POLICY_ROWS if r.network == network]
+        reference = next((r.milliseconds_per_act for r in rows if r.configuration.startswith("numpy")), None)
+        for row in rows:
+            ratio = "" if reference is None else f"{reference / row.milliseconds_per_act:.2f}×"
+            lines.append(
+                f"| {network} | {row.configuration} | {row.milliseconds_per_decode:.3f} | {row.milliseconds_per_act:.3f} | {ratio} |"
+            )
+    return lines
+
+
 def probe_section() -> list[str]:
     """The probe's table: per size and objective, the time of one generation on each configuration and the speed-up over numpy."""
     if not PROBE_ROWS:

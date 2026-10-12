@@ -15,7 +15,7 @@ import auxein
 from auxein.backend import backend_of
 from auxein.strategies.ga import GeneticAlgorithm
 from auxein.strategies.structured import ExternalMutation, SequenceMutation
-from tests.support import mixed, multiobjective, pointmass, sequences
+from tests.support import mixed, multiobjective, pointmass, sequences, team
 from tests.support.pointmass import PointMassEnvironment
 from tests.support.sequences import FakeLLM
 
@@ -66,6 +66,21 @@ class LoggedPointMass(PointMassEnvironment):
         return "LoggedPointMass()"
 
 
+class LoggedTeam(team.TeamEnvironment):
+    """The team of point masses, taking a moment per batch so that a run can be killed in the middle (see `AUXEIN_CALL_LOG`)."""
+
+    def run_batch(self, agents: Any, scenarios: Any, rng: Any) -> Any:
+        path = os.environ.get("AUXEIN_CALL_LOG")
+        if path:
+            with open(path, "a") as handle:
+                handle.write("x\n")
+        time.sleep(0.02)
+        return super().run_batch(agents, scenarios, rng)
+
+    def __repr__(self) -> str:
+        return "LoggedTeam()"
+
+
 def strategy_for(name: str) -> Any:
     if name == "random":
         return auxein.RandomSearch()
@@ -100,6 +115,9 @@ def settings(config: dict[str, Any]) -> dict[str, Any]:
             "constraints": ["overshoot"],
             "descriptors": ["success_rate"],
         }
+    elif config.get("evaluator") == "team":
+        evaluator = auxein.EpisodeEvaluator(team.POLICY, LoggedTeam(), team.scenario_set(config.get("scenarios", 4)), team.aggregator())
+        problem = {"space": team.POLICY.space(), "objectives": [auxein.Objective("error")], "descriptors": ["success_rate"]}
     elif config.get("evaluator") == "biobjective":
         evaluator = auxein.FunctionEvaluator(logged_zdt1)
         problem = {"space": multiobjective.ZDT_SPACE, "objectives": [multiobjective.F1, multiobjective.F2]}
