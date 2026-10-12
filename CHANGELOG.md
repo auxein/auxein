@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **`MLPPolicy`, a neural-network policy decoder** (`auxein.environments`): a genome is the weights of a feed-forward network (`observation_size`, `hidden`, `outputs`, a `tanh`, `relu` or `identity` activation, and an output mode: `"linear"`, `"tanh"`, `Clip(low, high)`, `Tanh(low, high)` or `"argmax"`), laid out layer by layer (weight matrix `out × in`, then bias). `decode_batch` turns a whole `(n, d)` genome array into per-candidate networks on the array's own backend and device, with no host round trip, and `act_batch` applies each candidate's network to all of its observations (`(n, scenarios, agents, observation_size)` in, `(n, scenarios, agents, outputs)` out, as batched matrix products), so one genome controls a team of identical agents (parameter sharing). `decode` gives the agent of the per-episode path with the same numbers. `space(scale)` is a box with bounds scaled by fan-in, so the GA's uniform sampling is a Glorot-like initialisation. `BatchPolicy` is the protocol a batched environment can be written against, and `MLPPolicy.for_spaces` builds a policy from Gymnasium spaces (imported lazily). A `GeneticAlgorithm` evolves one with a four-unit hidden layer to balance CartPole. The GPU smoke suite decodes and acts on the device and probes its speed.
+- Fixed: the torch cross-checks of the benchmark tests and one adapter assertion failed instead of skipping when torch is not installed. The 0.3.0 entry named `0.3.0.dev0` as its version.
+
 ## 0.3.0 (2026-10-10)
 
 Auxein is rewritten around a new core, designed as a framework for evolving agents that act in environments (see the
