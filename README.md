@@ -52,6 +52,27 @@ print(result.best.objectives["value"], result.best.candidate.genome)
 
 `result.best` is the best evaluation found. The same seed gives the same run. Pass `run_dir` to record the run, and read it back with `auxein.open_run`. A recorded run keeps checkpoints, so if it is interrupted, killed or finishes with too little budget, run the same script with `auxein.resume` (and a larger `Budget` to extend it) and it carries on as if it had never stopped.
 
+### Watching a run
+
+Long runs can be watched, and stopped early, with callbacks. They are called after every generation, once more when the run ends, and also while a resumed run replays what it had already done:
+
+```python
+from auxein.callbacks import print_progress, stop_when
+
+result = auxein.run(
+    strategy=auxein.GeneticAlgorithm(),
+    evaluator=auxein.VectorisedEvaluator(rastrigin),
+    space=auxein.Box(-5.12, 5.12, dim=10),
+    budget=auxein.Budget(evaluations=20_000),
+    seed=42,
+    callbacks=[print_progress(every=10), stop_when(lambda p: p.best.objectives["value"] < 5.0, "good enough")],
+)
+
+print(result.stop_reason)  # "callback:good enough", or "budget:evaluations" if it never got there
+```
+
+A callback receives a read-only `Progress` (generation, evaluations, best, the statistics of the last generation, speed, time left) and may return `auxein.StopRun(reason)`; `ProgressHistory` collects the rows for a chart, and `every(25, render)` is the way to do something heavy now and then.
+
 ## Documentation
 
 Four short notebooks, executed, with their outputs, introduce the API ([view them on nbviewer](https://nbviewer.org/github/auxein/auxein/tree/master/notebooks/)):
