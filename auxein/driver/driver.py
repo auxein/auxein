@@ -19,7 +19,9 @@ that was never stopped.
 
 import asyncio
 import dataclasses
+import inspect
 import json
+import sqlite3
 import time
 import warnings
 from collections import deque
@@ -27,6 +29,7 @@ from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Generic, Literal, TypeVar, cast
 
 from auxein.backend import Backend
@@ -65,6 +68,7 @@ from auxein.driver.errors import (
     SteadyStateVectorisationWarning,
     StrategyError,
 )
+from auxein.driver.progress import Callback, Progress, StopRun, batch_stats
 from auxein.driver.result import ResultTracker, RunResult
 from auxein.driver.window import Slot, Window, decode_window, encode_window
 from auxein.evaluators import EvaluationError, VectorisedEvaluator
@@ -92,6 +96,18 @@ _REPLAY_YIELD = 256
 """A replay with nothing to wait for hands control back to the event loop this often, so that Ctrl-C still works."""
 
 _REBUILD_CHUNK = 1024
+
+_RECENT_WINDOW = 30.0
+"""Seconds of the session over which the 'recent' evaluations per second are measured."""
+
+
+@dataclass
+class _Told:
+    """The last tell, kept until the callbacks have been called for it (only when there are callbacks)."""
+
+    step: int
+    results: EvaluationBatch[Any]
+    replaying: bool
 
 
 @dataclass(frozen=True)
@@ -176,6 +192,7 @@ class Driver(Generic[G]):
         run_dir: Path | None,
         name: str | None,
         clock: Callable[[], float],
+        callbacks: Sequence[Callback] = (),
     ) -> None:
         if batch_size < 1:
             raise ValueError(f"batch_size must be at least 1, got {batch_size}")
@@ -203,6 +220,9 @@ class Driver(Generic[G]):
                 "a timeout cannot be combined with a VectorisedEvaluator: it makes one call per batch on the driver's thread, "
                 "which nothing can interrupt, and a vectorised call is normally cheap. Use FunctionEvaluator to time out evaluations"
             )
+        for callback in callbacks:
+            if not callable(callback):  # pyright: ignore[reportUnnecessaryCallable]
+                raise TypeError(f"callbacks must be callables taking a Progress, got {callback!r}")
         self._executor_kind: ExecutorKind = resolve_executor(executor, concurrency, timeout)
         self._policy, self._timeout = failure_policy, timeout
         self._guard = initial_failure_guard
@@ -263,6 +283,13 @@ class Driver(Generic[G]):
         self._window: Window[G] | None = None
         self._restored_window: Window[G] | None = None
         self._replay: ReplayStream | None = None
+        # progress callbacks (design doc §9.6): none of this is touched, or built, when there are no callbacks
+        self._callbacks: tuple[Callback, ...] = tuple(callbacks)
+        self._tells = 0
+        self._told: _Told | None = None
+        self._last_told: tuple[int, EvaluationBatch[G]] | None = None
+        self._callback_stop: str | None = None
+        self._samples: deque[tuple[float, int]] = deque()
         self.already_complete = False
         """Set by a resume that found the run complete with this budget and returned its result without running."""
 
@@ -287,6 +314,8 @@ class Driver(Generic[G]):
             self._strategy.bind(self._problem, self._strategy_context)
             if resumption is not None:
                 self._restore(resumption)
+            if self._callbacks:
+                self._samples.append((self._elapsed(), self._used))
             if self._delivery == "steady_state":
                 self._warn_if_vectorised()
                 stop_reason = await self._steady_state()
@@ -295,6 +324,7 @@ class Driver(Generic[G]):
             self._finish_replay()
             self._check_guard_at_end()
             self._checkpoint_at_end()
+            await self._final_event(stop_reason)
             status = "completed"
         except (KeyboardInterrupt, asyncio.CancelledError):
             status = "interrupted"
@@ -340,6 +370,7 @@ class Driver(Generic[G]):
     async def _loop(self) -> str:
         while True:
             self._maybe_checkpoint()
+            await self._fire()  # after the checkpoint that was due, so that what a callback sees is on disk
             reason = self._stop_reason()
             if reason is not None:
                 return reason
@@ -362,7 +393,7 @@ class Driver(Generic[G]):
                 return f"budget:cost:{unit}"
         if self._strategy.should_stop():
             return "strategy"
-        return None
+        return self._callback_stop
 
     async def _step(self) -> bool:
         """Ask, evaluate, record and tell one batch. Returns True when the batch was truncated, which ends the run."""
@@ -393,6 +424,8 @@ class Driver(Generic[G]):
         self._strategy.tell(results)
         self._recorder.on_tell(step, len(results), recorded == len(results))
         self._consistent = True
+        if self._callbacks:
+            self._told_batch(step, results, recorded == len(results) and recorded > 0)
         if recorded:
             await asyncio.sleep(0)  # replaying has nothing to wait for: let the event loop breathe
         return False
@@ -437,6 +470,99 @@ class Driver(Generic[G]):
         self._recorder.on_batch(step, batch, results, recorded, rerecord)
         if failed or self._guard_open:
             self._apply_failure_rules(results, failed, quiet=recorded > 0)
+
+    # --- progress callbacks (design doc §9.6) ---
+
+    def _told_batch(self, step: int, results: EvaluationBatch[G], replaying: bool) -> None:
+        """Remember a tell until the callbacks have run for it (after the checkpoint that may be due)."""
+        self._tells += 1
+        self._told = _Told(step, results, replaying)
+        self._last_told = (step, results)
+
+    async def _fire(self) -> None:
+        """Call the callbacks for the last tell, if any. A stop they ask for is honoured by the next `_stop_reason`."""
+        told = self._told
+        if told is None:
+            return
+        self._told = None
+        progress = self._progress(told.step, told.results, replaying=told.replaying, final=False, stop_reason=None)
+        stop = await self._call(progress)
+        # a stop asked for while replaying recorded evaluations is ignored: those evaluations cannot be discarded, and the run
+        # that recorded them was not stopped here (it is asked again after each live tell)
+        if stop is not None and not told.replaying and self._callback_stop is None:
+            self._callback_stop = f"callback:{stop.reason}"
+
+    async def _final_event(self, stop_reason: str) -> None:
+        """The last call of a run that completed, with the reason it stopped. Nothing is left to stop, so a `StopRun` is ignored."""
+        if not self._callbacks:
+            return
+        step, results = self._last_told if self._last_told is not None else (None, None)
+        progress = self._progress(step, results, replaying=False, final=True, stop_reason=stop_reason)
+        await self._call(progress)
+
+    async def _call(self, progress: Progress[G]) -> StopRun | None:
+        """Call every callback in order, awaiting the async ones; the first `StopRun` wins. Their errors fail the run."""
+        stop: StopRun | None = None
+        for callback in self._callbacks:
+            answer = cast("object", callback(progress))
+            if inspect.isawaitable(answer):
+                answer = await answer
+            if answer is not None and not isinstance(answer, StopRun):
+                raise TypeError(f"a callback must return None or a StopRun, {callback!r} returned {answer!r}")
+            if stop is None and isinstance(answer, StopRun):
+                stop = answer
+        return stop
+
+    def _progress(
+        self, step: int | None, results: EvaluationBatch[G] | None, *, replaying: bool, final: bool, stop_reason: str | None
+    ) -> Progress[G]:
+        elapsed, used = self._elapsed(), self._used
+        recent: float | None = None
+        samples = self._samples
+        if replaying:
+            samples.clear()  # the session's clock says nothing about replayed evaluations: measure again from here
+            samples.append((elapsed, used))
+        else:
+            samples.append((elapsed, used))
+            while len(samples) > 2 and elapsed - samples[1][0] >= _RECENT_WINDOW:
+                samples.popleft()
+            then_time, then_used = samples[0]
+            if elapsed - then_time >= 1e-9 and used > then_used:
+                recent = (used - then_used) / (elapsed - then_time)
+        overall = used / elapsed if elapsed > 0 and used > 0 else None
+        evaluations = self._budget.evaluations
+        remaining = None if evaluations is None else max(evaluations - used, 0)
+        speed = recent if recent is not None else overall
+        eta = None if remaining is None else (0.0 if remaining == 0 else (None if not speed else remaining / speed))
+        return Progress(
+            generation=self._tells,
+            step=step,
+            evaluations_used=used,
+            budget=self._budget,
+            remaining=remaining,
+            elapsed=elapsed,
+            objectives=tuple(self._problem.objectives),
+            best=self._tracker.best,
+            pareto_front=self._tracker.pareto_front,
+            batch=None if results is None else batch_stats(results.evaluations, self._problem.objectives),
+            status_counts=MappingProxyType(self._status_counts()),
+            evaluations_per_second=overall,
+            recent_evaluations_per_second=recent,
+            eta=eta,
+            delivery=self._delivery,
+            run_dir=self._run_dir,
+            replaying=replaying,
+            final=final,
+            stop_reason=stop_reason,
+        )
+
+    def _count_recorded_tells(self, database: Path, upto: int) -> int:
+        """How many tells the recording holds up to event `upto`: the generation count a resumed run continues from."""
+        db = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+        try:
+            return int(db.execute("SELECT COUNT(*) FROM events WHERE kind = 'tell' AND seq <= ?", (upto,)).fetchone()[0])
+        finally:
+            db.close()
 
     # --- failures (design doc §6.6) ---
 
@@ -518,6 +644,7 @@ class Driver(Generic[G]):
         try:
             while True:
                 self._maybe_checkpoint()
+                await self._fire()
                 self._refill(window)
                 self._start(window)
                 if not window.inflight:
@@ -595,6 +722,8 @@ class Driver(Generic[G]):
         self._strategy.tell(slot.result)
         self._recorder.on_tell(slot.step, 1, slot.recorded)
         self._consistent = True
+        if self._callbacks:
+            self._told_batch(slot.step, slot.result, slot.recorded)
         return True
 
     async def _wait_for_one(self, window: Window[G]) -> None:
@@ -738,10 +867,18 @@ class Driver(Generic[G]):
             sessions = cast("list[dict[str, object]]", existing.metadata.get("sessions", []))
             last = sessions[-1] if sessions else {}
             database = recorder.run_dir / "events.sqlite"
-            if last.get("status") == "completed" and _normalised(last.get("budget")) == _normalised(budget.describe()):
+            stopped_by_callback = str(last.get("stop_reason") or "").startswith("callback:")
+            # a run a callback stopped is not complete with its budget: it goes on unless the callbacks stop it again
+            if (
+                last.get("status") == "completed"
+                and not stopped_by_callback
+                and _normalised(last.get("budget")) == _normalised(budget.describe())
+            ):
                 return self._finished_result(existing, recorder, database)
             loaded = recorder.load_checkpoint(existing.checkpoints, self._backend)
             seq = 0 if loaded is None else loaded[0].event_seq
+            if self._callbacks:
+                self._tells = self._count_recorded_tells(database, seq)
             used_at_checkpoint = self._rebuild_tracker(database, seq)
             if loaded is not None:
                 recorded_used = cast("int", cast("dict[str, object]", loaded[1]["driver"])["used"])
@@ -1026,6 +1163,7 @@ def _build(
     run_dir: str | Path | None,
     name: str | None,
     clock: Callable[[], float],
+    callbacks: Sequence[Callback] = (),
     resume: bool = False,
 ) -> Driver[G]:
     if run_dir is None and (checkpoint_every is not None or checkpoint_every_evaluations is not None or keep_checkpoints is not None):
@@ -1060,6 +1198,7 @@ def _build(
         run_dir=None if run_dir is None else Path(run_dir),
         name=name if name is not None else (None if run_dir is None else Path(run_dir).name),
         clock=clock,
+        callbacks=callbacks,
     )
 
 
@@ -1108,6 +1247,7 @@ def run(
     run_dir: str | Path | None = None,
     name: str | None = None,
     clock: Callable[[], float] = time.monotonic,
+    callbacks: Sequence[Callback] = (),
 ) -> RunResult[G]:
     """Run a strategy on a problem and return what it found.
 
@@ -1148,6 +1288,15 @@ def run(
     newest `keep_checkpoints` (default 2) are kept; 0 writes none, and then a resume replays the run from its start.
     Passing any of these without `run_dir` is an error.
 
+    **Progress callbacks** (design doc §9.6). `callbacks` are callables taking a `Progress`, called in order, inline on the
+    driver (they block it while they run, which a video render should know), after each tell has been recorded, told to the
+    strategy and checkpointed if a checkpoint was due: once per generation in generation delivery, after every tell (possibly
+    a single candidate) in steady state. They are called once more, with `final=True`, when the run completes. A callback
+    returns `None`, or `StopRun(reason)` to end the run like any other stop (`callback:<reason>`); `async def` callbacks are
+    awaited. They cannot change anything else, so a run has the same event log with or without them. An exception in a
+    callback fails the run, which can then be resumed. See `auxein.callbacks` for `every`, `print_progress`, `stop_when` and
+    `ProgressHistory`.
+
     **The genome store** (design doc §10.3): a genome whose encoding is larger than `genome_store_threshold` bytes (default
     4096; `None` keeps every genome inline) is stored once in the run's database, by its SHA-256, and the candidates refer to
     it. It changes the size of the recording, not its content, and is ignored without `run_dir`.
@@ -1160,7 +1309,7 @@ def run(
         initial_failure_guard=initial_failure_guard, checkpoint_every=checkpoint_every,
         checkpoint_every_evaluations=checkpoint_every_evaluations, keep_checkpoints=keep_checkpoints,
         genome_store_threshold=genome_store_threshold, run_dir=run_dir, name=name,
-        clock=clock,
+        clock=clock, callbacks=callbacks,
     )  # fmt: skip
     return _execute(driver)
 
@@ -1191,6 +1340,7 @@ async def arun(
     run_dir: str | Path | None = None,
     name: str | None = None,
     clock: Callable[[], float] = time.monotonic,
+    callbacks: Sequence[Callback] = (),
 ) -> RunResult[G]:
     """The asynchronous entry point, for embedding Auxein in async applications. Same arguments as `run`."""
     _warn_unrecorded(run_dir, stacklevel=3)
@@ -1201,7 +1351,7 @@ async def arun(
         initial_failure_guard=initial_failure_guard, checkpoint_every=checkpoint_every,
         checkpoint_every_evaluations=checkpoint_every_evaluations, keep_checkpoints=keep_checkpoints,
         genome_store_threshold=genome_store_threshold, run_dir=run_dir, name=name,
-        clock=clock,
+        clock=clock, callbacks=callbacks,
     )  # fmt: skip
     return await driver.execute()
 
@@ -1232,6 +1382,7 @@ def resume(
     run_dir: str | Path,
     name: str | None = None,
     clock: Callable[[], float] = time.monotonic,
+    callbacks: Sequence[Callback] = (),
 ) -> RunResult[G]:
     """Continue a recorded run: one that was interrupted or killed, that failed, or that finished and now gets more budget.
 
@@ -1240,8 +1391,10 @@ def resume(
     (the seed, the problem, `batch_size`, `delivery`, `deterministic`, `concurrency`, `executor`, `timeout`,
     `failure_policy`, the failure guard, the strategy's or the evaluator's class or `repr`) is a
     `ConfigurationMismatchError` listing each setting with its recorded and its given value. Auxein cannot check that the
-    evaluator's *code* is unchanged: replay does not run it, so that is yours to keep true. The checkpoint options and
-    `clock` are not part of the run and may differ.
+    evaluator's *code* is unchanged: replay does not run it, so that is yours to keep true. The checkpoint options, `clock`
+    and `callbacks` are not part of the run and may differ. The callbacks fire while the recorded evaluations are replayed
+    (with `replaying=True`, and a `StopRun` returned then is ignored) and decide again afterwards; a run that a callback
+    stopped is not complete with its budget, so resuming it goes on, until the callbacks stop it again.
 
     **How it continues** depends on the recorded `deterministic` setting. In deterministic mode the strategy is restored
     from the latest checkpoint (or built afresh if there is none) and asked again; every candidate the recording holds an
@@ -1267,7 +1420,7 @@ def resume(
         initial_failure_guard=initial_failure_guard, checkpoint_every=checkpoint_every,
         checkpoint_every_evaluations=checkpoint_every_evaluations, keep_checkpoints=keep_checkpoints,
         genome_store_threshold=genome_store_threshold, run_dir=run_dir, name=name,
-        clock=clock, resume=True,
+        clock=clock, callbacks=callbacks, resume=True,
     )  # fmt: skip
     result = _execute(driver)
     if driver.already_complete:
@@ -1301,6 +1454,7 @@ async def aresume(
     run_dir: str | Path,
     name: str | None = None,
     clock: Callable[[], float] = time.monotonic,
+    callbacks: Sequence[Callback] = (),
 ) -> RunResult[G]:
     """The asynchronous entry point of `resume`. Same arguments as `resume`."""
     driver = _build(
@@ -1310,7 +1464,7 @@ async def aresume(
         initial_failure_guard=initial_failure_guard, checkpoint_every=checkpoint_every,
         checkpoint_every_evaluations=checkpoint_every_evaluations, keep_checkpoints=keep_checkpoints,
         genome_store_threshold=genome_store_threshold, run_dir=run_dir, name=name,
-        clock=clock, resume=True,
+        clock=clock, callbacks=callbacks, resume=True,
     )  # fmt: skip
     result = await driver.execute()
     if driver.already_complete:
