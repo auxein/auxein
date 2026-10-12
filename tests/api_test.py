@@ -34,6 +34,7 @@ EXPECTED = {
     "MixedSpace",
     "NSGA2",
     "Objective",
+    "Progress",
     "RandomSearch",
     "Real",
     "RecordingDisabledWarning",
@@ -44,6 +45,7 @@ EXPECTED = {
     "ScenarioSet",
     "SequenceSpace",
     "Status",
+    "StopRun",
     "StructuredGeneticAlgorithm",
     "VectorisedEvaluator",
     "WeightedSum",
@@ -74,7 +76,7 @@ def test_every_exported_name_is_the_object_of_its_subpackage():
     for module, names in (
         (backend, ["Backend"]),
         (core, ["BatchResult", "Objective", "Result", "Status"]),
-        (driver, ["Budget", "RecordingDisabledWarning", "RunResult", "arun", "run"]),
+        (driver, ["Budget", "Progress", "RecordingDisabledWarning", "RunResult", "StopRun", "arun", "run"]),
         (evaluators, ["FunctionEvaluator", "VectorisedEvaluator"]),
         (recording, ["open_run"]),
         (spaces, ["Box", "MixedSpace", "Real", "Integer", "Binary", "Categorical", "IntegerSpace", "BinarySpace"]),
@@ -101,6 +103,7 @@ def test_the_package_has_exactly_the_documented_subpackages():
     expected = {
         "aggregators",
         "backend",
+        "callbacks",
         "core",
         "driver",
         "environments",
@@ -159,3 +162,10 @@ def test_the_readme_quickstart_records_a_run_when_run_dir_is_uncommented(
     run_snippet(code.replace('# run_dir="runs/rastrigin"', 'run_dir="runs/rastrigin"'), capsys)
     with auxein.open_run(tmp_path / "runs" / "rastrigin") as recorded:
         assert recorded.metadata["status"] == "completed" and len(list(recorded.evaluations())) == 20_000
+
+
+def test_the_callback_helpers_are_in_auxein_callbacks_and_not_at_the_top_level():
+    from auxein import callbacks
+
+    assert set(callbacks.__all__) == {"ProgressHistory", "every", "every_evaluations", "print_progress", "stop_when"}
+    assert not any(hasattr(auxein, name) for name in callbacks.__all__)
