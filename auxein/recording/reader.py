@@ -1,8 +1,10 @@
-"""A minimal reader of a recorded run: `open_run(path)`: its evaluations, lineage, sessions and checkpoints."""
+"""A reader of a recorded run: `open_run(path)`: its evaluations, lineage, sessions and checkpoints, and its generations."""
 
+import csv
+import io
 import json
 import sqlite3
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
@@ -14,6 +16,7 @@ import numpy.typing as npt
 from auxein.aggregators import Aggregator
 from auxein.backend import Backend
 from auxein.core import CandidateId, Status
+from auxein.recording.generations import Generations, Ranked, check_generation, problem_of
 from auxein.recording.genomes import decode_genome
 from auxein.recording.sqlite import SCHEMA_VERSION, CheckpointInfo
 from auxein.spaces.codec import GenomeCodec
@@ -88,12 +91,15 @@ class GenomeStoreStats:
     """How many candidates refer to a blob; more than `blobs` when genomes are shared."""
 
 
-_EVALUATIONS = """
+_SELECT_EVALUATIONS = """
 SELECT c.id, c.step, c.origin, c.genome_kind, CASE WHEN c.genome_hash IS NULL THEN c.genome ELSE b.data END, c.genome_dtype, c.genome_shape,
        e.status, e.objectives, e.constraints, e.descriptors, e.cost_units, e.wall_time, e.error
 FROM evaluations e JOIN candidates c ON c.id = e.candidate_id LEFT JOIN blobs b ON b.hash = c.genome_hash
-ORDER BY c.id
 """
+
+_EVALUATIONS = f"{_SELECT_EVALUATIONS} ORDER BY c.id"
+
+_IDS_PER_QUERY = 500  # well below SQLite's limit on the parameters of one statement
 
 _ANCESTRY = """
 WITH RECURSIVE walk (id, depth) AS (
@@ -129,6 +135,7 @@ class RunReader:
         if not database.exists():
             raise FileNotFoundError(f"{self.path} is not a recorded run: there is no events.sqlite in it")
         self._db = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+        self._generations: Generations | None = None
         version = self._db.execute("SELECT version FROM schema_version").fetchone()
         if version is None or version[0] != SCHEMA_VERSION:
             raise ValueError(f"unsupported run schema version {version and version[0]}: this reader understands version {SCHEMA_VERSION}")
@@ -154,28 +161,160 @@ class RunReader:
         rows = self._db.execute("SELECT id, event_seq, evaluations_used, path, created_at FROM checkpoints ORDER BY id").fetchall()
         return [CheckpointInfo(*row) for row in rows]
 
+    def _recorded(self, row: Sequence[Any], parents: tuple[CandidateId, ...]) -> RecordedEvaluation:
+        """A row of `_SELECT_EVALUATIONS` as a `RecordedEvaluation`, its genome decoded (through the codec, if there is one)."""
+        return RecordedEvaluation(
+            candidate_id=CandidateId(row[0]),
+            step=row[1],
+            origin=row[2],
+            parents=parents,
+            genome=decode_genome(row[3], row[4], row[5], row[6], self.codec),
+            status=Status(row[7]),
+            objectives=json.loads(row[8]),
+            constraints=json.loads(row[9]),
+            descriptors=json.loads(row[10]),
+            cost_units=json.loads(row[11]),
+            wall_time=row[12],
+            error=row[13],
+        )
+
     def evaluations(self) -> Iterator[RecordedEvaluation]:
         """Every evaluated candidate, in id order, with its genome decoded."""
         for row in self._db.execute(_EVALUATIONS).fetchall():
-            candidate_id = CandidateId(row[0])
             parents = tuple(
-                CandidateId(r[0])
-                for r in self._db.execute("SELECT parent_id FROM lineage WHERE child_id = ? ORDER BY rowid", (candidate_id,))
+                CandidateId(r[0]) for r in self._db.execute("SELECT parent_id FROM lineage WHERE child_id = ? ORDER BY rowid", (row[0],))
             )
-            yield RecordedEvaluation(
-                candidate_id=candidate_id,
-                step=row[1],
-                origin=row[2],
-                parents=parents,
-                genome=decode_genome(row[3], row[4], row[5], row[6], self.codec),
-                status=Status(row[7]),
-                objectives=json.loads(row[8]),
-                constraints=json.loads(row[9]),
-                descriptors=json.loads(row[10]),
-                cost_units=json.loads(row[11]),
-                wall_time=row[12],
-                error=row[13],
+            yield self._recorded(row, parents)
+
+    def _fetch(self, ids: Sequence[int]) -> list[RecordedEvaluation]:
+        """The recorded evaluations of these candidates, in this order, with only their genomes decoded."""
+        rows: dict[int, Sequence[Any]] = {}
+        parents: dict[int, list[CandidateId]] = {}
+        unique = list(dict.fromkeys(ids))
+        for start in range(0, len(unique), _IDS_PER_QUERY):
+            chunk = unique[start : start + _IDS_PER_QUERY]
+            marks = ", ".join("?" * len(chunk))
+            for row in self._db.execute(f"{_SELECT_EVALUATIONS} WHERE c.id IN ({marks})", chunk):
+                rows[row[0]] = row
+            for child, parent in self._db.execute(
+                f"SELECT child_id, parent_id FROM lineage WHERE child_id IN ({marks}) ORDER BY rowid", chunk
+            ):
+                parents.setdefault(child, []).append(CandidateId(parent))
+        decoded = {i: self._recorded(rows[i], tuple(parents.get(i, ()))) for i in unique}
+        return [decoded[i] for i in ids]
+
+    def _decoded(self, ranked: Sequence[Ranked]) -> list[RecordedEvaluation]:
+        return self._fetch([int(e.candidate.id) for e in ranked])
+
+    # --- generations (design doc §10.2) ---
+
+    def _index(self) -> Generations:
+        """The generation index, built on first use and kept: one query over objectives and statuses, no genome decoded."""
+        if self._generations is None:
+            objectives, constrained = problem_of(self.metadata)
+            self._generations = Generations(self._db, objectives, constrained)
+        return self._generations
+
+    def generations(self) -> int:
+        """How many generations the run has: its tells, across the sessions of a resumed run.
+
+        A generation is what `Progress.generation` counts: one generation of a generational strategy in generation delivery,
+        one told candidate in steady-state delivery."""
+        return len(self._index())
+
+    def generation_of(self, candidate_id: int) -> int | None:
+        """The generation (the tell) that delivered a candidate, from 1; None for a candidate that was recorded but never told
+        (a final batch cut by the budget, a batch recorded just before a crash). A `ValueError` if the candidate is not recorded."""
+        return self._index().generation_of(candidate_id)
+
+    def best_up_to(self, generation: int | None = None) -> RecordedEvaluation | None:
+        """The champion so far: the run's best evaluation after generation `generation`, exactly what `Progress.best` was at
+        that generation (single objective only; None for several objectives or before anything succeeded).
+
+        Without a generation it is the run's overall best, `RunResult.best`, which includes a final batch that was never told.
+        It is ranked by the run's own ranking (feasible first, then a lower total violation, then the better objective in its
+        declared direction, then the earliest id), and only its genome is decoded."""
+        index = self._index()
+        k = None if generation is None else check_generation(generation, len(index))
+        best = index.best_up_to(k)
+        return None if best is None else self._decoded([best])[0]
+
+    def best_in(self, generation: int) -> RecordedEvaluation | None:
+        """The best of the candidates generation `generation` told, by the same ranking, ignoring every other generation: it can
+        be worse than `best_up_to(generation)`, the champion so far. None if none of them succeeded, or for several objectives."""
+        index = self._index()
+        best = index.best_in(check_generation(generation, len(index)))
+        return None if best is None else self._decoded([best])[0]
+
+    def pareto_front_up_to(self, generation: int | None = None) -> tuple[RecordedEvaluation, ...]:
+        """The Pareto front after generation `generation`, exactly `Progress.pareto_front` at that generation (sorted by candidate
+        id; for a single objective, the best feasible evaluation). Without a generation it is `RunResult.pareto_front`."""
+        index = self._index()
+        k = None if generation is None else check_generation(generation, len(index))
+        return tuple(self._decoded(index.pareto_front_up_to(k)))
+
+    def evaluations_in(self, generation: int) -> list[RecordedEvaluation]:
+        """The evaluations generation `generation` told, in the order they were told, genomes decoded."""
+        index = self._index()
+        return self._decoded(index.told_in(check_generation(generation, len(index))))
+
+    def champions(self, every: int) -> Iterator[tuple[int, RecordedEvaluation | None]]:
+        """`(k, best_up_to(k))` for k = `every`, 2·`every`, ... and the last generation, for rendering the champion at milestones:
+
+            with open_run("runs/team") as run:
+                for k, champion in run.champions(every=25):
+                    render(decoder.decode(champion.genome), f"generation-{k}.mp4")
+
+        A champion is decoded once however many milestones it holds. The best is None at a milestone before anything
+        succeeded. A run with several objectives has no single champion: use `pareto_front_up_to`."""
+        if isinstance(every, bool) or not isinstance(every, int) or every < 1:  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ValueError(f"every must be a positive int, got {every!r}")
+        index = self._index()
+        if len(index.objectives) > 1:
+            raise ValueError(
+                "a run with several objectives has no single champion: use pareto_front_up_to(k) for its front at generation k"
             )
+        count = len(index)
+        milestones = list(range(every, count + 1, every))
+        if count and (not milestones or milestones[-1] != count):
+            milestones.append(count)
+        decoded: dict[int, RecordedEvaluation] = {}
+        for k in milestones:
+            best = index.best_up_to(k)
+            if best is None:
+                yield k, None
+                continue
+            key = int(best.candidate.id)
+            if key not in decoded:
+                decoded[key] = self._decoded([best])[0]
+            yield k, decoded[key]
+
+    def generation_history(self) -> list[dict[str, object]]:
+        """One row per generation, for fitness-over-generations charts, computed from the recording without decoding any genome.
+
+        The rows have the fields of `ProgressHistory` rows that the recording holds faithfully, with the same names, values and
+        natural units: `generation`, `evaluations` (used so far), `best` (the run's best objective value, single objective
+        only, else None) and `front_size`, the cumulative `failed` and `timeout`, and for the generation's own told
+        candidates `batch_ok`, `batch_failed`, `batch_timeout`, `batch_feasible` and per objective `<name>_best`,
+        `<name>_mean`, `<name>_median` and `<name>_worst` (NaN when none was OK). It adds `step`, the generation's ask round.
+
+        `elapsed` is left out: the recording has the clock time of each batch, which counts the time between the sessions of
+        a resumed run and the time a killed session lost after its last checkpoint, so it is not the active time that
+        `Progress.elapsed` reports. `replaying` and `final` describe a callback's call, not the run."""
+        return self._index().history()
+
+    def generation_history_csv(self, path: str | Path | None = None) -> str:
+        """`generation_history()` as CSV text, also written to `path` if one is given (like `ProgressHistory.to_csv`)."""
+        rows = self.generation_history()
+        buffer = io.StringIO()
+        if rows:
+            writer = csv.DictWriter(buffer, fieldnames=list(rows[0]), lineterminator="\n")
+            writer.writeheader()
+            writer.writerows(rows)
+        text = buffer.getvalue()
+        if path is not None:
+            Path(path).write_text(text)
+        return text
 
     def episodes(self, candidate_id: int) -> list[RecordedEpisode]:
         """The recorded episodes of a candidate, one per scenario in scenario order (empty if it ran none)."""

@@ -44,9 +44,9 @@ def test_creates_the_directory_with_metadata_and_a_versioned_schema(tmp_path: Pa
     assert (run_dir / "metadata.json").exists() and (run_dir / "events.sqlite").exists()
     recorder.on_end("completed", "budget:evaluations", {})
     with open_run(run_dir) as run:
-        assert run.schema_version == 4
+        assert run.schema_version == 5
     db = sqlite3.connect(run_dir / "events.sqlite")
-    assert db.execute("SELECT version FROM schema_version").fetchall() == [(4,)]
+    assert db.execute("SELECT version FROM schema_version").fetchall() == [(5,)]
     tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {
         "schema_version",
@@ -60,7 +60,7 @@ def test_creates_the_directory_with_metadata_and_a_versioned_schema(tmp_path: Pa
         "operator_calls",
     } <= tables
     indexes = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='index'")}
-    assert {"lineage_parent", "lineage_child"} <= indexes
+    assert {"lineage_parent", "lineage_child", "candidates_event_seq"} <= indexes
 
 
 def test_metadata_at_the_start_and_at_the_end(tmp_path: Path):
@@ -212,7 +212,7 @@ def test_events_log_asks_tells_and_the_stop(tmp_path: Path):
     rows = sqlite3.connect(tmp_path / "r" / "events.sqlite").execute("SELECT seq, kind, step, payload FROM events ORDER BY seq").fetchall()
     assert [(r[1], r[2]) for r in rows] == [("ask", 0), ("tell", 0), ("stop", None)]
     assert [r[0] for r in rows] == [1, 2, 3]
-    assert json.loads(rows[0][3]) == {"count": 3, "first_id": 0, "last_id": 2} and json.loads(rows[1][3]) == {"count": 3}
+    assert json.loads(rows[0][3]) == {"count": 3, "first_id": 0, "last_id": 2} and json.loads(rows[1][3]) == {"count": 3, "first_id": 0}
     assert json.loads(rows[2][3]) == {"status": "completed", "stop_reason": "strategy"}
 
 
@@ -248,10 +248,10 @@ def test_the_reader_rejects_other_directories_and_schema_versions(tmp_path: Path
         open_run(tmp_path)
     run_dir = hand_built_lineage(tmp_path)
     db = sqlite3.connect(run_dir / "events.sqlite")
-    db.execute("UPDATE schema_version SET version = 5")
+    db.execute("UPDATE schema_version SET version = 4")
     db.commit()
     db.close()
-    with pytest.raises(ValueError, match="unsupported run schema version 5"):
+    with pytest.raises(ValueError, match="unsupported run schema version 4"):
         open_run(run_dir)
 
 

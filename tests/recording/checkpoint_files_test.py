@@ -10,7 +10,7 @@ import pytest
 
 from auxein.backend import Backend
 from auxein.backend.devices import torch_installed
-from auxein.core import StateDict, StateDictError
+from auxein.core import Candidate, CandidateId, Cost, Evaluation, EvaluationBatch, ListBatch, StateDict, StateDictError, Status
 from auxein.recording import SQLiteRecorder, checkpoints
 from auxein.recording.checkpoints import CheckpointError
 from tests.support.reading import peek
@@ -141,10 +141,17 @@ def started(run_dir: Path) -> SQLiteRecorder:
     return recorder
 
 
+def tell_one(recorder: SQLiteRecorder, candidate_id: int) -> None:
+    """Record a one-candidate batch and tell it, as the driver does: moves the event sequence on."""
+    batch = ListBatch([Candidate(CandidateId(candidate_id), "g", (), "init", 0)])
+    recorder.on_batch(0, batch, EvaluationBatch([Evaluation(c, Status.OK, {"value": 1.0}, {}, {}, Cost()) for c in batch.candidates]))
+    recorder.on_tell(0, 1)
+
+
 def test_the_recorder_registers_checkpoints_and_keeps_only_the_newest(tmp_path: Path):
     recorder = started(tmp_path / "r")
     for used in (10, 20, 30, 40):
-        recorder.on_tell(0, used)  # moves the event sequence on, so that each checkpoint has its own
+        tell_one(recorder, used)  # moves the event sequence on, so that each checkpoint has its own
         recorder.checkpoint({"used": used}, used, keep=2)
     recorder.on_end("completed", "budget:evaluations", {})
     rows = peek(tmp_path / "r").checkpoints()
@@ -156,7 +163,7 @@ def test_the_recorder_registers_checkpoints_and_keeps_only_the_newest(tmp_path: 
 
 def test_two_checkpoints_at_the_same_moment_are_one(tmp_path: Path):
     recorder = started(tmp_path / "r")
-    recorder.on_tell(0, 1)
+    tell_one(recorder, 0)
     recorder.checkpoint({"a": 1}, 1, keep=2)
     recorder.checkpoint({"a": 1}, 1, keep=2)
     recorder.on_end("completed", "x", {})
@@ -165,7 +172,7 @@ def test_two_checkpoints_at_the_same_moment_are_one(tmp_path: Path):
 
 def test_the_checkpoints_table_records_what_the_prompt_asks(tmp_path: Path):
     recorder = started(tmp_path / "r")
-    recorder.on_tell(0, 1)
+    tell_one(recorder, 0)
     recorder.checkpoint({"a": 1}, 7, keep=2)
     recorder.on_end("completed", "x", {})
     db = sqlite3.connect(tmp_path / "r" / "events.sqlite")
