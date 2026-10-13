@@ -73,6 +73,19 @@ print(result.stop_reason)  # "callback:good enough", or "budget:evaluations" if 
 
 A callback receives a read-only `Progress` (generation, evaluations, best, the statistics of the last generation, speed, time left) and may return `auxein.StopRun(reason)`; `ProgressHistory` collects the rows for a chart, and `every(25, render)` is the way to do something heavy now and then.
 
+### Looking back at a run
+
+A recorded run can be asked the same questions afterwards, from its directory: the history per generation, and the champion at any generation, with its genome decoded (and only those genomes), as the run's callbacks saw it:
+
+```python
+with auxein.open_run("runs/rastrigin") as run:
+    print(run.generation_history_csv())  # one row per generation: evaluations, best, batch best/mean/median/worst, failures
+    for k, champion in run.champions(every=25):  # generations 25, 50, ... and the last one
+        print(k, champion.objectives["value"], champion.genome)
+```
+
+`best_up_to(k)` is the champion after generation `k`, `best_in(k)` the best of that generation alone, and `pareto_front_up_to(k)` the front of a multi-objective run.
+
 ## Documentation
 
 Four short notebooks, executed, with their outputs, introduce the API ([view them on nbviewer](https://nbviewer.org/github/auxein/auxein/tree/master/notebooks/)):
