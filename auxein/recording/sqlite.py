@@ -27,7 +27,7 @@ from auxein.spaces.codec import GenomeCodec, canonical_json
 
 G = TypeVar("G")
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 DEFAULT_GENOME_THRESHOLD = 4096
 """Genomes larger than this many encoded bytes go into the genome store instead of inline in `candidates` (design doc §10.3)."""
@@ -46,6 +46,7 @@ CREATE TABLE candidates (
     event_seq INTEGER NOT NULL,     -- the 'ask' event whose transaction recorded the candidate and its evaluation
     genome_hash TEXT                -- set when the genome is in `blobs`: then `genome` is empty
 );
+CREATE INDEX candidates_event_seq ON candidates (event_seq);
 CREATE TABLE blobs (
     hash TEXT PRIMARY KEY,          -- SHA-256 of the encoded genome, in hex
     data BLOB NOT NULL
@@ -71,7 +72,7 @@ CREATE TABLE events (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     kind TEXT NOT NULL,             -- 'ask', 'tell', 'stop' or 'resume'
     step INTEGER,
-    payload TEXT NOT NULL           -- JSON
+    payload TEXT NOT NULL           -- JSON; a tell names the batch it delivered by the id of its first candidate (`first_id`)
 );
 CREATE TABLE episodes (
     candidate_id INTEGER NOT NULL REFERENCES candidates (id),
@@ -192,6 +193,7 @@ class SQLiteRecorder:
         self._lock = RunLock(self.run_dir)
         self._last_seq = 0
         self._replayed_ask = 0
+        self._batch_first_id: int | None = None  # the first candidate of the batch recorded last: what the next tell delivers
         self._pending_session: tuple[str, object, dict[str, object]] | None = None
 
     # --- plumbing ---
@@ -394,7 +396,13 @@ class SQLiteRecorder:
         )
         return None if row is None else (int(row[0]), str(row[1]))
 
-    def _delete_group(self, db: sqlite3.Connection, ask_seq: int) -> None:
+    def _delete_tell_of(self, db: sqlite3.Connection, first_id: int) -> None:
+        """Delete the tell of the batch whose first candidate is `first_id`, if it was told. A tell names its batch, so this
+        needs no assumption about where the tell sits in the log (after a kill and a resume, a `resume` event can come between
+        a batch and its tell). It scans the events, which happens once per resume."""
+        db.execute("DELETE FROM events WHERE kind = 'tell' AND json_extract(payload, '$.first_id') = ?", (first_id,))
+
+    def _delete_group(self, db: sqlite3.Connection, ask_seq: int, first_id: int) -> None:
         """Remove a recorded batch (and its tell, if any): replay re-records it whole, because a larger budget makes it larger."""
         doomed = "SELECT id FROM candidates WHERE event_seq = ?"
         db.execute(f"DELETE FROM lineage WHERE child_id IN ({doomed})", (ask_seq,))
@@ -402,10 +410,8 @@ class SQLiteRecorder:
         db.execute(f"DELETE FROM episodes WHERE candidate_id IN ({doomed})", (ask_seq,))
         db.execute("DELETE FROM candidates WHERE event_seq = ?", (ask_seq,))
         self._drop_unreferenced_blobs(db)
-        following = self._first_event_after(ask_seq, "'ask', 'tell'")
         db.execute("DELETE FROM events WHERE seq = ?", (ask_seq,))
-        if following is not None and following[1] == "tell":
-            db.execute("DELETE FROM events WHERE seq = ?", (following[0],))
+        self._delete_tell_of(db, first_id)
 
     def on_batch(self, step: int, batch: Batch[G], results: EvaluationBatch[G], recorded: int = 0, rerecord: bool = False) -> None:
         """Record a batch, its evaluations and the episodes behind them, in one transaction.
@@ -422,6 +428,7 @@ class SQLiteRecorder:
             if row is None:
                 raise RuntimeError(f"replay matched candidate {first_id} but the recording does not hold it")
             self._replayed_ask = self._last_seq = int(row[0])
+            self._batch_first_id = first_id
             return
         self._flush_session()
         grow = 0 < recorded and not rerecord
@@ -448,14 +455,12 @@ class SQLiteRecorder:
         with db:
             if recorded > 0:
                 row = db.execute("SELECT event_seq FROM candidates WHERE id = ?", (first_id,)).fetchone()
-                if grow:
+                if grow:  # the batch keeps its place in the log; its tell (if any) is written again when the longer batch is told
                     seq = int(row[0])
-                    following = self._first_event_after(seq, "'ask', 'tell'")
-                    if following is not None and following[1] == "tell":
-                        db.execute("DELETE FROM events WHERE seq = ?", (following[0],))
+                    self._delete_tell_of(db, first_id)
                     db.execute("UPDATE events SET payload = ? WHERE seq = ?", (payload, seq))
                 else:
-                    self._delete_group(db, int(row[0]))
+                    self._delete_group(db, int(row[0]), first_id)
             if not grow:
                 seq = int(db.execute("INSERT INTO events (kind, step, payload) VALUES ('ask', ?, ?)", (step, payload)).lastrowid or 0)
             blobs: dict[str, bytes] = {}
@@ -475,19 +480,34 @@ class SQLiteRecorder:
             if results.episodes is not None:
                 db.executemany("INSERT INTO episodes VALUES (?, ?, ?, ?, ?, ?)", _episode_rows(results.episodes))
         self._last_seq = seq
+        self._batch_first_id = first_id
 
     def on_tell(self, step: int, count: int, recorded: bool = False) -> None:
-        """The strategy was told a batch. `recorded` says that the batch came whole from the recording, whose tell event is
-        then there already, unless the run was killed between recording the batch and telling it."""
+        """The strategy was told a batch: the one recorded last. `recorded` says that the batch came whole from the recording,
+        whose tell event is then there already, unless the run was killed between recording the batch and telling it.
+
+        The tell names its batch by the id of the batch's first candidate (`first_id`), so that a reader knows exactly which
+        candidates each tell delivered, and so each generation (design doc §10.2). An id rather than the batch's event
+        sequence number, because ids are the same in a resumed run and in the run that was never interrupted, while sequence
+        numbers shift by the `resume` events."""
         db = self._connection()
+        first_id = self._batch_first_id
+        if first_id is None:
+            raise RuntimeError("a tell must follow the batch it delivers, and no batch was recorded")
         if recorded:
+            # its tell is the next ask-or-tell event after the batch (found through the primary key, so replaying a long
+            # steady-state run stays linear), and names the batch; otherwise the run was killed before it was written
             following = self._first_event_after(self._replayed_ask, "'ask', 'tell'")
             if following is not None and following[1] == "tell":
-                self._last_seq = following[0]
-                return
+                payload = db.execute("SELECT payload FROM events WHERE seq = ?", (following[0],)).fetchone()[0]
+                if json.loads(payload).get("first_id") == first_id:
+                    self._last_seq = following[0]
+                    return
         self._flush_session()
         with db:
-            cursor = db.execute("INSERT INTO events (kind, step, payload) VALUES ('tell', ?, ?)", (step, json.dumps({"count": count})))
+            cursor = db.execute(
+                "INSERT INTO events (kind, step, payload) VALUES ('tell', ?, ?)", (step, json.dumps({"count": count, "first_id": first_id}))
+            )
         self._last_seq = int(cursor.lastrowid or 0)
 
     # --- checkpoints ---
