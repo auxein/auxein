@@ -34,6 +34,7 @@ EXPECTED = {
     "MixedSpace",
     "NSGA2",
     "Objective",
+    "Progress",
     "RandomSearch",
     "Real",
     "RecordingDisabledWarning",
@@ -44,6 +45,7 @@ EXPECTED = {
     "ScenarioSet",
     "SequenceSpace",
     "Status",
+    "StopRun",
     "StructuredGeneticAlgorithm",
     "VectorisedEvaluator",
     "WeightedSum",
@@ -74,7 +76,7 @@ def test_every_exported_name_is_the_object_of_its_subpackage():
     for module, names in (
         (backend, ["Backend"]),
         (core, ["BatchResult", "Objective", "Result", "Status"]),
-        (driver, ["Budget", "RecordingDisabledWarning", "RunResult", "arun", "run"]),
+        (driver, ["Budget", "Progress", "RecordingDisabledWarning", "RunResult", "StopRun", "arun", "run"]),
         (evaluators, ["FunctionEvaluator", "VectorisedEvaluator"]),
         (recording, ["open_run"]),
         (spaces, ["Box", "MixedSpace", "Real", "Integer", "Binary", "Categorical", "IntegerSpace", "BinarySpace"]),
@@ -101,6 +103,7 @@ def test_the_package_has_exactly_the_documented_subpackages():
     expected = {
         "aggregators",
         "backend",
+        "callbacks",
         "core",
         "driver",
         "environments",
@@ -123,10 +126,14 @@ def test_the_notebooks_directory_holds_exactly_the_four_introductory_notebooks()
 # --- the README quickstart ---
 
 
-def quickstart() -> str:
+def snippets() -> list[str]:
     blocks = re.findall(r"```python\n(.*?)```", (ROOT / "README.md").read_text(), flags=re.S)
-    assert len(blocks) == 1, "the README has exactly one Python snippet: the quickstart"
-    return blocks[0]
+    assert len(blocks) == 2, "the README has two Python snippets: the quickstart and 'Watching a run', which continues it"
+    return blocks
+
+
+def quickstart() -> str:
+    return snippets()[0]
 
 
 def run_snippet(code: str, capsys: pytest.CaptureFixture[str]) -> list[str]:
@@ -159,3 +166,23 @@ def test_the_readme_quickstart_records_a_run_when_run_dir_is_uncommented(
     run_snippet(code.replace('# run_dir="runs/rastrigin"', 'run_dir="runs/rastrigin"'), capsys)
     with auxein.open_run(tmp_path / "runs" / "rastrigin") as recorded:
         assert recorded.metadata["status"] == "completed" and len(list(recorded.evaluations())) == 20_000
+
+
+def test_the_readme_watching_example_continues_the_quickstart_and_prints_progress(capsys: pytest.CaptureFixture[str]):
+    first, second = snippets()
+    namespace: dict[str, object] = {"__name__": "__main__"}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", auxein.RecordingDisabledWarning)
+        exec(compile(first, "README.md", "exec"), namespace)
+        capsys.readouterr()
+        exec(compile(second, "README.md", "exec"), namespace)
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith("gen     10 |") and "ETA" in lines[0] and lines[-1] in ("callback:good enough", "budget:evaluations")
+    assert any(line.endswith("| done: callback:good enough") or line.endswith("| done: budget:evaluations") for line in lines)
+
+
+def test_the_callback_helpers_are_in_auxein_callbacks_and_not_at_the_top_level():
+    from auxein import callbacks
+
+    assert set(callbacks.__all__) == {"ProgressHistory", "every", "every_evaluations", "print_progress", "stop_when"}
+    assert not any(hasattr(auxein, name) for name in callbacks.__all__)

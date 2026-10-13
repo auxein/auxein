@@ -15,12 +15,15 @@ from auxein.driver.errors import (
     StrategyError,
 )
 from auxein.driver.held_out import HeldOutCandidate, HeldOutReport, HeldOutScenario, aevaluate_held_out, evaluate_held_out
+from auxein.driver.progress import BatchStats, Callback, ObjectiveStats, Progress, StopRun
 from auxein.driver.result import RunResult
 from auxein.recording import ResumeError
 
 __all__ = [
     "AllEvaluationsFailedError",
+    "BatchStats",
     "Budget",
+    "Callback",
     "ConfigurationMismatchError",
     "DriverError",
     "EvaluationFailureWarning",
@@ -28,11 +31,14 @@ __all__ = [
     "HeldOutReport",
     "HeldOutScenario",
     "EvaluatorError",
+    "ObjectiveStats",
+    "Progress",
     "RecordingDisabledWarning",
     "ReplayMismatchError",
     "ResumeError",
     "ResumeWarning",
     "RunResult",
+    "StopRun",
     "StrategyError",
     "SteadyStateVectorisationWarning",
     "aevaluate_held_out",

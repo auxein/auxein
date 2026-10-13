@@ -22,7 +22,7 @@ from importlib import metadata
 from auxein.aggregators import Aggregator
 from auxein.backend import Backend
 from auxein.core import BatchResult, Objective, Result, Status
-from auxein.driver import Budget, RecordingDisabledWarning, RunResult, aresume, arun, resume, run
+from auxein.driver import Budget, Progress, RecordingDisabledWarning, RunResult, StopRun, aresume, arun, resume, run
 from auxein.environments import EpisodeResult, Scenario, ScenarioSet
 from auxein.evaluators import EpisodeEvaluator, FunctionEvaluator, VectorisedEvaluator
 from auxein.recording import open_run
@@ -62,6 +62,7 @@ __all__ = [
     "MixedSpace",
     "NSGA2",
     "Objective",
+    "Progress",
     "RandomSearch",
     "Real",
     "RecordingDisabledWarning",
@@ -72,6 +73,7 @@ __all__ = [
     "ScenarioSet",
     "SequenceSpace",
     "Status",
+    "StopRun",
     "StructuredGeneticAlgorithm",
     "VectorisedEvaluator",
     "WeightedSum",
