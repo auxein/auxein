@@ -128,7 +128,9 @@ def test_the_notebooks_directory_holds_exactly_the_four_introductory_notebooks()
 
 def snippets() -> list[str]:
     blocks = re.findall(r"```python\n(.*?)```", (ROOT / "README.md").read_text(), flags=re.S)
-    assert len(blocks) == 2, "the README has two Python snippets: the quickstart and 'Watching a run', which continues it"
+    assert len(blocks) == 3, (
+        "the README has three Python snippets: the quickstart, and 'Watching a run' and 'Looking back at a run', which continue it"
+    )
     return blocks
 
 
@@ -169,7 +171,7 @@ def test_the_readme_quickstart_records_a_run_when_run_dir_is_uncommented(
 
 
 def test_the_readme_watching_example_continues_the_quickstart_and_prints_progress(capsys: pytest.CaptureFixture[str]):
-    first, second = snippets()
+    first, second, _ = snippets()
     namespace: dict[str, object] = {"__name__": "__main__"}
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", auxein.RecordingDisabledWarning)
@@ -179,6 +181,22 @@ def test_the_readme_watching_example_continues_the_quickstart_and_prints_progres
     lines = capsys.readouterr().out.splitlines()
     assert lines[0].startswith("gen     10 |") and "ETA" in lines[0] and lines[-1] in ("callback:good enough", "budget:evaluations")
     assert any(line.endswith("| done: callback:good enough") or line.endswith("| done: budget:evaluations") for line in lines)
+
+
+def test_the_readme_looking_back_example_reads_the_recorded_quickstart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    first, _, third = snippets()
+    monkeypatch.chdir(tmp_path)
+    namespace: dict[str, object] = {"__name__": "__main__"}
+    exec(compile(first.replace('# run_dir="runs/rastrigin"', 'run_dir="runs/rastrigin"'), "README.md", "exec"), namespace)
+    capsys.readouterr()
+    exec(compile(third, "README.md", "exec"), namespace)
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith("generation,step,evaluations,best,front_size")
+    milestones = {str(k) for k in range(25, 401, 25)}
+    champions = [line.split()[0] for line in lines if line.split() and line.split()[0] in milestones]
+    assert champions == [str(k) for k in range(25, 401, 25)]  # 400 generations of 50: every 25th, the last among them
 
 
 def test_the_callback_helpers_are_in_auxein_callbacks_and_not_at_the_top_level():
