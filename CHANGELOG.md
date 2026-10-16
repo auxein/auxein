@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: **one Ctrl-C did not stop a run whose evaluator computes on the driver's thread** (a `VectorisedEvaluator`, a
+  batched `EpisodeEvaluator`, inline). `asyncio.run` turns the first Ctrl-C into a cancellation of the driver's task, which is
+  delivered only when the task yields to the event loop, and the live loop yielded only while replaying: the run went on to
+  the end of its budget, and only a second Ctrl-C stopped it, in the middle of a batch. The driver now yields after every tell,
+  so one Ctrl-C stops a run after the batch in progress, recorded as interrupted with a checkpoint (design doc §10.4).
+
 ## 0.3.2 (2026-10-14)
 
 - **The generations of a recorded run, after the fact** (design doc §10.2): `RunReader` (from `auxein.open_run`) answers "what was the best genome at generation *k*?" and "how did fitness evolve?" from a run directory, without re-running anything. Generation *k* is the *k*-th tell across sessions, what `Progress.generation` counts. `generations()`, `generation_of(id)` (None for a candidate that was never told, such as a final batch cut by the budget), `best_up_to(k=None)` (the champion so far), `best_in(k)`, `pareto_front_up_to(k=None)`, `evaluations_in(k)`, `champions(every=n)` (the champion every *n* generations and at the last one, for rendering milestones) and `generation_history()` / `generation_history_csv()` (the rows of `ProgressHistory`, without `elapsed`). The answers are the run's: the recorded evaluations go through the driver's own ranking, now in `auxein.core.tracking` with the batch statistics, so `best_up_to(k)` and `pareto_front_up_to(k)` are `Progress.best` and `Progress.pareto_front` at generation *k*, and without *k* they are `RunResult.best` and `pareto_front`. Queries rank without decoding genomes and decode only what they return; `benchmarks/reader_queries.py` times them on a 300 × 200 × 2,000-float recording (0.5 s to index, then milliseconds).
