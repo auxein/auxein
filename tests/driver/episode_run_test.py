@@ -380,6 +380,36 @@ def test_a_changed_scenario_set_is_refused_on_resume(tmp_path: Path):
         )
 
 
+class Weighted:
+    """The fixture's objective with its effort weight as a parameter, as a scenario's fitness weights are."""
+
+    def __init__(self, weight: float) -> None:
+        self.weight = weight
+
+    def __call__(self, m: Any) -> Any:
+        return m["final_distance"] + self.weight * m["effort"]
+
+    def __repr__(self) -> str:
+        return f"Weighted(weight={self.weight})"
+
+
+def test_a_changed_parameter_of_an_aggregator_source_is_refused_on_resume(tmp_path: Path):
+    def weighted(weight: float) -> Aggregator:
+        return Aggregator({"error": mean(Weighted(weight))}, {"overshoot": maximum("max_overshoot")}, {"success_rate": mean("success")})
+
+    auxein.run(budget=auxein.Budget(evaluations=60), **arguments(genetic(), tmp_path / "r", evaluator=evaluator(aggregator=weighted(0.02))))
+    before = comparable(tmp_path / "r")
+    with pytest.raises(ConfigurationMismatchError, match=r"Weighted\(weight=0.02\).*\n?.*Weighted\(weight=5.0\)") as raised:
+        auxein.resume(
+            budget=auxein.Budget(evaluations=120), **arguments(genetic(), tmp_path / "r", evaluator=evaluator(aggregator=weighted(5.0)))
+        )
+    assert "evaluator: recorded" in str(raised.value) and comparable(tmp_path / "r") == before
+    resumed = auxein.resume(
+        budget=auxein.Budget(evaluations=120), **arguments(genetic(), tmp_path / "r", evaluator=evaluator(aggregator=weighted(0.02)))
+    )
+    assert resumed.evaluations_used == 120
+
+
 # --- killing an episode run and resuming it ---
 
 KILLS = [
