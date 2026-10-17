@@ -1,3 +1,5 @@
+import functools
+
 import numpy as np
 import pytest
 
@@ -96,6 +98,55 @@ def test_reductions_describe_themselves():
     assert repr(mean("fuel")) == "mean('fuel')" and repr(quantile("t", 0.9)) == "quantile('t', 0.9)"
     assert repr(cvar_upper("t", 0.1)) == "cvar_upper('t', 0.1)"
     assert repr(mean(lambda m: m["a"])).startswith("mean(<") and repr(mean(lambda m: m["a"])).endswith(">)")
+
+
+class Weighted:
+    """A parameterised source, as a callable object that describes itself with its parameter."""
+
+    def __init__(self, weight: float) -> None:
+        self.weight = weight
+
+    def __call__(self, m: dict) -> object:
+        return m["m"] * self.weight
+
+    def __repr__(self) -> str:
+        return f"Weighted(weight={self.weight})"
+
+
+class Described(Weighted):
+    def describe(self) -> str:
+        return f"described with weight {self.weight}"
+
+
+class Plain:
+    """A callable object that does not describe itself: its class name is all there is to show."""
+
+    def __call__(self, m: dict) -> object:
+        return m["m"]
+
+
+def weighted(m: dict, weight: float) -> object:
+    return m["m"] * weight
+
+
+def test_a_parameterised_source_shows_its_parameters():
+    """The label goes into the evaluator's description, which resume compares: a source whose parameters changed must not
+    look the same (a changed fitness weight would otherwise resume silently and re-judge the rest of the run)."""
+    assert repr(mean(Weighted(0.5))) == "mean(<Weighted(weight=0.5)>)"
+    assert repr(mean(Weighted(0.5))) != repr(mean(Weighted(2.0)))
+    assert repr(mean(Described(0.5))) == "mean(<described with weight 0.5>)"
+    assert repr(mean(functools.partial(weighted, weight=0.5))) == "mean(<weighted(weight=0.5)>)"
+    assert repr(mean(functools.partial(weighted, weight=0.5))) != repr(mean(functools.partial(weighted, weight=2.0)))
+    assert repr(quantile(functools.partial(weighted, 3), 0.5)) == "quantile(<weighted(3)>, 0.5)"
+
+
+def test_functions_and_plain_objects_keep_their_labels():
+    """Unchanged from before: a function by its qualified name (never its address), an object without a description by its
+    class name, so the description of a run recorded with them is the same as it was."""
+    assert repr(mean(weighted)) == "mean(<weighted>)"
+    assert repr(mean(lambda m: m["m"])) == "mean(<test_functions_and_plain_objects_keep_their_labels.<locals>.<lambda>>)"
+    assert repr(mean(Plain())) == "mean(<Plain>)"
+    assert repr(mean(np.abs)) == "mean(<absolute>)"
 
 
 def problem(constraints=(), descriptors=()) -> ProblemSpec:
