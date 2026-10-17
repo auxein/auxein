@@ -1,14 +1,18 @@
 """Reductions: how the measurements of many scenarios become one number per candidate (design doc §6.5).
 
 A reduction is a *source* (a measurement name, or a function of the dict of measurement arrays) and a *reducer* applied across
-scenarios, axis 1 of an `(n, s)` array with `n` candidates and `s` scenarios. Everything is written against the array
+scenarios, axis 1 of an `(n, s)` array with `n` candidates and `s` scenarios. Its label names both, and a parameterised source
+(a callable object with a `describe()` or a `__repr__`, or a `functools.partial`) shows its parameters in it, so that resuming
+a run with a changed parameter is refused like any other change of the evaluator. Everything is written against the array
 namespace of its input, so the same code reduces numpy arrays and torch tensors on any device.
 """
 
+import functools
+import inspect
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TypeAlias
+from typing import TypeAlias, cast
 
 from auxein.backend import Array, ArrayNamespace
 
@@ -21,6 +25,32 @@ Reducer: TypeAlias = Callable[[Array, ArrayNamespace], Array]
 
 def _name_of(function: object) -> str:
     return str(getattr(function, "__qualname__", type(function).__name__))
+
+
+def _describe_source(source: Callable[..., object]) -> str:
+    """How a callable source appears in a reduction's label, which goes into the evaluator's description and so into what
+    resume compares (design doc §10.4): it must show everything that changes the values, and nothing that changes from one
+    process to the next (a memory address).
+
+    - A function, a method, a builtin or anything else with a qualified name of its own (a numpy ufunc): that name, as always.
+    - A `functools.partial`: the function's name with the bound arguments, `weighted(0.5, scale=2)`.
+    - A callable object with a `describe()`: what it returns; else with a `__repr__` of its own class: that repr. A
+      parameterised source (fitness weights, a threshold) shows its parameters this way.
+    - Any other callable object: its class name.
+    """
+    # a partial first: from Python 3.14 it is a method descriptor, which `inspect.isroutine` counts as a routine
+    if isinstance(source, functools.partial):
+        bound = cast("functools.partial[object]", source)
+        arguments = [repr(a) for a in bound.args] + [f"{k}={v!r}" for k, v in bound.keywords.items()]
+        return f"{_describe_source(bound.func)}({', '.join(arguments)})"
+    if inspect.isroutine(source) or hasattr(source, "__qualname__"):
+        return _name_of(source)
+    describe = getattr(source, "describe", None)
+    if callable(describe):
+        return str(describe())
+    if type(source).__repr__ is not object.__repr__:
+        return repr(source)
+    return _name_of(source)
 
 
 @dataclass(frozen=True)
@@ -54,7 +84,7 @@ class Reduction:
 
 
 def _label(name: str, source: Source, *extra: object) -> str:
-    shown = repr(source) if isinstance(source, str) else f"<{_name_of(source)}>"
+    shown = repr(source) if isinstance(source, str) else f"<{_describe_source(source)}>"
     return f"{name}({', '.join([shown, *(repr(e) for e in extra)])})"
 
 

@@ -7,6 +7,13 @@
   delivered only when the task yields to the event loop, and the live loop yielded only while replaying: the run went on to
   the end of its budget, and only a second Ctrl-C stopped it, in the middle of a batch. The driver now yields after every tell,
   so one Ctrl-C stops a run after the batch in progress, recorded as interrupted with a checkpoint (design doc §10.4).
+- Fixed: **a changed parameter of an aggregator source resumed silently.** A reduction labelled a callable source by its
+  `__qualname__`, so a callable object or a `functools.partial` got its class's name whatever its parameters
+  (`mean(<Weighted>)` for any weight), the evaluator's description did not change, and `resume` accepted a run whose fitness
+  weights had changed, re-judging the rest of it with the new ones. A source is now labelled by its `describe()`, its class's
+  own `__repr__`, or, for a partial, its function and bound arguments (design doc §6.5); functions and objects without a
+  description keep their labels. A run recorded before with such a source has a different description now, so resuming it
+  is refused with a `ConfigurationMismatchError` that shows both labels.
 
 ## 0.3.2 (2026-10-14)
 
