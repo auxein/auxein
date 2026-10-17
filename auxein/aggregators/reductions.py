@@ -38,12 +38,13 @@ def _describe_source(source: Callable[..., object]) -> str:
       parameterised source (fitness weights, a threshold) shows its parameters this way.
     - Any other callable object: its class name.
     """
-    if inspect.isroutine(source) or hasattr(source, "__qualname__"):
-        return _name_of(source)
+    # a partial first: from Python 3.14 it is a method descriptor, which `inspect.isroutine` counts as a routine
     if isinstance(source, functools.partial):
         bound = cast("functools.partial[object]", source)
         arguments = [repr(a) for a in bound.args] + [f"{k}={v!r}" for k, v in bound.keywords.items()]
         return f"{_describe_source(bound.func)}({', '.join(arguments)})"
+    if inspect.isroutine(source) or hasattr(source, "__qualname__"):
+        return _name_of(source)
     describe = getattr(source, "describe", None)
     if callable(describe):
         return str(describe())
