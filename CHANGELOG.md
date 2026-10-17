@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.3 (2026-10-17)
 
 - Fixed: **one Ctrl-C did not stop a run whose evaluator computes on the driver's thread** (a `VectorisedEvaluator`, a
   batched `EpisodeEvaluator`, inline). `asyncio.run` turns the first Ctrl-C into a cancellation of the driver's task, which is

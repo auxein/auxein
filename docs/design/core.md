@@ -1,6 +1,6 @@
 # Auxein core design
 
-**Status:** Draft for review · **Date:** 2026-10-07 · **Target version:** 0.3.2
+**Status:** Draft for review · **Date:** 2026-10-07 · **Target version:** 0.3.3
 
 ---
 
@@ -927,7 +927,7 @@ notebooks/         # the four executed notebooks: the introductory documentation
 
 ## 13. Versioning
 
-- The current version is **0.3.2**, and the project stays on **0.x** until the API has settled. **0.3.0 was the first release of the new core** (PyPI, with the extras `torch`, `cma` and `gymnasium`), with one acceptance item still open: the CUDA run of the GPU smoke suite (§11.4, criterion 5), whose report is committed when it has been made. A release is a GitHub release of a `v<version>` tag: the release workflow builds the package and publishes it with PyPI trusted publishing.
+- The current version is **0.3.3**, and the project stays on **0.x** until the API has settled. **0.3.0 was the first release of the new core** (PyPI, with the extras `torch`, `cma` and `gymnasium`), with one acceptance item still open: the CUDA run of the GPU smoke suite (§11.4, criterion 5), whose report is committed when it has been made. A release is a GitHub release of a `v<version>` tag: the release workflow builds the package and publishes it with PyPI trusted publishing.
 
 ---
 
