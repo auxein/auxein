@@ -1,5 +1,10 @@
+import asyncio
 import json
+import signal
 import sqlite3
+import subprocess
+import sys
+import time
 import warnings
 from pathlib import Path
 
@@ -8,7 +13,7 @@ import pytest
 
 from auxein.backend import Backend
 from auxein.core import Objective, Result, Status
-from auxein.driver import Budget, RecordingDisabledWarning, run
+from auxein.driver import Budget, RecordingDisabledWarning, arun, resume, run
 from auxein.evaluators import EvaluationError, FunctionEvaluator, VectorisedEvaluator
 from auxein.recording import RunDirectoryError, open_run
 from auxein.spaces import Box
@@ -117,6 +122,100 @@ def test_an_interrupted_run_is_recorded_as_interrupted(tmp_path: Path):
 
     with pytest.raises(KeyboardInterrupt):
         record(tmp_path / "r", evaluator=FunctionEvaluator(fn))
+    assert json.loads((tmp_path / "r" / "metadata.json").read_text())["status"] == "interrupted"
+
+
+def test_a_cancellation_during_a_batch_stops_the_run_after_that_batch(tmp_path: Path):
+    """Ctrl-C under `asyncio.run` cancels the driver's task. An evaluator that computes on the driver's thread (a vectorised
+    function, a batched episode evaluator) never lets the task be resumed by the event loop while it computes, so the
+    cancellation must be delivered between batches: the run stops after the batch in progress, consistent and checkpointed,
+    instead of running on to the end of its budget."""
+
+    CANCEL.update(calls=0, at=3)
+
+    async def main() -> None:
+        await arun(
+            strategy=RandomSearch(),
+            evaluator=VectorisedEvaluator(cancelling_sphere),
+            space=Box(-5.0, 5.0, dim=3),
+            budget=Budget(evaluations=16 * 1_000),
+            seed=3,
+            batch_size=16,
+            run_dir=tmp_path / "r",
+        )
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(main())
+    meta = json.loads((tmp_path / "r" / "metadata.json").read_text())
+    assert meta["status"] == "interrupted" and meta["summary"]["evaluations_used"] == 48 and CANCEL["calls"] == 3
+    with open_run(tmp_path / "r") as recorded:
+        assert recorded.checkpoints()[-1].evaluations_used == 48, "stopped between batches, with a checkpoint"
+    CANCEL.update(at=None)
+    resumed = resume(
+        strategy=RandomSearch(), evaluator=VectorisedEvaluator(cancelling_sphere), space=Box(-5.0, 5.0, dim=3),
+        budget=Budget(evaluations=64), seed=3, batch_size=16, run_dir=tmp_path / "r",
+    )  # fmt: skip
+    assert resumed.evaluations_used == 64
+
+
+CANCEL: dict[str, int | None] = {"calls": 0, "at": None}
+
+
+def cancelling_sphere(genomes):
+    """The sphere for a batch, which cancels the running task on the call `CANCEL["at"]`: what asyncio's SIGINT handler does
+    to the main task when Ctrl-C is pressed while a batch computes."""
+    CANCEL["calls"] = (CANCEL["calls"] or 0) + 1
+    if CANCEL["at"] is not None and CANCEL["calls"] == CANCEL["at"]:
+        task = asyncio.current_task()
+        assert task is not None
+        task.cancel()
+    return (genomes * genomes).sum(axis=1)
+
+
+CTRL_C_CHILD = """
+import sys, time
+from auxein.driver import Budget, run
+from auxein.evaluators import VectorisedEvaluator
+from auxein.spaces import Box
+from auxein.strategies import RandomSearch
+
+def slow(genomes):
+    time.sleep(0.2)
+    return (genomes * genomes).sum(axis=1)
+
+try:
+    run(strategy=RandomSearch(), evaluator=VectorisedEvaluator(slow), space=Box(-5.0, 5.0, dim=3),
+        budget=Budget(evaluations=16 * 10_000), seed=3, batch_size=16, run_dir=sys.argv[1])
+    print("finished")
+except KeyboardInterrupt:
+    print("interrupted")
+"""
+
+
+def test_one_ctrl_c_stops_a_run_whose_evaluator_computes_on_the_driver_thread(tmp_path: Path):
+    """The real thing: one SIGINT to a process running a vectorised evaluator stops it after the batch in progress (before
+    the fix it took a second one), and the run is recorded as interrupted, resumable."""
+    script = tmp_path / "child.py"
+    script.write_text(CTRL_C_CHILD)
+    process = subprocess.Popen(
+        [sys.executable, str(script), str(tmp_path / "r")],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        cwd=Path(__file__).resolve().parents[2],
+        preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL),  # in case the tests run with SIGINT ignored
+    )
+    deadline = time.monotonic() + 30
+    while not (tmp_path / "r" / "metadata.json").exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    time.sleep(0.5)  # a couple of batches
+    process.send_signal(signal.SIGINT)
+    try:
+        output, _ = process.communicate(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate()
+        pytest.fail("one SIGINT did not stop the run within 10 s")
+    assert output.decode().strip().endswith("interrupted"), output.decode()
     assert json.loads((tmp_path / "r" / "metadata.json").read_text())["status"] == "interrupted"
 
 

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fixed: **one Ctrl-C did not stop a run whose evaluator computes on the driver's thread** (a `VectorisedEvaluator`, a
+  batched `EpisodeEvaluator`, inline). `asyncio.run` turns the first Ctrl-C into a cancellation of the driver's task, which is
+  delivered only when the task yields to the event loop, and the live loop yielded only while replaying: the run went on to
+  the end of its budget, and only a second Ctrl-C stopped it, in the middle of a batch. The driver now yields after every tell,
+  so one Ctrl-C stops a run after the batch in progress, recorded as interrupted with a checkpoint (design doc §10.4).
 - Fixed: **a changed parameter of an aggregator source resumed silently.** A reduction labelled a callable source by its
   `__qualname__`, so a callable object or a `functools.partial` got its class's name whatever its parameters
   (`mean(<Weighted>)` for any weight), the evaluator's description did not change, and `resume` accepted a run whose fitness

@@ -426,8 +426,11 @@ class Driver(Generic[G]):
         self._consistent = True
         if self._callbacks:
             self._told_batch(step, results, recorded == len(results) and recorded > 0)
-        if recorded:
-            await asyncio.sleep(0)  # replaying has nothing to wait for: let the event loop breathe
+        # Let the event loop run between batches, where the run is consistent. Replaying has nothing to wait for, and an
+        # evaluator that computes on this thread (a vectorised function, a batched episode evaluator) never yields while it
+        # works, so without this the task would never be resumed by the loop: a Ctrl-C, which asyncio turns into a
+        # cancellation of this task, would not be delivered until the run ended, and only a second one would stop it.
+        await asyncio.sleep(0)
         return False
 
     async def _evaluate(self, batch: Batch[G]) -> tuple[EvaluationBatch[G], int, bool]:
