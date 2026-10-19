@@ -12,7 +12,7 @@ uv run --no-project --with fonttools --with pillow python docs/logo/generate.py
 
 | File | Use |
 |---|---|
-| `auxein-lockup-on-light.svg`, `auxein-lockup-on-dark.svg` | the mark and the wordmark, for headers (the README uses both, switched by the theme) |
+| `auxein-lockup-on-light.svg`, `auxein-lockup-on-dark.svg` | the mark, the wordmark and the tagline ("EVOLVING AGENTS", deliberately without a version), for headers (the README uses both, switched by the theme) |
 | `auxein-mark-on-light.svg`, `auxein-mark-on-dark.svg` | the mark alone, transparent, at 64 px and above |
 | `auxein-mark-small-on-light.svg`, `auxein-mark-small-on-dark.svg` | the simplified mark (21 seeds), for 48 px and below |
 | `auxein-mark-on-{light,dark}-{16,32,48,64,128,256,512,1024}.png` | the mark as PNGs, transparent; 16 to 48 px are the simplified mark |
@@ -28,5 +28,6 @@ uv run --no-project --with fonttools --with pillow python docs/logo/generate.py
 | Dim (inner seeds) | `#5d6670` | `#9aa3ab` |
 | Champion | `#5ef2b0` | `#0b9a62` |
 
-The wordmark is [Archivo](https://fonts.google.com/specimen/Archivo) (SIL Open Font License) at width 125 and weight 600,
-tracked 0.18 em, converted to outlines.
+The wordmark is [Archivo](https://fonts.google.com/specimen/Archivo) at width 125 and weight 600, tracked 0.18 em, and the
+tagline [Space Mono](https://fonts.google.com/specimen/Space+Mono), tracked 0.21 em, in the dim colour (both SIL Open Font
+License), converted to outlines.

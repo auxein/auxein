@@ -7,8 +7,9 @@ the outermost ones the latest generation, and the seeds are joined along the two
 (parastichies, every 13th and 21st seed). One seed of the outer ring, the champion, is in green. Small sizes (up to 48 px) use
 a sparser spiral of 21 seeds joined every 5th and 8th, which stays legible as a favicon.
 
-The wordmark is Archivo (SIL Open Font License) at width 125 and weight 600, converted to outlines so that the files need no
-installed font. The font is downloaded from the google/fonts repository when the script runs.
+The wordmark is Archivo at width 125 and weight 600, and the tagline under it Space Mono (both SIL Open Font License),
+converted to outlines so that the files need no installed font. The fonts are downloaded from the google/fonts repository when
+the script runs.
 """
 
 import io
@@ -25,7 +26,9 @@ from fontTools.varLib.instancer import instantiateVariableFont
 from PIL import Image, ImageDraw
 
 HERE = Path(__file__).resolve().parent
-FONT_URL = "https://github.com/google/fonts/raw/main/ofl/archivo/Archivo%5Bwdth,wght%5D.ttf"
+ARCHIVO = "https://github.com/google/fonts/raw/main/ofl/archivo/Archivo%5Bwdth,wght%5D.ttf"
+SPACE_MONO = "https://github.com/google/fonts/raw/main/ofl/spacemono/SpaceMono-Regular.ttf"
+TAGLINE = "EVOLVING AGENTS"  # no version number: the files would have to change at every release
 GOLD = math.radians(137.50776)
 SIZE = 256  # the mark's viewBox
 
@@ -151,11 +154,12 @@ def ico(images: list[Image.Image]) -> bytes:
     return header + entries + b"".join(blobs)
 
 
-def wordmark(text: str = "AUXEIN", tracking: float = 0.18) -> tuple[str, float, float]:
-    """The word as one SVG path in font units, with its width and cap height: Archivo, width 125, weight 600."""
-    with urllib.request.urlopen(FONT_URL) as response:
+def outline(text: str, url: str, tracking: float, axes: dict[str, float] | None = None) -> tuple[str, float, float]:
+    """`text` as one SVG path in font units, with its width and cap height (the cap height at y = 0, y pointing down)."""
+    with urllib.request.urlopen(url) as response:
         font = TTFont(io.BytesIO(response.read()))
-    font = instantiateVariableFont(font, {"wdth": 125, "wght": 600})
+    if axes:
+        font = instantiateVariableFont(font, axes)
     glyphs, cmap, metrics = font.getGlyphSet(), font.getBestCmap(), font["hmtx"].metrics
     em = font["head"].unitsPerEm
     cap = font["OS/2"].sCapHeight
@@ -163,13 +167,14 @@ def wordmark(text: str = "AUXEIN", tracking: float = 0.18) -> tuple[str, float, 
     x = 0.0
     for i, char in enumerate(text):
         name = cmap[ord(char)]
-        glyphs[name].draw(TransformPen(pen, (1, 0, 0, -1, x, cap)))  # y down, the cap height at 0
+        glyphs[name].draw(TransformPen(pen, (1, 0, 0, -1, x, cap)))
         x += metrics[name][0] + (tracking * em if i < len(text) - 1 else 0)
     return pen.getCommands(), x, cap
 
 
 def main() -> None:
-    word, word_width, cap = wordmark()
+    word, word_width, cap = outline("AUXEIN", ARCHIVO, 0.18, {"wdth": 125, "wght": 600})
+    tag, tag_width, tag_cap = outline(TAGLINE, SPACE_MONO, 0.21)
     for name, palette in (("on-dark", ON_DARK), ("on-light", ON_LIGHT)):
         full, small = mark(FULL, palette), mark(SMALL, palette)
         (HERE / f"auxein-mark-{name}.svg").write_text(svg(SIZE, SIZE, svg_body(*full)))
@@ -178,15 +183,19 @@ def main() -> None:
             png(*small, size).save(HERE / f"auxein-mark-{name}-{size}.png")
         for size in (64, 128, 256, 512, 1024):
             png(*full, size).save(HERE / f"auxein-mark-{name}-{size}.png")
-        # the lockup: the mark, then the word set at about a third of the mark's height, centred on it
+        # the lockup: the mark, then the word (its cap height about a quarter of the mark's) over the tagline, centred on the mark
         height = 200.0
-        text_height = height * 0.27
-        s = text_height / cap
-        gap = height * 0.2
-        width = height + gap + word_width * s
+        word_cap = height * 0.27
+        tag_cap_px = word_cap * 0.26
+        line_gap = word_cap * 0.52
+        top = (height - (word_cap + line_gap + tag_cap_px)) / 2
+        left = height * 1.2
+        s, ts = word_cap / cap, tag_cap_px / tag_cap
+        width = left + max(word_width * s, tag_width * ts)
         body = svg_body(*full, scale=height / SIZE)
-        place = f"translate({height + gap:g} {(height - text_height) / 2:.2f}) scale({s:.5f})"
-        body += f'\n<path transform="{place}" fill="{palette.ink}" d="{word}"/>'
+        body += f'\n<path transform="translate({left:g} {top:.2f}) scale({s:.5f})" fill="{palette.ink}" d="{word}"/>'
+        place = f"translate({left + word_cap * 0.03:.2f} {top + word_cap + line_gap:.2f}) scale({ts:.5f})"
+        body += f'\n<path transform="{place}" fill="{palette.dim}" d="{tag}"/>'
         (HERE / f"auxein-lockup-{name}.svg").write_text(svg(round(width, 2), height, body))
     # the avatar and the favicon carry their own ground, so they read on any background
     full, small = mark(FULL, ON_DARK), mark(SMALL, ON_DARK)
