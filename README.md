@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/auxein/auxein/master/docs/logo/auxein-lockup-on-dark.svg">
+    <img alt="Auxein" src="https://raw.githubusercontent.com/auxein/auxein/master/docs/logo/auxein-lockup-on-light.svg" width="420">
+  </picture>
+</p>
+
 # auxein [![license](https://img.shields.io/hexpm/l/plug.svg?maxAge=2592000)](https://github.com/auxein/auxein/blob/master/LICENSE) [![CI](https://github.com/auxein/auxein/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/auxein/auxein/actions/workflows/ci.yml)
 
 **Auxein is a Python framework for evolving agents that act in environments.** It searches over agent designs (genomes), which can be numeric parameters, structures or text. It does this by proposing candidates, evaluating them in an environment across a set of scenarios, and selecting on the outcomes. It works with any type of genome and any environment, and treats evaluation as the expensive step: evaluations are budgeted and batched, and may be asynchronous or noisy. Function optimisation, regression and model fitting are supported directly.
