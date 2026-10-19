@@ -185,7 +185,8 @@ def main() -> None:
         gap = height * 0.2
         width = height + gap + word_width * s
         body = svg_body(*full, scale=height / SIZE)
-        body += f'\n<path transform="translate({height + gap:g} {(height - text_height) / 2:.2f}) scale({s:.5f})" fill="{palette.ink}" d="{word}"/>'
+        place = f"translate({height + gap:g} {(height - text_height) / 2:.2f}) scale({s:.5f})"
+        body += f'\n<path transform="{place}" fill="{palette.ink}" d="{word}"/>'
         (HERE / f"auxein-lockup-{name}.svg").write_text(svg(round(width, 2), height, body))
     # the avatar and the favicon carry their own ground, so they read on any background
     full, small = mark(FULL, ON_DARK), mark(SMALL, ON_DARK)
