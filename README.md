@@ -113,6 +113,8 @@ The [design document](https://github.com/auxein/auxein/blob/master/docs/design/c
 
 ## Development
 
+[CONTRIBUTING.md](https://github.com/auxein/auxein/blob/master/CONTRIBUTING.md) sets the standard for changes: the checks, tests, documentation and pull requests.
+
 ```
 uv sync                                     # install the project with its development dependencies
 uv run pytest                               # tests
